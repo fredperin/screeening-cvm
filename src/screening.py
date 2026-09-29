@@ -169,22 +169,33 @@ def ler_contas_todas_empresas(ano: int, sigla: str, tipo: str, cd_contas: set, f
 
 def universo_nao_financeiro() -> pd.DataFrame:
     """
-    Lista as companhias ATIVAS, negociadas em BOLSA, Categoria A (podem emitir
-    ação), excluindo setores financeiros (plano de contas diferente — ver
-    conversa anterior sobre bancos/seguradoras terem estrutura própria) — E
-    cruzando com a lista oficial da B3 pra manter só quem tem ação de fato
-    negociada (o cadastro da CVM sozinho superestima muito esse universo:
-    ~2600 "companhias abertas" registradas nunca chegaram a listar uma ação).
+    Lista as companhias com ação de fato negociada na B3 (fonte de verdade: a
+    lista oficial da B3 — ver raizes_cnpj_realmente_listadas_b3), excluindo
+    setores financeiros (plano de contas diferente — ver conversa anterior
+    sobre bancos/seguradoras terem estrutura própria).
+
+    Importante: esta função NÃO filtra mais por TP_MERC="BOLSA" nem
+    CATEG_REG="Categoria A" do cadastro da CVM. Testamos e esses dois campos
+    excluíam incorretamente ~470 empresas (com sobreposição: 321 por
+    TP_MERC, 189 por CATEG_REG) que a própria lista da B3 confirma estarem
+    genuinamente listadas — ou seja, esses campos da CVM não são um bom
+    proxy pra "está na bolsa de fato". A lista da B3 já é a autoridade sobre
+    isso; o cadastro da CVM entra aqui só pra dar nome e setor da empresa.
     """
     caminho = baixar_cadastro()
-    df = pd.read_csv(caminho, sep=";", encoding="latin1", dtype=str)
+    cad = pd.read_csv(caminho, sep=";", encoding="latin1", dtype=str)
+    cad["_RAIZ"] = cad["CNPJ_CIA"].apply(_normalizar_cnpj).str[:8]
 
-    df = df[(df["SIT"] == "ATIVO") & (df["TP_MERC"] == "BOLSA") & (df["CATEG_REG"] == "Categoria A")]
-    padrao_financeiro = "|".join(SETORES_FINANCEIROS)
-    df = df[~df["SETOR_ATIV"].str.contains(padrao_financeiro, case=False, na=False, regex=True)]
+    # Uma raiz de CNPJ pode aparecer mais de uma vez no cadastro (filiais
+    # diferentes) — prioriza a que estiver com situação ATIVA.
+    cad = cad.sort_values("SIT", key=lambda s: s.eq("ATIVO"), ascending=False)
+    cad_por_raiz = cad.drop_duplicates(subset="_RAIZ", keep="first")
 
     raizes_b3 = raizes_cnpj_realmente_listadas_b3()
-    df = df[df["CNPJ_CIA"].apply(_normalizar_cnpj).str[:8].isin(raizes_b3)]
+    df = cad_por_raiz[cad_por_raiz["_RAIZ"].isin(raizes_b3) & (cad_por_raiz["SIT"] == "ATIVO")]
+
+    padrao_financeiro = "|".join(SETORES_FINANCEIROS)
+    df = df[~df["SETOR_ATIV"].str.contains(padrao_financeiro, case=False, na=False, regex=True)]
 
     df = df.drop_duplicates(subset="CNPJ_CIA")[["CNPJ_CIA", "DENOM_SOCIAL", "SETOR_ATIV"]]
     return df.sort_values("DENOM_SOCIAL").reset_index(drop=True)
@@ -441,4 +452,16 @@ def montar_screening(ano_fiscal: int = None, pausa_yfinance: float = 0.3) -> pd.
     print(f"📈 Buscando preço/dividendos/volume no yfinance para {len(tabela)} empresas...")
     tabela = buscar_dados_mercado(tabela, pausa=pausa_yfinance)
     tabela = calcular_indicadores(tabela)
+
+    # "Listada na B3" (type=1) não é sinônimo de "compra de fato": muitas
+    # dessas empresas são SPVs de infraestrutura ou holdings com o ticker
+    # formalmente ativo mas 100% nas mãos do controlador, sem free float —
+    # o yfinance não retorna preço porque não existe book de ofertas. Sem
+    # preço não dá pra calcular P/L, P/VP nem participar do screening de
+    # forma útil, então essas linhas saem do resultado final (eram ~metade
+    # do universo bruto — número real, não um filtro conservador demais).
+    antes = len(tabela)
+    tabela = tabela[tabela["preco"].notna()].reset_index(drop=True)
+    print(f"🚫 {antes - len(tabela)} empresas sem negociação real (sem preço) removidas do resultado final")
+
     return tabela
