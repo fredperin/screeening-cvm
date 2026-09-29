@@ -1,5 +1,6 @@
 """Exportação da tabela de screening para Excel, formatada e ordenável."""
 
+import time
 from datetime import date
 from pathlib import Path
 
@@ -44,20 +45,48 @@ FORMATOS = {
 }
 
 
+def preparar_tabela_final(tabela: pd.DataFrame) -> pd.DataFrame:
+    """Seleciona e renomeia só as colunas de apresentação, ordenadas por nome da empresa."""
+    colunas_presentes = [c for c in COLUNAS_FINAIS if c in tabela.columns]
+    saida = tabela[colunas_presentes].rename(columns=COLUNAS_FINAIS)
+    return saida.sort_values("Empresa").reset_index(drop=True)
+
+
+def salvar_csv_publico(tabela: pd.DataFrame, caminho: Path) -> Path:
+    """
+    Salva a tabela final em CSV num caminho versionado no Git (fora de
+    data/raw|processed, que ficam de fora do repositório) — é esse arquivo
+    que o dashboard publicado lê, já que o site não roda o pipeline pesado
+    ao vivo (yfinance pra ~280 empresas levaria minutos a cada acesso).
+    """
+    saida = preparar_tabela_final(tabela)
+    caminho.parent.mkdir(parents=True, exist_ok=True)
+    saida.to_csv(caminho, index=False, encoding="utf-8-sig")
+    print(f"📁 CSV do dashboard salvo: {caminho} ({len(saida)} empresas)")
+    return caminho
+
+
 def exportar_screening(tabela: pd.DataFrame, ano_fiscal: int = None) -> Path:
     """
     Exporta a tabela de screening (saída de montar_screening()) pra Excel,
     uma linha por empresa, pronta pra ordenar/filtrar no próprio Excel.
     """
     ano_fiscal = ano_fiscal or tabela.attrs.get("ano_fiscal")
-    colunas_presentes = [c for c in COLUNAS_FINAIS if c in tabela.columns]
-    saida = tabela[colunas_presentes].rename(columns=COLUNAS_FINAIS)
-    saida = saida.sort_values("Empresa").reset_index(drop=True)
+    saida = preparar_tabela_final(tabela)
 
     caminho = PROCESSED_DIR / f"Screening_Brasil_{ano_fiscal}_{date.today():%Y%m%d}.xlsx"
 
-    with pd.ExcelWriter(_caminho_longo(caminho), engine="openpyxl") as writer:
-        saida.to_excel(writer, sheet_name="Screening", index=False)
+    try:
+        with pd.ExcelWriter(_caminho_longo(caminho), engine="openpyxl") as writer:
+            saida.to_excel(writer, sheet_name="Screening", index=False)
+    except PermissionError:
+        # O arquivo do dia provavelmente está aberto no Excel — salva com um
+        # nome alternativo em vez de perder o trabalho já feito (a coleta via
+        # yfinance pra ~280 empresas leva minutos).
+        caminho = PROCESSED_DIR / f"Screening_Brasil_{ano_fiscal}_{date.today():%Y%m%d}_{int(time.time())}.xlsx"
+        print(f"⚠️ Arquivo original estava aberto/travado — salvando como {caminho.name}")
+        with pd.ExcelWriter(_caminho_longo(caminho), engine="openpyxl") as writer:
+            saida.to_excel(writer, sheet_name="Screening", index=False)
 
     _formatar(caminho)
     print(f"\n📁 Screening salvo: {caminho} ({len(saida)} empresas)")

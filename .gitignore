@@ -15,3 +15,6 @@ __pycache__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Estado interno de sessão do Claude Code (não é código do projeto)
+.claude/scheduled_tasks.lock

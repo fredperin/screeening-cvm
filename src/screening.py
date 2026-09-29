@@ -29,18 +29,97 @@ Simplificações conscientes da v1 (documentadas, não escondidas):
   circulação da unit), só quando não há ON/PN cotados separadamente.
 """
 
+import base64
+import json
 import time
 import zipfile
 from datetime import date
 
 import pandas as pd
+import requests
 
+from config.config import RAW_DIR
 from src.cvm_itr import baixar_zip_ano, baixar_cadastro, _baixar_zip_fca, _normalizar_cnpj
+
+URL_LISTA_B3 = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetInitialCompanies/{}"
 
 SETORES_FINANCEIROS = [
     "Bancos", "Intermediação Financeira", "Seguradoras", "Arrendamento Mercantil",
     "Crédito Imobiliário", "Bolsas de Valores", "Factoring", "Securitização de Recebíveis",
 ]
+
+
+def _baixar_lista_b3(forcar: bool = False) -> pd.DataFrame:
+    """
+    Baixa a lista oficial de empresas da B3 (API pública por trás de
+    sistemaswebb3-listados.b3.com.br/listedCompaniesPage), paginando até o fim.
+
+    Isso é diferente do cadastro da CVM: a CVM registra ~3x mais "companhias
+    abertas" do que realmente tem ação negociando na bolsa — securitizadoras,
+    holdings de capital fechado que só emitem dívida, etc. também são
+    "Categoria A" e "BOLSA" no cadastro da CVM, mas nunca tiveram uma ação
+    de fato listada. Essa lista da B3 é o cruzamento que resolve isso: só
+    quem tem type="1" aqui é uma ação brasileira genuinamente negociada.
+    """
+    caminho = RAW_DIR / "b3_empresas_listadas.json"
+    if caminho.exists() and not forcar:
+        idade_dias = (time.time() - caminho.stat().st_mtime) / 86400
+        if idade_dias < 7:
+            print(f"📁 Usando cache: {caminho}")
+            # dtype=str é essencial aqui: sem isso, o pandas infere "type" e
+            # "cnpj" como número ao reler o JSON, e a comparação de string
+            # com "1" (ou o zfill do CNPJ) para de bater com qualquer linha.
+            return pd.read_json(caminho, dtype=str)
+
+    print("📥 Baixando lista de empresas listadas na B3...")
+    todos = []
+    pagina = 1
+    while True:
+        params = {"language": "pt-br", "pageNumber": pagina, "pageSize": 100}
+        b64 = base64.b64encode(json.dumps(params).encode()).decode()
+        resp = requests.get(URL_LISTA_B3.format(b64), headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
+        resp.raise_for_status()
+        dados = resp.json()
+        resultados = dados.get("results", [])
+        if not resultados:
+            break
+        todos.extend(resultados)
+        if pagina >= dados["page"]["totalPages"]:
+            break
+        pagina += 1
+        time.sleep(0.15)
+
+    df = pd.DataFrame(todos)
+    df.to_json(caminho, orient="records", force_ascii=False)
+    print(f"✅ {len(df)} registros salvos em {caminho}")
+    return df
+
+
+def raizes_cnpj_realmente_listadas_b3() -> set:
+    """
+    Raiz do CNPJ (8 primeiros dígitos — identifica o grupo/empresa, não a
+    filial) de empresas com ações de fato negociadas na B3 (type="1" na API
+    da B3 — exclui BDRs, ETPs, e as milhares de "companhias abertas" da CVM
+    que nunca chegaram a listar uma ação).
+
+    Por que raiz e não o CNPJ completo: a CVM às vezes cadastra a empresa sob
+    um CNPJ (ex: filial matriz, ".../0001-XX") enquanto a B3 lista a ação sob
+    outro CNPJ do mesmo grupo (ex: ".../0003-XX") — vimos isso na prática com
+    a Tupy. Os 8 primeiros dígitos (a raiz) são estáveis entre filiais da
+    mesma empresa, então comparar só por eles evita esse falso negativo.
+
+    Limitação conhecida (não resolvida por CNPJ nenhum): empresas que
+    mudaram de domicílio societário pra uma holding estrangeira mantêm o
+    CNPJ antigo "vivo" no cadastro da CVM, mas a ação passa a ser negociada
+    por uma entidade nova com CNPJ completamente diferente — ex: JBS SA (CNPJ
+    brasileiro original) virou JBS N.V. (holding holandesa, outro CNPJ) após
+    a redomiciliação pra dupla listagem em Nova York. Isso não tem como
+    resolver comparando CNPJ; entra como exceção conhecida.
+    """
+    df = _baixar_lista_b3()
+    df = df[df["type"] == "1"]
+    cnpjs_completos = df["cnpj"].astype(str).str.zfill(14)
+    return set(cnpjs_completos.str[:8])
 
 
 def ler_contas_todas_empresas(ano: int, sigla: str, tipo: str, cd_contas: set, fonte: str = "ITR") -> pd.DataFrame:
@@ -92,7 +171,10 @@ def universo_nao_financeiro() -> pd.DataFrame:
     """
     Lista as companhias ATIVAS, negociadas em BOLSA, Categoria A (podem emitir
     ação), excluindo setores financeiros (plano de contas diferente — ver
-    conversa anterior sobre bancos/seguradoras terem estrutura própria).
+    conversa anterior sobre bancos/seguradoras terem estrutura própria) — E
+    cruzando com a lista oficial da B3 pra manter só quem tem ação de fato
+    negociada (o cadastro da CVM sozinho superestima muito esse universo:
+    ~2600 "companhias abertas" registradas nunca chegaram a listar uma ação).
     """
     caminho = baixar_cadastro()
     df = pd.read_csv(caminho, sep=";", encoding="latin1", dtype=str)
@@ -100,6 +182,9 @@ def universo_nao_financeiro() -> pd.DataFrame:
     df = df[(df["SIT"] == "ATIVO") & (df["TP_MERC"] == "BOLSA") & (df["CATEG_REG"] == "Categoria A")]
     padrao_financeiro = "|".join(SETORES_FINANCEIROS)
     df = df[~df["SETOR_ATIV"].str.contains(padrao_financeiro, case=False, na=False, regex=True)]
+
+    raizes_b3 = raizes_cnpj_realmente_listadas_b3()
+    df = df[df["CNPJ_CIA"].apply(_normalizar_cnpj).str[:8].isin(raizes_b3)]
 
     df = df.drop_duplicates(subset="CNPJ_CIA")[["CNPJ_CIA", "DENOM_SOCIAL", "SETOR_ATIV"]]
     return df.sort_values("DENOM_SOCIAL").reset_index(drop=True)

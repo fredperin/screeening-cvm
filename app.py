@@ -12,10 +12,9 @@ from datetime import date
 
 import streamlit as st
 
-from src.cvm_itr import (
-    buscar_itr, buscar_dados_cadastrais, buscar_dados_fca, listar_todas_empresas, montar_documento_padrao,
-)
+from src.cvm_itr import buscar_itr, buscar_dados_cadastrais, buscar_dados_fca, montar_documento_padrao
 from src.exportar import exportar_documento_padrao
+from src.screening import universo_nao_financeiro
 
 st.set_page_config(page_title="Central de Downloads — Dados CVM", page_icon="📊", layout="centered")
 
@@ -26,20 +25,20 @@ ANO_MAIS_ANTIGO = 2011
 @st.cache_data(show_spinner="Carregando lista de empresas da CVM...")
 def carregar_empresas() -> tuple[list, dict]:
     """
-    Busca a lista de empresas no ano mais recente disponível. Se o ano
-    corrente ainda não tiver ITR publicado, cai automaticamente pro anterior.
+    Universo de empresas não financeiras com ação de fato negociada na B3
+    (cadastro ATIVO + BOLSA + Categoria A da CVM, cruzado com a lista oficial
+    de listados da B3 — ver src/screening.universo_nao_financeiro).
     Retorna (lista_de_rotulos_ordenada, {rotulo: cnpj}).
     """
-    for ano in (ANO_ATUAL, ANO_ATUAL - 1):
-        try:
-            empresas = listar_todas_empresas(ano)
-            if not empresas.empty:
-                rotulos = [f"{row.DENOM_CIA} — {row.CNPJ_CIA}" for row in empresas.itertuples()]
-                mapa = {r: c for r, c in zip(rotulos, empresas["CNPJ_CIA"])}
-                return rotulos, mapa
-        except Exception:
-            continue
-    return [], {}
+    try:
+        empresas = universo_nao_financeiro()
+        if empresas.empty:
+            return [], {}
+        rotulos = [f"{row.DENOM_SOCIAL} — {row.CNPJ_CIA}" for row in empresas.itertuples()]
+        mapa = {r: c for r, c in zip(rotulos, empresas["CNPJ_CIA"])}
+        return rotulos, mapa
+    except Exception:
+        return [], {}
 
 
 st.title("📊 Central de Downloads — Dados CVM")
