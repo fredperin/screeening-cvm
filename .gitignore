@@ -1,0 +1,17 @@
+# Cache de dados baixados da CVM (grande, regenerável — não precisa versionar)
+data/raw/
+
+# Excels gerados (saída do programa, não código-fonte)
+data/processed/
+
+# Arquivos de teste/log temporários
+_teste_*.py
+*log*.txt
+hays_temp.json
+
+# Python
+__pycache__/
+*.pyc
+
+# Streamlit
+.streamlit/secrets.toml
