@@ -17,6 +17,7 @@ COLUNAS_FINAIS = {
     "SETOR_ATIV": "Setor",
     "ticker_on": "Ticker ON",
     "ticker_pn": "Ticker PN",
+    "ticker_unit": "Ticker Unit",
     "preco": "Preço (R$)",
     "market_cap": "Market Cap (R$)",
     "p_l": "P/L",

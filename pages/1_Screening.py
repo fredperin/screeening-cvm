@@ -79,13 +79,32 @@ filtrado = filtrado[
 
 st.subheader(f"{len(filtrado)} empresas encontradas")
 
+
+def _fmt_br(valor) -> str:
+    """
+    Formata um número grande no padrão brasileiro (ponto como separador de
+    milhar). O NumberColumn do Streamlit só sabe formatar com vírgula
+    (ex: "%,d" -> "1,234") e não tem opção de locale — por isso aqui a
+    coluna vira texto pré-formatado em vez de número. Efeito colateral
+    aceito: clicar no cabeçalho dessas duas colunas pra reordenar passa a
+    ordenar como texto, não como número (a tabela já sai ordenada por
+    Market Cap por padrão, então isso raramente importa na prática).
+    """
+    if pd.isna(valor):
+        return "-"
+    return f"{int(valor):,}".replace(",", ".")
+
+
+tabela_exibida = filtrado.sort_values("Market Cap (R$)", ascending=False, na_position="last").copy()
+tabela_exibida["Market Cap (R$)"] = tabela_exibida["Market Cap (R$)"].apply(_fmt_br)
+tabela_exibida["Volume Médio 30d"] = tabela_exibida["Volume Médio 30d"].apply(_fmt_br)
+
 st.dataframe(
-    filtrado.sort_values("Market Cap (R$)", ascending=False, na_position="last"),
+    tabela_exibida,
     use_container_width=True,
     hide_index=True,
     column_config={
         "Preço (R$)": st.column_config.NumberColumn(format="%.2f"),
-        "Market Cap (R$)": st.column_config.NumberColumn(format="%.0f"),
         "P/L": st.column_config.NumberColumn(format="%.2f"),
         "P/VP": st.column_config.NumberColumn(format="%.2f"),
         "Dividend Yield (%)": st.column_config.NumberColumn(format="%.2f"),
