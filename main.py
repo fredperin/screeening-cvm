@@ -47,10 +47,14 @@ def main():
         nome_empresa = linha["DENOM_CIA"]
         print(f"✅ {nome_empresa} — CNPJ {cnpj}")
 
-    demonstracoes = buscar_itr(cnpj, anos, tipo=args.tipo)
-    blocos = montar_documento_padrao(demonstracoes, ano_inicio=args.ano_inicio)
+    ano_aquecimento = max(args.ano_inicio - 1, 2011)  # ano extra (oculto) só pra o LTM dos 1ºs trimestres
+    demonstracoes = buscar_itr(cnpj, [ano_aquecimento] + anos, tipo=args.tipo)
+    blocos = montar_documento_padrao(demonstracoes, ano_inicio=ano_aquecimento)
     dados_cadastrais = {**buscar_dados_cadastrais(cnpj), **buscar_dados_fca(cnpj)}
-    exportar_documento_padrao(blocos, nome_empresa, args.ano_inicio, ano_fim, dados_cadastrais=dados_cadastrais)
+    exportar_documento_padrao(
+        blocos, nome_empresa, args.ano_inicio, ano_fim, dados_cadastrais=dados_cadastrais,
+        ano_exibicao=args.ano_inicio,
+    )
 
 
 if __name__ == "__main__":

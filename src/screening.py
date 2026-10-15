@@ -29,97 +29,15 @@ Simplificações conscientes da v1 (documentadas, não escondidas):
   circulação da unit), só quando não há ON/PN cotados separadamente.
 """
 
-import base64
-import json
 import time
 import zipfile
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
-import requests
 
 from config.config import RAW_DIR
-from src.cvm_itr import baixar_zip_ano, baixar_cadastro, _baixar_zip_fca, _normalizar_cnpj
-
-URL_LISTA_B3 = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetInitialCompanies/{}"
-
-SETORES_FINANCEIROS = [
-    "Bancos", "Intermediação Financeira", "Seguradoras", "Arrendamento Mercantil",
-    "Crédito Imobiliário", "Bolsas de Valores", "Factoring", "Securitização de Recebíveis",
-]
-
-
-def _baixar_lista_b3(forcar: bool = False) -> pd.DataFrame:
-    """
-    Baixa a lista oficial de empresas da B3 (API pública por trás de
-    sistemaswebb3-listados.b3.com.br/listedCompaniesPage), paginando até o fim.
-
-    Isso é diferente do cadastro da CVM: a CVM registra ~3x mais "companhias
-    abertas" do que realmente tem ação negociando na bolsa — securitizadoras,
-    holdings de capital fechado que só emitem dívida, etc. também são
-    "Categoria A" e "BOLSA" no cadastro da CVM, mas nunca tiveram uma ação
-    de fato listada. Essa lista da B3 é o cruzamento que resolve isso: só
-    quem tem type="1" aqui é uma ação brasileira genuinamente negociada.
-    """
-    caminho = RAW_DIR / "b3_empresas_listadas.json"
-    if caminho.exists() and not forcar:
-        idade_dias = (time.time() - caminho.stat().st_mtime) / 86400
-        if idade_dias < 7:
-            print(f"📁 Usando cache: {caminho}")
-            # dtype=str é essencial aqui: sem isso, o pandas infere "type" e
-            # "cnpj" como número ao reler o JSON, e a comparação de string
-            # com "1" (ou o zfill do CNPJ) para de bater com qualquer linha.
-            return pd.read_json(caminho, dtype=str)
-
-    print("📥 Baixando lista de empresas listadas na B3...")
-    todos = []
-    pagina = 1
-    while True:
-        params = {"language": "pt-br", "pageNumber": pagina, "pageSize": 100}
-        b64 = base64.b64encode(json.dumps(params).encode()).decode()
-        resp = requests.get(URL_LISTA_B3.format(b64), headers={"User-Agent": "Mozilla/5.0"}, timeout=30)
-        resp.raise_for_status()
-        dados = resp.json()
-        resultados = dados.get("results", [])
-        if not resultados:
-            break
-        todos.extend(resultados)
-        if pagina >= dados["page"]["totalPages"]:
-            break
-        pagina += 1
-        time.sleep(0.15)
-
-    df = pd.DataFrame(todos)
-    df.to_json(caminho, orient="records", force_ascii=False)
-    print(f"✅ {len(df)} registros salvos em {caminho}")
-    return df
-
-
-def raizes_cnpj_realmente_listadas_b3() -> set:
-    """
-    Raiz do CNPJ (8 primeiros dígitos — identifica o grupo/empresa, não a
-    filial) de empresas com ações de fato negociadas na B3 (type="1" na API
-    da B3 — exclui BDRs, ETPs, e as milhares de "companhias abertas" da CVM
-    que nunca chegaram a listar uma ação).
-
-    Por que raiz e não o CNPJ completo: a CVM às vezes cadastra a empresa sob
-    um CNPJ (ex: filial matriz, ".../0001-XX") enquanto a B3 lista a ação sob
-    outro CNPJ do mesmo grupo (ex: ".../0003-XX") — vimos isso na prática com
-    a Tupy. Os 8 primeiros dígitos (a raiz) são estáveis entre filiais da
-    mesma empresa, então comparar só por eles evita esse falso negativo.
-
-    Limitação conhecida (não resolvida por CNPJ nenhum): empresas que
-    mudaram de domicílio societário pra uma holding estrangeira mantêm o
-    CNPJ antigo "vivo" no cadastro da CVM, mas a ação passa a ser negociada
-    por uma entidade nova com CNPJ completamente diferente — ex: JBS SA (CNPJ
-    brasileiro original) virou JBS N.V. (holding holandesa, outro CNPJ) após
-    a redomiciliação pra dupla listagem em Nova York. Isso não tem como
-    resolver comparando CNPJ; entra como exceção conhecida.
-    """
-    df = _baixar_lista_b3()
-    df = df[df["type"] == "1"]
-    cnpjs_completos = df["cnpj"].astype(str).str.zfill(14)
-    return set(cnpjs_completos.str[:8])
+from src.cvm_itr import baixar_zip_ano, baixar_cadastro
 
 
 def ler_contas_todas_empresas(ano: int, sigla: str, tipo: str, cd_contas: set, fonte: str = "ITR") -> pd.DataFrame:
@@ -167,55 +85,30 @@ def ler_contas_todas_empresas(ano: int, sigla: str, tipo: str, cd_contas: set, f
     return df
 
 
-def universo_nao_financeiro() -> pd.DataFrame:
+CAMINHO_EMPRESAS_SELECIONADAS = Path(__file__).resolve().parent.parent / "config" / "empresas_selecionadas.csv"
+
+
+def universo_selecionado() -> pd.DataFrame:
     """
-    Lista as companhias com ação de fato negociada na B3 (fonte de verdade: a
-    lista oficial da B3 — ver raizes_cnpj_realmente_listadas_b3), excluindo
-    setores financeiros (plano de contas diferente — ver conversa anterior
-    sobre bancos/seguradoras terem estrutura própria).
+    Universo do projeto: a lista curada à mão em config/empresas_selecionadas.csv
+    (CNPJ_CIA;Empresa;Tickers), com os tickers de cada classe exatamente como
+    definidos ali. Substitui o filtro automático antigo (lista da B3 + setores):
+    quem decide quais empresas e quais tickers entram é essa lista.
 
-    Importante: esta função NÃO filtra mais por TP_MERC="BOLSA" nem
-    CATEG_REG="Categoria A" do cadastro da CVM. Testamos e esses dois campos
-    excluíam incorretamente ~470 empresas (com sobreposição: 321 por
-    TP_MERC, 189 por CATEG_REG) que a própria lista da B3 confirma estarem
-    genuinamente listadas — ou seja, esses campos da CVM não são um bom
-    proxy pra "está na bolsa de fato". A lista da B3 já é a autoridade sobre
-    isso; o cadastro da CVM entra aqui só pra dar nome e setor da empresa.
+    O cadastro da CVM entra só pra trazer o setor de atividade.
+    Retorna: CNPJ_CIA, DENOM_SOCIAL (nome da lista), SETOR_ATIV, tickers_lista (list[str]).
     """
-    caminho = baixar_cadastro()
-    cad = pd.read_csv(caminho, sep=";", encoding="latin1", dtype=str)
-    cad["_RAIZ"] = cad["CNPJ_CIA"].apply(_normalizar_cnpj).str[:8]
+    lista = pd.read_csv(CAMINHO_EMPRESAS_SELECIONADAS, sep=";", dtype=str, encoding="utf-8")
+    cad = pd.read_csv(baixar_cadastro(), sep=";", encoding="latin1", dtype=str)
+    setor_por_cnpj = cad.drop_duplicates("CNPJ_CIA").set_index("CNPJ_CIA")["SETOR_ATIV"]
 
-    # Uma raiz de CNPJ pode aparecer mais de uma vez no cadastro (filiais
-    # diferentes) — prioriza a que estiver com situação ATIVA.
-    cad = cad.sort_values("SIT", key=lambda s: s.eq("ATIVO"), ascending=False)
-    cad_por_raiz = cad.drop_duplicates(subset="_RAIZ", keep="first")
-
-    raizes_b3 = raizes_cnpj_realmente_listadas_b3()
-    df = cad_por_raiz[cad_por_raiz["_RAIZ"].isin(raizes_b3) & (cad_por_raiz["SIT"] == "ATIVO")]
-
-    padrao_financeiro = "|".join(SETORES_FINANCEIROS)
-    df = df[~df["SETOR_ATIV"].str.contains(padrao_financeiro, case=False, na=False, regex=True)]
-
-    df = df.drop_duplicates(subset="CNPJ_CIA")[["CNPJ_CIA", "DENOM_SOCIAL", "SETOR_ATIV"]]
+    df = pd.DataFrame({
+        "CNPJ_CIA": lista["CNPJ_CIA"],
+        "DENOM_SOCIAL": lista["Empresa"],
+        "SETOR_ATIV": lista["CNPJ_CIA"].map(setor_por_cnpj),
+        "tickers_lista": [[t.strip() for t in x.split("/")] for x in lista["Tickers"]],
+    })
     return df.sort_values("DENOM_SOCIAL").reset_index(drop=True)
-
-
-def ler_tickers_todas_empresas(ano: int) -> pd.DataFrame:
-    """
-    Lê o Formulário Cadastral (FCA) e retorna, para todas as empresas, os
-    tickers negociados em Bolsa (código B3, ex: WEGE3), um por linha.
-    """
-    caminho_zip = _baixar_zip_fca(ano)
-    nome_vm = f"fca_cia_aberta_valor_mobiliario_{ano}.csv"
-
-    with zipfile.ZipFile(caminho_zip) as z:
-        if nome_vm not in z.namelist():
-            return pd.DataFrame()
-        with z.open(nome_vm) as f:
-            df = pd.read_csv(f, sep=";", encoding="latin1", dtype={"CNPJ_Companhia": str})
-
-    return df[(df["Mercado"] == "Bolsa") & df["Codigo_Negociacao"].notna()]
 
 
 def _ultimo_valor_por_empresa(bruto: pd.DataFrame, cd_conta: str) -> pd.Series:
@@ -245,8 +138,8 @@ def coletar_fundamentos(ano_fiscal: int = None) -> pd.DataFrame:
     ano_fiscal = ano_fiscal or (ano_atual - 1)
     ano_anterior = ano_fiscal - 1
 
-    universo = universo_nao_financeiro()
-    print(f"📋 Universo: {len(universo)} empresas não financeiras (ativas, bolsa, categoria A)")
+    universo = universo_selecionado()
+    print(f"📋 Universo: {len(universo)} empresas (lista selecionada)")
 
     def _con_e_ind(ano, sigla, cd_contas, fonte="ITR"):
         con = ler_contas_todas_empresas(ano, sigla, "con", cd_contas, fonte)
@@ -283,33 +176,20 @@ def coletar_fundamentos(ano_fiscal: int = None) -> pd.DataFrame:
     return tabela.reset_index()
 
 
-def resolver_tickers(tabela: pd.DataFrame, ano: int = None) -> pd.DataFrame:
+def resolver_tickers(tabela: pd.DataFrame) -> pd.DataFrame:
     """
-    Adiciona o ticker ON (.../3), PN (.../4) e Unit (.../11) de cada empresa,
-    lidos do Formulário Cadastral. Uma empresa pode ter só ON, só PN, ON+PN,
-    ou só Unit — o resto do pipeline lida com qualquer combinação.
+    Separa os tickers da lista selecionada por classe: ON (final 3), Unit (final 11)
+    e PN/preferenciais (4, 5, 6...). Uma empresa pode ter qualquer combinação.
     """
-    ano = ano or date.today().year
-    tickers_df = ler_tickers_todas_empresas(ano)
-    tickers_df = tickers_df.copy()
-    tickers_df["_CNPJ_NORM"] = tickers_df["CNPJ_Companhia"].apply(_normalizar_cnpj)
-
-    def _primeiro_com_sufixo(codigos, sufixo):
-        achados = [c for c in codigos if c.endswith(sufixo)]
-        return achados[0] if achados else None
-
-    mapa_on, mapa_pn, mapa_unit = {}, {}, {}
-    for cnpj_norm, grupo in tickers_df.groupby("_CNPJ_NORM"):
-        codigos = grupo["Codigo_Negociacao"].dropna().unique().tolist()
-        mapa_on[cnpj_norm] = _primeiro_com_sufixo(codigos, "3")
-        mapa_pn[cnpj_norm] = _primeiro_com_sufixo(codigos, "4")
-        mapa_unit[cnpj_norm] = _primeiro_com_sufixo(codigos, "11")
+    def _classe(t):
+        sufixo = t[4:]
+        return "unit" if sufixo == "11" else "on" if sufixo == "3" else "pn"
 
     tabela = tabela.copy()
-    cnpj_norm = tabela["CNPJ_CIA"].apply(_normalizar_cnpj)
-    tabela["ticker_on"] = cnpj_norm.map(mapa_on)
-    tabela["ticker_pn"] = cnpj_norm.map(mapa_pn)
-    tabela["ticker_unit"] = cnpj_norm.map(mapa_unit)
+    tickers = tabela["tickers_lista"]
+    tabela["tickers_candidatos"] = tickers
+    for classe in ("on", "pn", "unit"):
+        tabela[f"ticker_{classe}"] = [" / ".join(t for t in c if _classe(t) == classe) or None for c in tickers]
     return tabela
 
 
@@ -348,11 +228,12 @@ def _dados_mercado_ticker(ticker: str) -> dict:
         divs = t.dividends
         dividendos_12m = 0.0
         if not divs.empty:
-            limite = divs.index.max() - pd.Timedelta(days=365)
+            limite = pd.Timestamp.now(tz=divs.index.tz) - pd.Timedelta(days=365)
             dividendos_12m = float(divs[divs.index >= limite].sum())
 
         return {
             "preco": preco, "acoes_em_circulacao": acoes_em_circulacao,
+            "acoes_totais_empresa": float(info.get("impliedSharesOutstanding") or 0),
             "volume_medio_30d": volume_medio, "dividendos_12m": dividendos_12m,
         }
     except Exception as e:
@@ -378,52 +259,66 @@ def buscar_dados_mercado(tabela: pd.DataFrame, pausa: float = 0.3) -> pd.DataFra
 
     market_cap, preco_referencia, dividendos_12m, volume_medio = [], [], [], []
 
+    def _consultar(ticker):
+        if ticker not in cache_ticker:
+            cache_ticker[ticker] = _dados_mercado_ticker(ticker)
+            time.sleep(pausa)
+        return cache_ticker[ticker]
+
     for i, row in enumerate(tabela.itertuples(), start=1):
         if i % 25 == 0 or i == n:
             print(f"   📈 {i}/{n} empresas consultadas no yfinance...")
 
-        cap_empresa = 0.0
-        preco_ref = None
-        div_total = 0.0
-        vol_total = 0.0
-        algum_dado = False
+        candidatos = list(row.tickers_candidatos)
+        classes_on_pn = [t for t in candidatos if not t.endswith("11")]
+        units = [t for t in candidatos if t.endswith("11")]
 
-        for ticker in [row.ticker_on, row.ticker_pn]:
-            if not ticker or pd.isna(ticker):
-                continue
-            if ticker not in cache_ticker:
-                cache_ticker[ticker] = _dados_mercado_ticker(ticker)
-                time.sleep(pausa)
-            dados = cache_ticker[ticker]
-            if not dados:
-                continue
-            algum_dado = True
-            cap_empresa += dados["preco"] * dados["acoes_em_circulacao"]
-            div_total += dados["dividendos_12m"]
-            vol_total += dados["volume_medio_30d"]
-            preco_ref = dados["preco"]  # referência de preço: a última classe válida encontrada
+        achados = {t: _consultar(t) for t in classes_on_pn}
+        achados = {t: d for t, d in achados.items() if d}
 
+        units_apenas = False
         # Sem ON nem PN cotados — tenta a Unit como aproximação
-        if not algum_dado and row.ticker_unit and pd.notna(row.ticker_unit):
-            if row.ticker_unit not in cache_ticker:
-                cache_ticker[row.ticker_unit] = _dados_mercado_ticker(row.ticker_unit)
-                time.sleep(pausa)
-            dados = cache_ticker[row.ticker_unit]
-            if dados:
-                cap_empresa = dados["preco"] * dados["acoes_em_circulacao"]
-                preco_ref = dados["preco"]
-                div_total = dados["dividendos_12m"]
-                vol_total = dados["volume_medio_30d"]
+        if not achados:
+            units_apenas = True
+            achados = {t: d for t in units if (d := _consultar(t))}
+            # Várias units: soma seria dupla contagem do mesmo capital, fica só a mais líquida
+            if len(achados) > 1:
+                melhor = max(achados, key=lambda t: achados[t]["volume_medio_30d"])
+                achados = {melhor: achados[melhor]}
 
-        market_cap.append(cap_empresa if cap_empresa else None)
-        preco_referencia.append(preco_ref)
-        dividendos_12m.append(div_total if preco_ref else None)
-        volume_medio.append(vol_total if preco_ref else None)
+        cap_total = sum(d["preco"] * d["acoes_em_circulacao"] for d in achados.values())
+        if achados and not units_apenas:
+            # Classes sem cotação (ex: a ON da Raízen, nas mãos dos controladores, ou a CEEB6)
+            # não entram na soma acima: o total de ações da empresa (impliedSharesOutstanding)
+            # inclui todas elas. As que faltam são valoradas ao preço médio das classes cotadas.
+            acoes_cotadas = sum(d["acoes_em_circulacao"] for d in achados.values())
+            # o Yahoo devolve totais diferentes por ticker da mesma empresa (PETR4 > PETR3);
+            # o menor positivo é o conservador e bate com a soma das classes quando está completa
+            totais = [d["acoes_totais_empresa"] for d in achados.values() if d["acoes_totais_empresa"] > 0]
+            total_empresa = min(totais) if totais else 0
+            faltam = total_empresa - acoes_cotadas
+            if faltam > 0.02 * total_empresa:
+                cap_total += faltam * cap_total / acoes_cotadas
+
+        if achados:
+            # Preço e dividendos vêm da classe mais líquida (somar dividendos de ON+PN e dividir
+            # por um preço só dobraria o yield); market cap e volume somam todas as classes
+            ref = max(achados.values(), key=lambda d: d["volume_medio_30d"])
+            market_cap.append(cap_total or None)
+            preco_referencia.append(ref["preco"])
+            dividendos_12m.append(ref["dividendos_12m"])
+            volume_medio.append(sum(d["volume_medio_30d"] for d in achados.values()))
+        else:
+            market_cap.append(None)
+            preco_referencia.append(None)
+            dividendos_12m.append(None)
+            volume_medio.append(None)
 
     tabela["preco"] = preco_referencia
     tabela["market_cap"] = market_cap
     tabela["dividendos_12m_por_acao"] = dividendos_12m
     tabela["volume_medio_30d"] = volume_medio
+
     return tabela
 
 
@@ -446,22 +341,16 @@ def calcular_indicadores(tabela: pd.DataFrame) -> pd.DataFrame:
 
 
 def montar_screening(ano_fiscal: int = None, pausa_yfinance: float = 0.3) -> pd.DataFrame:
-    """Orquestra o pipeline inteiro: fundamentos (CVM) → tickers (FCA) → mercado (yfinance) → indicadores."""
+    """Orquestra o pipeline inteiro: fundamentos (CVM) → tickers (lista selecionada) → mercado (yfinance) → indicadores."""
     tabela = coletar_fundamentos(ano_fiscal)
     tabela = resolver_tickers(tabela)
     print(f"📈 Buscando preço/dividendos/volume no yfinance para {len(tabela)} empresas...")
     tabela = buscar_dados_mercado(tabela, pausa=pausa_yfinance)
     tabela = calcular_indicadores(tabela)
 
-    # "Listada na B3" (type=1) não é sinônimo de "compra de fato": muitas
-    # dessas empresas são SPVs de infraestrutura ou holdings com o ticker
-    # formalmente ativo mas 100% nas mãos do controlador, sem free float —
-    # o yfinance não retorna preço porque não existe book de ofertas. Sem
-    # preço não dá pra calcular P/L, P/VP nem participar do screening de
-    # forma útil, então essas linhas saem do resultado final (eram ~metade
-    # do universo bruto — número real, não um filtro conservador demais).
-    antes = len(tabela)
-    tabela = tabela[tabela["preco"].notna()].reset_index(drop=True)
-    print(f"🚫 {antes - len(tabela)} empresas sem negociação real (sem preço) removidas do resultado final")
+    # A lista é curada à mão, então empresa sem cotação no Yahoo NÃO sai do resultado
+    # (fica com preço/market cap vazios; o dashboard esconde essas por padrão).
+    sem_preco = tabela[tabela["preco"].isna()]
+    print(f"⚠️ {len(sem_preco)} empresas da lista sem preço no yfinance: {', '.join(sem_preco['ticker_on'].fillna(sem_preco['ticker_pn']).fillna(sem_preco['ticker_unit']).astype(str))}")
 
     return tabela

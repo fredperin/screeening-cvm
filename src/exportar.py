@@ -98,6 +98,7 @@ ROTULOS_CADASTRO = {
 
 def exportar_documento_padrao(
     blocos: list, nome_empresa: str, ano_inicio: int, ano_fim: int = None, dados_cadastrais: dict = None,
+    ano_exibicao: int = None,
 ) -> Path:
     """
     Exporta o documento padrão do projeto: DRE, Balanço Patrimonial e DFC
@@ -114,6 +115,9 @@ def exportar_documento_padrao(
         nome_empresa:     usado no nome do arquivo
         ano_inicio:       primeiro ano buscado (nome do arquivo)
         ano_fim:          último ano buscado (nome do arquivo)
+        ano_exibicao:     se informado, períodos de anos anteriores ficam na aba Demonstrações
+                          só como colunas OCULTAS (alimentam o LTM dos primeiros trimestres
+                          da aba de indicadores) em vez de aparecerem
         dados_cadastrais: opcional — saída de buscar_dados_cadastrais(); se informado,
                           vira uma aba "Cadastro" separada (setor, situação, tipo de
                           mercado, controle acionário, auditor etc. — não é dado
@@ -165,6 +169,17 @@ def exportar_documento_padrao(
             linha += 1 + len(df) + 2
 
     _formatar_documento_padrao(caminho, aba, blocos_posicionados)
+
+    from src.indicadores import adicionar_aba_indicadores
+    wb = load_workbook(_caminho_longo(caminho))
+    adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=ano_exibicao)
+    if ano_exibicao:
+        ws = wb[aba]
+        primeiro_df = next(df for _, df in blocos if df is not None and not df.empty)
+        for k, rotulo in enumerate(primeiro_df.columns, start=2):
+            if 2000 + int(rotulo[-2:]) < ano_exibicao:
+                ws.column_dimensions[get_column_letter(k)].hidden = True
+    wb.save(_caminho_longo(caminho))
     print(f"\n📁 Arquivo salvo: {caminho}")
     return caminho
 

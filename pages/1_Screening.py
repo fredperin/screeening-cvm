@@ -1,6 +1,6 @@
 """
-1_Screening.py — Dashboard de screening: visão de cima de todas as empresas
-não financeiras da B3, com filtros, pra achar candidatas antes de aprofundar
+1_Screening.py — Dashboard de screening: visão de cima das empresas da lista
+selecionada (config/empresas_selecionadas.csv), com filtros, pra achar candidatas antes de aprofundar
 na Central de Downloads.
 
 Lê um CSV pré-calculado (data/screening/screening_atual.csv) em vez de rodar
@@ -25,7 +25,7 @@ def carregar_screening() -> pd.DataFrame:
     return pd.read_csv(CAMINHO_CSV)
 
 
-st.title("🔎 Screening — Empresas Não Financeiras (B3)")
+st.title("🔎 Screening — Empresas Selecionadas (B3)")
 
 if not CAMINHO_CSV.exists():
     st.error(

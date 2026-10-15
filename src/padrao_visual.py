@@ -251,10 +251,12 @@ def preparar_bloco(tabela: pd.DataFrame, classificacao: dict, modo_data: str) ->
         tabela.attrs["estilos"] = []
         return tabela
 
-    estilos = [classificacao.get(cod, "detalhe") for cod in tabela.index.get_level_values("CD_CONTA")]
+    codigos = list(tabela.index.get_level_values("CD_CONTA"))
+    estilos = [classificacao.get(cod, "detalhe") for cod in codigos]
 
     tabela = tabela.droplevel("CD_CONTA").copy()
     tabela.columns = [_formatar_rotulo_data(c, modo_data) for c in tabela.columns]
     tabela = tabela.fillna(0)
     tabela.attrs["estilos"] = estilos
+    tabela.attrs["codigos"] = codigos  # usado pela aba de indicadores pra achar cada conta na planilha
     return tabela

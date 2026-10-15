@@ -14,7 +14,7 @@ import streamlit as st
 
 from src.cvm_itr import buscar_itr, buscar_dados_cadastrais, buscar_dados_fca, montar_documento_padrao
 from src.exportar import exportar_documento_padrao
-from src.screening import universo_nao_financeiro
+from src.screening import universo_selecionado
 
 st.set_page_config(page_title="Central de Downloads — Dados CVM", page_icon="📊", layout="centered")
 
@@ -22,33 +22,35 @@ ANO_ATUAL = date.today().year
 ANO_MAIS_ANTIGO = 2011
 
 
-@st.cache_data(show_spinner="Carregando lista de empresas da CVM...")
-def carregar_empresas() -> tuple[list, dict]:
+@st.cache_data(show_spinner="Carregando lista de empresas...")
+def carregar_empresas() -> tuple[list, dict, dict]:
     """
-    Universo de empresas não financeiras com ação de fato negociada na B3
-    (cadastro ATIVO + BOLSA + Categoria A da CVM, cruzado com a lista oficial
-    de listados da B3 — ver src/screening.universo_nao_financeiro).
-    Retorna (lista_de_rotulos_ordenada, {rotulo: cnpj}).
+    Empresas da lista selecionada (config/empresas_selecionadas.csv — ver
+    src/screening.universo_selecionado). Retorna
+    (rótulos_ordenados, {rótulo: cnpj}, {rótulo: nome_da_empresa}).
     """
     try:
-        empresas = universo_nao_financeiro()
+        empresas = universo_selecionado()
         if empresas.empty:
-            return [], {}
-        rotulos = [f"{row.DENOM_SOCIAL} — {row.CNPJ_CIA}" for row in empresas.itertuples()]
-        mapa = {r: c for r, c in zip(rotulos, empresas["CNPJ_CIA"])}
-        return rotulos, mapa
+            return [], {}, {}
+        rotulos = [f"{row.DENOM_SOCIAL} ({' / '.join(row.tickers_lista)}) — {row.CNPJ_CIA}" for row in empresas.itertuples()]
+        return (
+            rotulos,
+            dict(zip(rotulos, empresas["CNPJ_CIA"])),
+            dict(zip(rotulos, empresas["DENOM_SOCIAL"])),
+        )
     except Exception:
-        return [], {}
+        return [], {}, {}
 
 
 st.title("📊 Central de Downloads — Dados CVM")
 st.caption(
-    "Gera um Excel com DRE, Balanço Patrimonial e DFC de qualquer empresa não "
-    "financeira listada na CVM, no padrão do projeto (cores, contas principais, "
+    "Gera um Excel com DRE, Balanço Patrimonial, DFC e indicadores LTM de qualquer empresa "
+    "da lista de empresas selecionadas, no padrão do projeto (cores, contas principais, "
     "períodos alinhados)."
 )
 
-rotulos, mapa_cnpj = carregar_empresas()
+rotulos, mapa_cnpj, mapa_nome = carregar_empresas()
 
 if not rotulos:
     st.error("Não foi possível carregar a lista de empresas da CVM agora. Verifique sua conexão e recarregue a página.")
@@ -77,7 +79,7 @@ if gerar and rotulo_escolhido:
         st.stop()
 
     cnpj = mapa_cnpj[rotulo_escolhido]
-    nome_empresa = rotulo_escolhido.split(" — ")[0]
+    nome_empresa = mapa_nome[rotulo_escolhido]
     anos = list(range(int(ano_inicio), int(ano_fim) + 1))
 
     captura = io.StringIO()
@@ -87,11 +89,15 @@ if gerar and rotulo_escolhido:
     with st.spinner(f"Buscando dados de {nome_empresa} na CVM... (pode levar alguns minutos na primeira vez)"):
         try:
             with contextlib.redirect_stdout(captura):
-                demonstracoes = buscar_itr(cnpj, anos, tipo=tipo)
-                blocos = montar_documento_padrao(demonstracoes, ano_inicio=int(ano_inicio))
+                # Um ano a mais pra trás: os 3 primeiros trimestres do intervalo só têm LTM se
+                # houver os trimestres do ano anterior (ficam ocultos na planilha).
+                ano_aquecimento = max(int(ano_inicio) - 1, ANO_MAIS_ANTIGO)
+                demonstracoes = buscar_itr(cnpj, [ano_aquecimento] + anos, tipo=tipo)
+                blocos = montar_documento_padrao(demonstracoes, ano_inicio=ano_aquecimento)
                 dados_cadastrais = {**buscar_dados_cadastrais(cnpj), **buscar_dados_fca(cnpj)}
                 caminho_arquivo = exportar_documento_padrao(
                     blocos, nome_empresa, int(ano_inicio), int(ano_fim), dados_cadastrais=dados_cadastrais,
+                    ano_exibicao=int(ano_inicio),
                 )
         except Exception as e:
             erro = e
