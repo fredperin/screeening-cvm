@@ -14,7 +14,7 @@ import streamlit as st
 
 from src.cvm_itr import buscar_itr, buscar_dados_cadastrais, buscar_dados_fca, montar_documento_padrao
 from src.exportar import exportar_documento_padrao
-from src.screening import universo_selecionado
+from src.screening import CAMINHO_EMPRESAS_SELECIONADAS, universo_selecionado
 
 st.set_page_config(page_title="Central de Downloads — Dados CVM", page_icon="📊", layout="centered")
 
@@ -23,7 +23,7 @@ ANO_MAIS_ANTIGO = 2011
 
 
 @st.cache_data(show_spinner="Carregando lista de empresas...")
-def carregar_empresas() -> tuple[list, dict, dict]:
+def carregar_empresas(versao_arquivo: float) -> tuple[list, dict, dict]:
     """
     Empresas da lista selecionada (config/empresas_selecionadas.csv — ver
     src/screening.universo_selecionado). Retorna
@@ -50,7 +50,7 @@ st.caption(
     "períodos alinhados)."
 )
 
-rotulos, mapa_cnpj, mapa_nome = carregar_empresas()
+rotulos, mapa_cnpj, mapa_nome = carregar_empresas(CAMINHO_EMPRESAS_SELECIONADAS.stat().st_mtime)
 
 if not rotulos:
     st.error("Não foi possível carregar a lista de empresas da CVM agora. Verifique sua conexão e recarregue a página.")

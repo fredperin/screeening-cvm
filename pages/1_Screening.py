@@ -21,7 +21,9 @@ CAMINHO_DATA = CAMINHO_CSV.parent / "ultima_atualizacao.txt"
 
 
 @st.cache_data
-def carregar_screening() -> pd.DataFrame:
+def carregar_screening(versao_arquivo: float) -> pd.DataFrame:
+    # versao_arquivo (data de modificação do CSV) só existe pra invalidar o cache quando o
+    # arquivo muda num novo deploy — sem ela o Streamlit continua servindo o CSV antigo.
     return pd.read_csv(CAMINHO_CSV)
 
 
@@ -34,7 +36,7 @@ if not CAMINHO_CSV.exists():
     )
     st.stop()
 
-df = carregar_screening()
+df = carregar_screening(CAMINHO_CSV.stat().st_mtime)
 
 if CAMINHO_DATA.exists():
     st.caption(f"Última atualização: {CAMINHO_DATA.read_text(encoding='utf-8').strip()} — {len(df)} empresas")
