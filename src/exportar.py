@@ -180,6 +180,9 @@ def exportar_documento_padrao(
             if 2000 + int(rotulo[-2:]) < ano_exibicao:
                 ws.column_dimensions[get_column_letter(k)].hidden = True
     wb.save(_caminho_longo(caminho))
+
+    from src.indicadores import gravar_valores_em_cache
+    gravar_valores_em_cache(_caminho_longo(caminho), load_workbook(_caminho_longo(caminho)))
     print(f"\n📁 Arquivo salvo: {caminho}")
     return caminho
 

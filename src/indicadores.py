@@ -246,3 +246,93 @@ def adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=None
         ws.column_dimensions[col_ind(j)].width = 14
     ws.freeze_panes = ws.cell(cabecalho + 1, 2)
     print(f"  ✅ Aba '{ABA_INDICADORES}' criada ({len(linhas_saida)} linhas, {n} períodos)")
+
+
+# --- valores em cache ------------------------------------------------------
+# O openpyxl grava a fórmula sem o resultado. Excel em Modo de Exibição Protegido
+# (todo arquivo baixado), visualizadores web e celular não recalculam, então as
+# células apareceriam vazias. Aqui o resultado é calculado em Python (a gramática
+# das fórmulas desta aba é pequena: SUM, + - * /, IFERROR) e gravado junto.
+
+_REF_DEM = re.compile(r"'Demonstrações'!\$?([A-Z]{1,3})\$?(\d+)(?::\$?([A-Z]{1,3})\$?(\d+))?")
+_REF_LOCAL = re.compile(r"(?<![A-Za-z!'])\$?([A-Z]{1,3})\$?(\d+)(?![\d(])")
+
+
+def _valores_em_cache(wb):
+    from openpyxl.utils import column_index_from_string
+
+    dem, ind = wb[ABA_DEMONSTRACOES], wb[ABA_INDICADORES]
+    memo = {}
+
+    def num(v):
+        return float(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0.0
+
+    def celula_dem(col, lin):
+        return num(dem[f"{col}{lin}"].value)
+
+    def intervalo_dem(c1, l1, c2, l2):
+        return [num(dem.cell(r, c).value)
+                for r in range(int(l1), int(l2) + 1)
+                for c in range(column_index_from_string(c1), column_index_from_string(c2) + 1)]
+
+    def celula_ind(ref):
+        if ref not in memo:
+            valor = ind[ref].value
+            memo[ref] = avaliar(valor[1:]) if isinstance(valor, str) and valor.startswith("=") else num(valor)
+        return memo[ref]
+
+    def soma(*args):
+        return sum(sum(a) if isinstance(a, list) else a for a in args)
+
+    def iferror(fn, alternativa):
+        try:
+            return fn()
+        except (ZeroDivisionError, TypeError):
+            return alternativa
+
+    def avaliar(formula):
+        def dem_ref(m):
+            c1, l1, c2, l2 = m.groups()
+            if c2:
+                return f"_I('{c1}',{l1},'{c2}',{l2})"
+            return f"_D('{c1}',{l1})"
+        expr = _REF_DEM.sub(dem_ref, formula)
+        partes = re.split(r"(_[ID]\([^)]*\))", expr)  # não mexe nas referências já convertidas
+        expr = "".join(p if p.startswith(("_I(", "_D(")) else _REF_LOCAL.sub(lambda m: f"_L('{m.group(1)}{m.group(2)}')", p) for p in partes)
+        expr = expr.replace("SUM(", "_S(").replace("IFERROR(", "_E(lambda:")
+        return eval(expr, {"__builtins__": {}, "_D": celula_dem, "_I": intervalo_dem, "_L": celula_ind, "_S": soma, "_E": iferror})
+
+    resultados = {}
+    for linha in ind.iter_rows():
+        for cell in linha:
+            if isinstance(cell.value, str) and cell.value.startswith("="):
+                resultados[cell.coordinate] = celula_ind(cell.coordinate)
+    return resultados
+
+
+def gravar_valores_em_cache(caminho, wb):
+    """Reabre o .xlsx salvo e injeta o resultado calculado de cada fórmula da aba de indicadores."""
+    import zipfile
+    from xml.sax.saxutils import escape
+
+    valores = _valores_em_cache(wb)
+    indice = wb.sheetnames.index(ABA_INDICADORES) + 1
+    nome_xml = f"xl/worksheets/sheet{indice}.xml"
+
+    def injetar(m):
+        ref, atributos, formula = m.group(1), m.group(2) or "", m.group(3)
+        valor = valores.get(ref)
+        if valor is None:
+            return m.group(0)
+        if isinstance(valor, str):
+            return f'<c r="{ref}"{atributos} t="str"><f>{formula}</f><v>{escape(valor)}</v></c>'
+        return f'<c r="{ref}"{atributos}><f>{formula}</f><v>{valor!r}</v></c>'
+
+    with zipfile.ZipFile(caminho) as origem:
+        arquivos = {n: origem.read(n) for n in origem.namelist()}
+    xml = arquivos[nome_xml].decode("utf-8")
+    xml = re.sub(r'<c r="([A-Z]+\d+)"( s="\d+")?><f>(.*?)</f><v></v></c>', injetar, xml)
+    arquivos[nome_xml] = xml.encode("utf-8")
+    with zipfile.ZipFile(caminho, "w", zipfile.ZIP_DEFLATED) as destino:
+        for nome, dados in arquivos.items():
+            destino.writestr(nome, dados)
