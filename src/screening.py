@@ -147,7 +147,10 @@ def coletar_fundamentos(ano_fiscal: int = None) -> pd.DataFrame:
         return con, ind
 
     def _valor_com_fallback(con, ind, cd_conta):
-        return _ultimo_valor_por_empresa(con, cd_conta).combine_first(_ultimo_valor_por_empresa(ind, cd_conta))
+        # Consolidado zerado conta como ausente: a TIM publicou o DFP 2025 consolidado com
+        # receita e lucro 0, mas o individual traz os valores reais.
+        consolidado = _ultimo_valor_por_empresa(con, cd_conta)
+        return consolidado.where(consolidado != 0).combine_first(_ultimo_valor_por_empresa(ind, cd_conta))
 
     print("🔎 Balanço (posição mais recente)...")
     bpa_con, bpa_ind = _con_e_ind(ano_atual, "BPA", {"1", "1.01"})
@@ -337,7 +340,8 @@ def calcular_indicadores(tabela: pd.DataFrame) -> pd.DataFrame:
     tabela["p_vp"] = tabela["market_cap"] / tabela["patrimonio_liquido"]
     tabela["dividend_yield_pct"] = tabela["dividendos_12m_por_acao"] / tabela["preco"] * 100
 
-    return tabela
+    # Divisão por lucro/PL zero vira infinito; no screening isso é "sem dado".
+    return tabela.replace([float("inf"), float("-inf")], float("nan"))
 
 
 def montar_screening(ano_fiscal: int = None, pausa_yfinance: float = 0.3) -> pd.DataFrame:
