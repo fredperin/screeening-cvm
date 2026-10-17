@@ -44,11 +44,11 @@ def montar_blocos(base, tipo="con"):
 
 
 def fator_escala(base):
-    """Fator para reais. Se a empresa mudou de escala ao longo dos anos, devolve None."""
-    escalas = base["ESCALA_MOEDA"].dropna().unique()
-    if len(escalas) == 1:
-        return ESCALAS.get(escalas[0], 1)
-    return None
+    """Fator para reais da escala do envio mais recente (os blocos já vêm convertidos para ela)."""
+    validas = base.dropna(subset=["ESCALA_MOEDA"])
+    if validas.empty:
+        return 1
+    return ESCALAS.get(validas.loc[validas["DT_REFER"].idxmax(), "ESCALA_MOEDA"], 1)
 
 
 def mes_fim_exercicio(base):
@@ -65,16 +65,9 @@ def processar(empresa, log):
 
     with contextlib.redirect_stdout(log):
         blocos = montar_blocos(base)
-        fator = fator_escala(base)
-        if fator is None:
-            # Escala mista entre anos: refaz os blocos com tudo já convertido para reais
-            convertida = base.copy()
-            convertida["VL_CONTA"] = convertida["VL_CONTA"] * convertida["ESCALA_MOEDA"].map(ESCALAS).fillna(1)
-            blocos_reais, fator = montar_blocos(convertida), 1
-        else:
-            blocos_reais = blocos
+    fator = fator_escala(base)
 
-    q, notas = montar_trimestral(blocos_reais, fator, base)
+    q, notas = montar_trimestral(blocos, fator, base)
     visoes = adicionar_indicadores(aplicar_anual_dfp(montar_visoes(q, mes_fim_exercicio(base)), base))
     dados = {
         "id": id_empresa(empresa.tickers_lista),

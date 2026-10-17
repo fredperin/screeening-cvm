@@ -119,11 +119,22 @@ def adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=None
     def arrend(j, onde):
         return float(arrendamentos.get(rotulos[j], {}).get(onde, 0.0))
 
+    por_desc = por_titulo["DFC (Método Indireto)"].attrs.get("por_descricao") or {}
+    linhas_desc = por_titulo["DFC (Método Indireto)"].attrs.get("por_descricao_linhas") or {}
+
+    def ltm_desc(nome, j, sinal=1):
+        """Soma dos 4 trimestres da série calculada por descrição em cada envio (valor, não fórmula)."""
+        serie = por_desc.get(nome)
+        if not serie:
+            return None
+        return repr(sinal * sum(serie.get(r, 0.0) for r in rotulos[j - 3: j + 1]))
+
     linhas_da = dfc.linhas_por_descricao("6.01.01", PADRAO_DA, EXCLUI_DA)
     linhas_capex = dfc.linhas_por_descricao("6.02", PADRAO_CAPEX, EXCLUI_CAPEX)
 
     # --- cabeçalho -----------------------------------------------------
-    ws["A1"] = "Indicadores — sempre trailing 12 meses (LTM)"
+    unidade = {"MIL": "R$ mil", "UNIDADE": "R$"}.get(por_titulo["Balanço Patrimonial"].attrs.get("escala"), "")
+    ws["A1"] = "Indicadores — sempre trailing 12 meses (LTM)" + (f" · valores em {unidade}" if unidade else "")
     ws["A2"] = "Alíquota de IR/CSLL para o NOPAT (editável)"
     ws["B2"] = 0.34
     ws["B2"].number_format = "0%"
@@ -155,13 +166,14 @@ def adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=None
     linha("Receita Líquida", FMT_NUM, lambda j: ltm(dre, "3.01", j))
     linha("Lucro Bruto", FMT_NUM, lambda j: ltm(dre, "3.03", j))
     linha("EBIT (Resultado antes do resultado financeiro e tributos)", FMT_NUM, lambda j: ltm(dre, "3.05", j))
-    linha("Depreciação e Amortização (aprox., ver Notas)", FMT_NUM, lambda j: ltm_linhas(dfc, linhas_da, j) or "0")
+    linha("Depreciação e Amortização (aprox., ver Notas)", FMT_NUM, lambda j: ltm_desc("da", j) or ltm_linhas(dfc, linhas_da, j) or "0")
     linha("EBITDA", FMT_NUM, lambda j: f"{c('EBIT (Resultado antes do resultado financeiro e tributos)', j)}+{c('Depreciação e Amortização (aprox., ver Notas)', j)}")
     linha("Resultado Financeiro", FMT_NUM, lambda j: ltm(dre, "3.06", j))
     linha("Lucro Antes dos Tributos", FMT_NUM, lambda j: ltm(dre, "3.07", j))
     linha("Lucro Líquido (consolidado)", FMT_NUM, lambda j: ltm(dre, "3.11", j))
     linha("Fluxo de Caixa Operacional (FCO)", FMT_NUM, lambda j: ltm(dfc, "6.01", j))
-    linha("Capex (aprox., ver Notas)", FMT_NUM, lambda j: (f"-{ltm_linhas(dfc, linhas_capex, j)}" if linhas_capex else "0"))
+    linha("Capex (aprox., ver Notas)", FMT_NUM,
+          lambda j: ltm_desc("capex", j, sinal=-1) or (f"-{ltm_linhas(dfc, linhas_capex, j)}" if linhas_capex else "0"))
     linha("Fluxo de Caixa Livre (FCO − Capex)", FMT_NUM, lambda j: f"{c('Fluxo de Caixa Operacional (FCO)', j)}-{c('Capex (aprox., ver Notas)', j)}")
 
     # --- seção 2: posição ----------------------------------------------
@@ -244,8 +256,10 @@ def adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=None
         "Dívida sem arrendamentos = empréstimos − arrendamentos lançados dentro deles. Dívida com arrendamentos = empréstimos + arrendamentos em outras contas.",
         "ROIC = EBIT × (1 − alíquota da célula B2) ÷ (Dívida Líquida sem arrendamentos + PL) do fim do período — não usa capital médio.",
         "EBITDA = EBIT + D&A. D&A e Capex NÃO são contas padronizadas da CVM: são somadas por descrição na DFC e podem divergir do número divulgado pela empresa.",
-        "D&A (DFC 6.01.01): " + ("; ".join(dfc.descricoes[r - dfc.linha_dados] for r in linhas_da) or "nenhuma linha encontrada — D&A = 0 e o EBITDA fica igual ao EBIT"),
-        "Capex (DFC 6.02, sinal invertido): " + ("; ".join(dfc.descricoes[r - dfc.linha_dados] for r in linhas_capex) or "nenhuma linha encontrada — Capex = 0"),
+        "D&A e Capex são valores (não fórmulas): em cada envio da CVM somam-se as linhas cuja descrição casa e depois isola-se o trimestre — o mesmo cálculo do site, imune a contas renumeradas entre anos.",
+        "D&A (DFC 6.01.01): " + ("; ".join(linhas_desc.get("da") or [dfc.descricoes[r - dfc.linha_dados] for r in linhas_da]) or "nenhuma linha encontrada — D&A = 0 e o EBITDA fica igual ao EBIT"),
+        "Capex (DFC 6.02, sinal invertido): " + ("; ".join(linhas_desc.get("capex") or [dfc.descricoes[r - dfc.linha_dados] for r in linhas_capex]) or "nenhuma linha encontrada — Capex = 0"),
+        "Unidade: " + {"MIL": "R$ mil", "UNIDADE": "R$"}.get(por_titulo["Balanço Patrimonial"].attrs.get("escala"), "a mesma da aba Demonstrações") + " (todas as colunas convertidas para a escala do envio mais recente da CVM).",
     ]
     for nota in notas:
         linha_atual += 1

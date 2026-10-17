@@ -548,6 +548,55 @@ def _juntar_mesmo_item_com_codigos_diferentes(bruto: pd.DataFrame, sigla: str) -
     return bruto
 
 
+_ESCALAS = {"MIL": 1000, "UNIDADE": 1}
+
+
+def _unificar_escala(bruto: pd.DataFrame):
+    """
+    Algumas empresas mudam a escala entre envios (milhares num ano, reais no outro — ex.:
+    Pague Menos). Converte tudo para a escala do envio mais recente, para as colunas da
+    planilha ficarem na mesma unidade. Retorna (DataFrame, escala usada).
+    """
+    if "ESCALA_MOEDA" not in bruto.columns or bruto["ESCALA_MOEDA"].dropna().empty:
+        return bruto, None
+    recente = bruto.loc[bruto["DT_REFER"].idxmax(), "ESCALA_MOEDA"]
+    if bruto["ESCALA_MOEDA"].nunique() > 1 and recente in _ESCALAS:
+        bruto = bruto.copy()
+        fator = bruto["ESCALA_MOEDA"].map(_ESCALAS).fillna(_ESCALAS[recente]) / _ESCALAS[recente]
+        bruto["VL_CONTA"] = bruto["VL_CONTA"] * fator
+        bruto["ESCALA_MOEDA"] = recente
+    return bruto, recente
+
+
+def _series_por_descricao(bruto: pd.DataFrame) -> dict:
+    """
+    D&A, capex e dividendos pagos por trimestre isolado, somando as linhas cuja descrição
+    casa em CADA envio (o mesmo cálculo do site). Imune a códigos renumerados ou
+    renomeados entre envios. Chaves: data de fim (AAAA-MM-DD).
+    """
+    from src.indicadores import EXCLUI_CAPEX, EXCLUI_DA, PADRAO_CAPEX, PADRAO_DA
+    from src.padrao_visual import isolar_trimestres
+
+    padrao_div = re.compile(r"dividend|juros sobre (?:o )?capital|\bjcp\b", re.I)
+    regras = {"da": ("6.01.01", PADRAO_DA, EXCLUI_DA), "capex": ("6.02", PADRAO_CAPEX, EXCLUI_CAPEX),
+              "dividendos": ("6.03", padrao_div, re.compile(r"receb", re.I))}
+    if "DT_INI_EXERC" not in bruto.columns:
+        return {}
+    periodo = bruto["DT_INI_EXERC"].astype(str) + " a " + bruto["DT_FIM_EXERC"].astype(str)
+    todos = sorted(periodo.unique())
+    saida = {"linhas": {}}
+    for nome, (prefixo, padrao, exclui) in regras.items():
+        nivel = prefixo.count(".") + 1
+        cd, ds = bruto["CD_CONTA"], bruto["DS_CONTA"].astype(str)
+        casa = (cd.str.startswith(prefixo + ".") & (cd.str.count(r"\.") == nivel)
+                & ds.str.contains(padrao) & ~ds.str.contains(exclui))
+        soma = bruto.loc[casa, "VL_CONTA"].groupby(periodo[casa]).sum().reindex(todos, fill_value=0.0)
+        isolada = isolar_trimestres(pd.DataFrame([soma]), preferir_derivado=True).iloc[0]
+        saida[nome] = {c.split(" a ")[1]: float(v) for c, v in isolada.items()}
+        saida["linhas"][nome] = sorted(ds[casa].str.strip().unique())
+    return saida
+
+
 def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
     """
     Busca as 5 demonstrações do ITR (BPA, BPP, DRE, DFC_MI, DMPL) para uma
@@ -597,10 +646,15 @@ def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
 
         bruto_total = pd.concat(blocos, ignore_index=True) if blocos else pd.DataFrame()
 
+        escala = None
+        por_descricao = None
         if not bruto_total.empty:
+            bruto_total, escala = _unificar_escala(bruto_total)
             bruto_total = _validar_periodos(bruto_total, sigla)
             if sigla in ("BPA", "BPP", "DFC_MI"):
                 bruto_total = _manter_ultimo_envio_por_periodo(bruto_total)
+                if sigla == "DFC_MI":
+                    por_descricao = _series_por_descricao(bruto_total)
                 bruto_total = _separar_contas_reaproveitadas(bruto_total, sigla)
             bruto_total = _normalizar_descricoes(bruto_total)
 
@@ -624,6 +678,9 @@ def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
         else:
             pivotada = _pivotar_padrao(bruto_total)
 
+        pivotada.attrs["escala"] = escala
+        if por_descricao is not None:
+            pivotada.attrs["por_descricao"] = por_descricao
         resultado[titulo] = pivotada
 
     return resultado
@@ -758,7 +815,18 @@ def montar_documento_padrao(
         rotulo: {k: float(arrendamentos[k].get(c, 0.0)) for k in ("dentro", "fora")}
         for c, rotulo in zip(colunas_balanco, balanco.columns)
     } if not arrendamentos.empty else {}
+    colunas_dfc = list(dfc.columns)
     dfc = preparar_bloco(dfc, CLASSIFICACAO_DFC, modo_data="fim")
+    # Séries calculadas por descrição (D&A, capex, dividendos), por rótulo de coluna
+    por_desc = demonstracoes.get("Demonstração do Fluxo de Caixa (Método Indireto)", pd.DataFrame()).attrs.get("por_descricao") or {}
+    if por_desc:
+        fim = {c: c.split(" a ")[-1] for c in colunas_dfc}
+        dfc.attrs["por_descricao"] = {
+            nome: {rotulo: valores.get(fim[c], 0.0) for c, rotulo in zip(colunas_dfc, dfc.columns)}
+            for nome, valores in por_desc.items() if nome != "linhas"
+        }
+        dfc.attrs["por_descricao_linhas"] = por_desc.get("linhas", {})
+    balanco.attrs["escala"] = demonstracoes.get("Balanço Patrimonial Passivo", pd.DataFrame()).attrs.get("escala")
 
     return [
         ("DRE", dre),

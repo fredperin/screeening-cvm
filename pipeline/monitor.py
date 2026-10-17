@@ -39,6 +39,17 @@ def checar_cvm():
     return f"ITR {ano} disponível ({tamanho // 1_000_000} MB, atualizado {modificado})"
 
 
+def checar_cvm_ipe_fre():
+    ano = date.today().year
+    saida = []
+    for nome, url in (("IPE", f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/IPE/DADOS/ipe_cia_aberta_{ano}.zip"),
+                      ("FRE", f"https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FRE/DADOS/fre_cia_aberta_{ano}.zip")):
+        r = requests.head(url, timeout=60)
+        r.raise_for_status()
+        saida.append(f"{nome} {int(r.headers.get('Content-Length', 0)) // 1_000_000} MB")
+    return ", ".join(saida)
+
+
 def checar_cvm_cadastro():
     r = requests.get("https://dados.cvm.gov.br/dados/CIA_ABERTA/CAD/DADOS/cad_cia_aberta.csv", timeout=60, stream=True)
     r.raise_for_status()
@@ -142,6 +153,7 @@ CHECAGENS = {
     "Atualização (pipeline)": checar_atualizacao,
     "CVM — ITR/DFP": checar_cvm,
     "CVM — cadastro": checar_cvm_cadastro,
+    "CVM — fatos relevantes e Formulário de Referência": checar_cvm_ipe_fre,
     "B3 — dados da empresa": checar_b3_empresa,
     "B3 — histórico de proventos": checar_b3_proventos,
     "B3 — cotação": checar_b3_cotacao,

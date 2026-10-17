@@ -185,9 +185,10 @@ function cartao(rotulo, valor, det = "") {
 }
 
 async function paginaInicio() {
-  const [macro, tesouro, di, mercado] = await Promise.all([
+  const [macro, tesouro, di, mercado, fatos] = await Promise.all([
     dados("dados/macro.json").catch(() => null), dados("dados/tesouro.json").catch(() => null),
     dados("dados/curva_di.json").catch(() => null), dados("dados/mercado.json").catch(() => null),
+    dados("dados/eventos_recentes.json").catch(() => null),
   ]);
   const s = macro ? macro.series : {};
   const selic = ultimo(s.selic_meta), ipca = ultimo(s.ipca_12m), cdi = ultimo(s.cdi), usd = ultimo(s.usd), real = ultimo(s.juro_real);
@@ -218,6 +219,13 @@ async function paginaInicio() {
           <td>${esc(e.tickers[0])} <span class="sub">${esc(e.nome.slice(0, 22))}</span></td><td>${dataBR(e.ultimo_periodo)}</td>
           <td>${reais(e.receita_tri)}</td><td class="${classeSinal(e.cresc_receita_tri)}">${pct(e.cresc_receita_tri)}</td>
           <td>${reais(e.lucro_tri)}</td><td class="${classeSinal(e.cresc_lucro_tri)}">${pct(e.cresc_lucro_tri)}</td></tr>`).join("")}
+      </table></div></div>
+      <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
+        <tr><th>Data</th><th>Papel</th><th style="text-align:left">Assunto</th></tr>
+        ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 40).map((e) => `<tr><td>${dataBR(e.data)}</td>
+          <td><a href="#/empresa/${esc(e.id)}">${esc(e.id)}</a></td>
+          <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")
+          : `<tr><td colspan="3" class="sub">Sem fatos relevantes recentes.</td></tr>`}
       </table></div></div>
       <div class="painel"><h2>Próximos proventos (data-com ou pagamento futuros)</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Papel</th><th>Tipo</th><th>Data-com</th><th>Pagamento</th><th>R$/ação</th></tr>
@@ -303,9 +311,10 @@ const INDICADORES_LTM = [
 
 async function paginaEmpresa(id) {
   ULTIMO_DIV = null;
-  const [emp, mercado, prov] = await Promise.all([
+  const [emp, mercado, prov, ficha, eventos] = await Promise.all([
     dados(`dados/empresas/${id}.json`), dados("dados/mercado.json").catch(() => ({ empresas: [] })),
-    dados(`dados/proventos/${id}.json`).catch(() => null),
+    dados(`dados/proventos/${id}.json`).catch(() => null), dados(`dados/fichas/${id}.json`).catch(() => null),
+    dados(`dados/eventos/${id}.json`).catch(() => null),
   ]);
   const m = mercado.empresas.find((x) => x.id === id) || {};
   const ltm = emp.ltm, n = ltm.periodos.length - 1;
@@ -332,6 +341,13 @@ async function paginaEmpresa(id) {
       ${cartao("DY 12m", pct(m.dy_12m, 2), "proventos B3 (data-com 12m) ÷ preço atual")}
       ${cartao("ROE / ROIC", `${pct(L("roe"))} / ${pct(L("roic"))}`, "LTM")}
     </div>
+    <div class="grade secao" style="margin-bottom:14px">
+      <div class="painel" id="ficha"></div>
+      <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Eventos (CVM)</h2>
+        <div class="seletor" id="sel-ev">${OPCOES_EVENTOS.map(([k, r]) => `<button data-k="${k}" class="${k === "todos" ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
+        <div class="rolagem rolagem-y" id="lista-eventos"></div>
+        <div class="nota">Fatos relevantes, comunicados ao mercado e avisos aos acionistas dos últimos 3 anos, com link para o documento oficial na CVM.</div></div>
+    </div>
     <div class="cabecalho"><h2 style="margin:0">Resultados</h2>
       <div class="seletor" id="visao">${["trimestral", "semestral", "anual"].map((v) => `<button data-v="${v}" class="${v === VISAO ? "ativo" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</div></div>
     <div class="grade" id="graficos-empresa"></div>
@@ -345,6 +361,13 @@ async function paginaEmpresa(id) {
     document.querySelectorAll("#visao button").forEach((x) => x.classList.toggle("ativo", x === b));
     desenharGraficosEmpresa(emp);
   });
+  desenharFicha(ficha);
+  desenharEventos(eventos, "todos");
+  document.getElementById("sel-ev").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    document.querySelectorAll("#sel-ev button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenharEventos(eventos, b.dataset.k);
+  });
   desenharGraficosEmpresa(emp);
   desenharIndicadores(emp);
   desenharDividendos(emp, prov, m);
@@ -357,6 +380,51 @@ async function paginaEmpresa(id) {
     Capex: ${esc((nt.capex || []).join("; ") || "nenhuma linha encontrada")}<br>
     Dividendos pagos: ${esc((nt.dividendos || []).join("; ") || "nenhuma linha encontrada")}<br>
     Dívida bruta sem IFRS 16 = empréstimos, financiamentos e debêntures (CP + LP); com IFRS 16 = soma também os passivos de arrendamento, identificados pela descrição no balanço.`;
+}
+
+const OPCOES_EVENTOS = [["todos", "Todos"], ["fato", "Fatos relevantes"], ["comunicado", "Comunicados"], ["aviso", "Avisos"]];
+const NOME_CATEGORIA = { fato: "Fato relevante", comunicado: "Comunicado", aviso: "Aviso aos acionistas" };
+
+function desenharEventos(eventos, filtro) {
+  const lista = ((eventos && eventos.eventos) || []).filter((e) => filtro === "todos" || e.categoria === filtro);
+  document.getElementById("lista-eventos").innerHTML = lista.length ? `<table class="tabela">
+    <tr><th>Data</th><th style="text-align:left">Tipo</th><th style="text-align:left">Assunto</th></tr>
+    ${lista.slice(0, 150).map((e) => `<tr><td>${dataBR(e.data)}</td><td style="text-align:left" class="${e.categoria === "fato" ? "" : "sub"}">${NOME_CATEGORIA[e.categoria]}</td>
+      <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")}</table>`
+    : `<p class="sub">Nenhum documento desse tipo nos últimos 3 anos.</p>`;
+}
+
+function desenharFicha(f) {
+  const area = document.getElementById("ficha");
+  if (!f) { area.innerHTML = `<h2>Sobre a empresa</h2><p class="sub">Ficha indisponível.</p>`; return; }
+  const n0 = (v) => (v == null ? "—" : v.toLocaleString("pt-BR", { maximumFractionDigits: 0 }));
+  const acionistas = (f.acionistas || []).slice(0, 8);
+  const porOrgao = {};
+  (f.administracao || []).forEach((a) => (porOrgao[a.orgao || "Outros"] = porOrgao[a.orgao || "Outros"] || []).push(a));
+  const ordem = ["Conselho de Administração", "Diretoria e Conselho de Administração", "Diretoria", "Conselho Fiscal"];
+  const orgaos = Object.keys(porOrgao).sort((a, b) => (ordem.indexOf(a) + 9) % 9 - (ordem.indexOf(b) + 9) % 9);
+  area.innerHTML = `
+    <h2>Sobre a empresa</h2>
+    ${f.descricao ? `<p style="margin:0 0 8px;line-height:1.6">${esc(f.descricao)}</p>` : ""}
+    <div class="nota">${[f.segmento, f.site ? `<a href="${esc(/^https?:/i.test(f.site) ? f.site : "https://" + f.site)}" target="_blank" rel="noopener">${esc(f.site)}</a>` : null,
+      f.fre ? `<a href="${esc(f.fre.link)}" target="_blank" rel="noopener">Formulário de Referência ${esc(f.fre.referencia.slice(0, 4))} (v${esc(f.fre.versao)})</a>` : null].filter(Boolean).join(" · ")}</div>
+    <div class="grade-cartoes" style="margin-top:10px">
+      ${cartao("Free float", f.free_float != null ? `${num(f.free_float, 1)}%` : "—", "ações em circulação")}
+      ${cartao("Acionistas", f.base_acionistas ? n0((f.base_acionistas.pf || 0) + (f.base_acionistas.pj || 0) + (f.base_acionistas.institucionais || 0)) : "—",
+        f.base_acionistas ? `PF ${n0(f.base_acionistas.pf)} · PJ ${n0(f.base_acionistas.pj)} · inst. ${n0(f.base_acionistas.institucionais)}` : "")}
+      ${cartao("Empregados", n0(f.empregados), "")}
+      ${cartao("Remuneração da administração", f.remuneracao ? reais(f.remuneracao.total) : "—", f.remuneracao ? `total pago em ${f.remuneracao.exercicio}` : "")}
+    </div>
+    <div class="sub" style="margin:8px 0 4px;color:var(--ambar)">Principais acionistas</div>
+    <table class="tabela"><tr><th>Acionista</th><th>% total</th><th>% ON</th><th>% PN</th></tr>
+      ${acionistas.map((a) => `<tr><td style="white-space:normal">${esc(a.nome)}${a.controlador ? ' <span class="sub">(controlador)</span>' : ""}</td>
+        <td>${num(a.pct_total, 2)}%</td><td>${num(a.pct_on, 2)}%</td><td>${num(a.pct_pn, 2)}%</td></tr>`).join("")}</table>
+    <details style="margin-top:8px"><summary class="sub" style="cursor:pointer">Administração (${(f.administracao || []).length}) e auditor</summary>
+      ${orgaos.map((o) => `<div class="sub" style="margin:8px 0 2px;color:var(--ambar)">${esc(o)}</div>
+        ${porOrgao[o].map((a) => `<div style="padding:2px 0">${esc(a.nome)} <span class="sub">— ${esc(a.cargo || "")}</span></div>`).join("")}`).join("")}
+      ${f.auditor ? `<div class="sub" style="margin-top:8px">Auditor: ${esc(f.auditor.nome)}${f.auditor.desde ? ` (desde ${dataBR(f.auditor.desde)})` : ""}</div>` : ""}
+    </details>
+    <div class="nota" style="margin-top:6px">Fonte: Formulário de Referência e Formulário Cadastral (CVM).</div>`;
 }
 
 function desenharGraficosEmpresa(emp) {

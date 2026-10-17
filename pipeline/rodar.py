@@ -16,7 +16,7 @@ import sys
 import traceback
 from datetime import date, datetime, timezone
 
-from pipeline import DIR_DADOS_SITE
+from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO
 
 
 def _etapa(nome, funcao, status):
@@ -32,8 +32,24 @@ def _etapa(nome, funcao, status):
         return None
 
 
+ARQUIVOS_QUE_GERAM_EMPRESAS = [
+    "src/cvm_itr.py", "src/padrao_visual.py", "src/indicadores.py", "src/exportar.py",
+    "pipeline/series_empresa.py", "pipeline/gerar_empresas.py", "config/empresas_selecionadas.csv",
+]
+
+
+def versao_do_codigo():
+    """Impressão digital do código que monta JSON/Excel das empresas: mudou -> regerar tudo."""
+    import hashlib
+    from pipeline import RAIZ
+    h = hashlib.sha1()
+    for nome in ARQUIVOS_QUE_GERAM_EMPRESAS:
+        h.update((RAIZ / nome).read_bytes())
+    return h.hexdigest()
+
+
 def main(tudo=False):
-    from pipeline import curva_di, macro, mercado, tesouro
+    from pipeline import curva_di, eventos, ficha, macro, mercado, tesouro
     from pipeline.cvm_lote import atualizar_base_cvm
     from pipeline.gerar_empresas import DIR_EMPRESAS, gerar_indice
     from pipeline.gerar_empresas import main as gerar_empresas
@@ -44,14 +60,22 @@ def main(tudo=False):
     _etapa("tesouro", tesouro.gerar, status)
     _etapa("curva_di", curva_di.gerar, status)
     _etapa("mercado", mercado.gerar, status)
+    _etapa("eventos", eventos.gerar, status)
+    _etapa("ficha", ficha.gerar, status)
 
     cnpjs = set(universo_selecionado()["CNPJ_CIA"].str.replace(r"\D", "", regex=True))
     reprocessados = _etapa("cvm_base", lambda: atualizar_base_cvm(cnpjs), status) or []
     sem_arquivos = not any(DIR_EMPRESAS.glob("*.json"))
-    if tudo or reprocessados or sem_arquivos or date.today().weekday() == 0:
-        motivo = "tudo" if tudo else "cvm atualizada" if reprocessados else "sem arquivos" if sem_arquivos else "atualização semanal"
+    arq_versao = DIR_INTERMEDIARIO / "versao_codigo_empresas.txt"
+    versao = versao_do_codigo()
+    codigo_mudou = not arq_versao.exists() or arq_versao.read_text() != versao
+    if tudo or reprocessados or sem_arquivos or codigo_mudou or date.today().weekday() == 0:
+        motivo = ("tudo" if tudo else "cvm atualizada" if reprocessados else "sem arquivos" if sem_arquivos
+                  else "código mudou" if codigo_mudou else "atualização semanal")
         print(f"Gerando empresas ({motivo}); ZIPs reprocessados: {reprocessados}")
         _etapa("empresas", gerar_empresas, status)
+        if status.get("empresas", {}).get("ok"):
+            arq_versao.write_text(versao)
     _etapa("indice", gerar_indice, status)
 
     status_final = {"atualizado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
