@@ -125,14 +125,25 @@ def montar_trimestral(blocos, fator, base):
         notas[{"da": "da", "capex": "capex", "div_pagos": "dividendos"}[nome]] = usadas
     q["ebitda"] = q["ebit"] + q["da"]
     q["fcf"] = q["fco"] - q["capex"]
-    q["divida_bruta"] = q[["emprest_cp", "emprest_lp"]].sum(axis=1, min_count=1)
-    q["divida_liquida"] = q["divida_bruta"].fillna(0) - q["caixa"].fillna(0) - q["aplicacoes"].fillna(0)
+
+    # Arrendamentos IFRS 16 por data (identificados no Passivo completo — ver cvm_itr.arrendamentos_no_passivo)
+    arr = por_titulo["Balanço Patrimonial"].attrs.get("arrendamentos", {})
+    arr_por_data = {datetime.strptime(r, "%d/%m/%y").date(): v for r, v in arr.items()}
+    dentro = pd.Series({d: arr_por_data.get(d, {}).get("dentro", 0.0) * fator for d in q.index})
+    fora = pd.Series({d: arr_por_data.get(d, {}).get("fora", 0.0) * fator for d in q.index})
+    emprestimos = q[["emprest_cp", "emprest_lp"]].sum(axis=1, min_count=1)
+    caixa_total = q["caixa"].fillna(0) + q["aplicacoes"].fillna(0)
+    q["arrendamentos"] = dentro + fora
+    q["divida_bruta"] = emprestimos - dentro                      # sem arrendamentos
+    q["divida_bruta_ifrs16"] = emprestimos.fillna(0) + fora        # com arrendamentos (IFRS 16)
+    q["divida_liquida"] = q["divida_bruta"].fillna(0) - caixa_total
+    q["divida_liquida_ifrs16"] = q["divida_bruta_ifrs16"] - caixa_total
     q = q.sort_index()
     return q, notas
 
 
 FLUXOS_TODOS = list(FLUXOS) + ["da", "capex", "div_pagos", "ebitda", "fcf"]
-SALDOS_TODOS = list(SALDOS) + ["divida_bruta", "divida_liquida"]
+SALDOS_TODOS = list(SALDOS) + ["arrendamentos", "divida_bruta", "divida_liquida", "divida_bruta_ifrs16", "divida_liquida_ifrs16"]
 
 
 def _agregar(q, grupos):
@@ -261,10 +272,12 @@ def adicionar_indicadores(visoes, aliquota=0.34):
         v["capex_da"] = _div_pos(v["capex"], v["da"])
         v["liquidez_corrente"] = _div(v["ativo_circ"], v["passivo_circ"])
         v["dl_pl"] = _div_pos(v["divida_liquida"], v["pl"])
+        v["dl_pl_ifrs16"] = _div_pos(v["divida_liquida_ifrs16"], v["pl"])
 
         # Múltiplos e retornos sempre sobre o LTM da mesma data, em qualquer visão
         base = ltm.reindex(v.index)
         v["dl_ebitda"] = _div_pos(v["divida_liquida"], base["ebitda"])
+        v["dl_ebitda_ifrs16"] = _div_pos(v["divida_liquida_ifrs16"], base["ebitda"])
         v["roe"] = _div_pos(base["lucro_liquido"], v["pl"])
         v["roa"] = _div_pos(base["lucro_liquido"], v["ativo_total"])
         v["roic"] = _div_pos(base["ebit"] * (1 - aliquota), v["divida_liquida"] + v["pl"])

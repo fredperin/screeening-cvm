@@ -433,6 +433,121 @@ def _avisar_conflitos_de_valor(bruto: pd.DataFrame, chave: list, sigla: str) -> 
     print(conflitantes.reset_index().to_string(index=False))
 
 
+# Contas de nível 3+ da DFC e 4+ do Balanço não são padronizadas pela CVM: cada empresa
+# numera as suas e pode reaproveitar um código para outro item em outro ano (a Klabin usou
+# 6.03.05 para "Dividendos pagos" até 2022 e para outra linha depois).
+_CONTAS_PADRAO_DFC = {"6.01.01", "6.01.02", "6.01.03", "6.05.01", "6.05.02"}
+_PALAVRAS_VAZIAS = {"de", "da", "do", "das", "dos", "e", "a", "o", "as", "os", "em", "no", "na", "nos", "nas",
+                    "com", "para", "por", "sobre", "s", "sob", "ao", "aos"}
+
+
+def _conta_propria_da_empresa(cd: str, sigla: str) -> bool:
+    nivel = cd.count(".") + 1
+    if sigla == "DFC_MI":
+        return nivel >= 3 and cd not in _CONTAS_PADRAO_DFC
+    if sigla in ("BPA", "BPP"):
+        return nivel >= 4
+    return False
+
+
+def _manter_ultimo_envio_por_periodo(bruto: pd.DataFrame) -> pd.DataFrame:
+    """
+    Para cada período, fica só o envio mais recente que o contém (todas as contas do
+    mesmo documento). Evita juntar, no mesmo período, a numeração antiga e a nova de
+    uma empresa que reorganizou as contas próprias.
+    """
+    periodo = bruto["DT_FIM_EXERC"].astype(str)
+    if "DT_INI_EXERC" in bruto.columns:
+        periodo = bruto["DT_INI_EXERC"].astype(str) + "|" + periodo
+    envio = bruto["DT_REFER"].astype(str) + "|" + bruto["VERSAO"].astype(str).str.zfill(4)
+    return bruto[envio == envio.groupby(periodo).transform("max")]
+
+
+def _tokens(texto: str) -> set:
+    import unicodedata
+    t = unicodedata.normalize("NFKD", str(texto)).encode("ascii", "ignore").decode().lower()
+    palavras = re.sub(r"[^a-z0-9]+", " ", t).split()
+    # radical de 5 letras: junta plural e flexões ("depreciações"/"depreciação", "provisão"/"provisões");
+    # "pagos"/"pagamento" e "recebidos"/"recebimento" viram o mesmo radical
+    radicais = set()
+    for p in palavras:
+        if p in _PALAVRAS_VAZIAS:
+            continue
+        radicais.add("pag" if p.startswith("pag") else "receb" if p.startswith("receb") else p[:5])
+    return radicais
+
+
+# Palavras que mudam o sentido da linha: se aparecem num nome e não no outro, não é a mesma conta
+_RADICAIS_DE_SENTIDO = {"resga", "aquis", "venda", "alien", "capta", "amort", "pag", "receb", "baixa", "aumen",
+                        "reduc", "emiss", "recom", "integ", "entra", "saida", "exaus", "depre", "valor", "justo"}
+
+
+def _mesma_conta(a: str, b: str) -> bool:
+    ta, tb = _tokens(a), _tokens(b)
+    if not ta or not tb or (ta ^ tb) & _RADICAIS_DE_SENTIDO:
+        return False
+    return len(ta & tb) / len(ta | tb) >= 0.5
+
+
+def _separar_contas_reaproveitadas(bruto: pd.DataFrame, sigla: str) -> pd.DataFrame:
+    """
+    Quando o mesmo código próprio da empresa aparece com descrições de itens diferentes
+    em anos diferentes, cada significado vira uma linha separada ("6.03.05" para o atual,
+    "6.03.05~1" para o anterior...). Variações só de texto ("Custo com"/"Custos com")
+    continuam juntas.
+    """
+    novos = {}
+    for cd, grupo in bruto.groupby("CD_CONTA"):
+        if not _conta_propria_da_empresa(cd, sigla):
+            continue
+        recencia = grupo.groupby("DS_CONTA")["DT_REFER"].max().sort_values(ascending=False)
+        if len(recencia) < 2:
+            continue
+        representantes = []  # descrição mais recente de cada significado
+        for desc in recencia.index:
+            k = next((i for i, rep in enumerate(representantes) if _mesma_conta(desc, rep)), None)
+            if k is None:
+                representantes.append(desc)
+                k = len(representantes) - 1
+            if k:
+                novos[(cd, desc)] = f"{cd}~{k}"
+    bruto = bruto.copy()
+    if novos:
+        chave = list(zip(bruto["CD_CONTA"], bruto["DS_CONTA"]))
+        bruto["CD_CONTA"] = [novos.get(c, c[0]) for c in chave]
+    return _juntar_mesmo_item_com_codigos_diferentes(bruto, sigla)
+
+
+def _juntar_mesmo_item_com_codigos_diferentes(bruto: pd.DataFrame, sigla: str) -> pd.DataFrame:
+    """
+    O inverso: o mesmo item que mudou de código entre anos (WEG: "Imobilizado" em 6.02.01
+    e depois em 6.02.02) vira uma linha só, no código mais recente — desde que as duas
+    linhas nunca apareçam no mesmo período (aí seriam itens distintos com nome parecido).
+    """
+    periodo = bruto["DT_FIM_EXERC"].astype(str)
+    if "DT_INI_EXERC" in bruto.columns:
+        periodo = bruto["DT_INI_EXERC"].astype(str) + "|" + periodo
+    info = (bruto.assign(_PER=periodo).groupby("CD_CONTA")
+            .agg(desc=("DS_CONTA", lambda d: d.loc[bruto.loc[d.index, "DT_REFER"].idxmax()]),
+                 recente=("DT_REFER", "max"), periodos=("_PER", lambda x: set(x))))
+    destino = {}
+    for pai, grupo in info.groupby(lambda cd: cd.split("~")[0].rsplit(".", 1)[0]):
+        candidatos = [cd for cd in grupo.sort_values("recente", ascending=False).index
+                      if _conta_propria_da_empresa(cd.split("~")[0], sigla)]
+        grupos = []  # [código representante, descrição, períodos ocupados]
+        for cd in candidatos:
+            desc, pers = grupo.at[cd, "desc"], grupo.at[cd, "periodos"]
+            alvo = next((g for g in grupos if not (g[2] & pers) and _mesma_conta(desc, g[1])), None)
+            if alvo is None:
+                grupos.append([cd, desc, set(pers)])
+            else:
+                destino[cd] = alvo[0]
+                alvo[2] |= pers
+    if destino:
+        bruto["CD_CONTA"] = bruto["CD_CONTA"].map(lambda cd: destino.get(cd, cd))
+    return bruto
+
+
 def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
     """
     Busca as 5 demonstrações do ITR (BPA, BPP, DRE, DFC_MI, DMPL) para uma
@@ -483,8 +598,11 @@ def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
         bruto_total = pd.concat(blocos, ignore_index=True) if blocos else pd.DataFrame()
 
         if not bruto_total.empty:
-            bruto_total = _normalizar_descricoes(bruto_total)
             bruto_total = _validar_periodos(bruto_total, sigla)
+            if sigla in ("BPA", "BPP", "DFC_MI"):
+                bruto_total = _manter_ultimo_envio_por_periodo(bruto_total)
+                bruto_total = _separar_contas_reaproveitadas(bruto_total, sigla)
+            bruto_total = _normalizar_descricoes(bruto_total)
 
             chave = ["CD_CONTA", "DT_FIM_EXERC"]
             if "DT_INI_EXERC" in bruto_total.columns:
@@ -509,6 +627,38 @@ def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
         resultado[titulo] = pivotada
 
     return resultado
+
+
+_PADRAO_ARRENDAMENTO = re.compile(r"arrendament|leasing|direito de uso", re.I)
+_EXCLUI_ARRENDAMENTO = re.compile(r"receb", re.I)
+_CONTAS_DIVIDA = ("2.01.04", "2.02.01")
+
+
+def arrendamentos_no_passivo(bpp: pd.DataFrame) -> pd.DataFrame:
+    """
+    Passivos de arrendamento (IFRS 16) por data, identificados pela descrição em
+    qualquer nível do Passivo (circulante e não circulante). Separa o que a empresa
+    lançou DENTRO de empréstimos e financiamentos (2.01.04/2.02.01, já somado à dívida)
+    do que está FORA (em outras obrigações). Em cada ramo conta só a linha mais alta que
+    casa, para não somar pai e filho.
+    Retorna DataFrame com colunas "dentro" e "fora", indexado pela data (como no BP).
+    """
+    if bpp is None or bpp.empty:
+        return pd.DataFrame()
+    cods = bpp.index.get_level_values("CD_CONTA")
+    descs = bpp.index.get_level_values("DS_CONTA")
+    casam = [
+        i for i, (cd, desc) in enumerate(zip(cods, descs))
+        if cd.startswith(("2.01.", "2.02.")) and cd.count(".") >= 2
+        and _PADRAO_ARRENDAMENTO.search(str(desc)) and not _EXCLUI_ARRENDAMENTO.search(str(desc))
+    ]
+    base = {cods[i].split("~")[0] for i in casam}
+    topo = [i for i in casam
+            if not any(cods[i].split("~")[0].startswith(outro + ".") for outro in base if outro != cods[i].split("~")[0])]
+    dentro = [i for i in topo if cods[i].startswith(_CONTAS_DIVIDA)]
+    fora = [i for i in topo if not cods[i].startswith(_CONTAS_DIVIDA)]
+    soma = lambda idx: bpp.iloc[idx].sum() if idx else pd.Series(0.0, index=bpp.columns)
+    return pd.DataFrame({"dentro": soma(dentro), "fora": soma(fora)}).fillna(0.0)
 
 
 def filtrar_nivel(tabela: pd.DataFrame, nivel_maximo: int) -> pd.DataFrame:
@@ -585,8 +735,29 @@ def montar_documento_padrao(
 
     dre, balanco, dfc = alinhar_periodos(dre, balanco, dfc)
 
+    # Contas próprias da empresa (DFC nível 3+) sem valor em nenhum período exibido saem:
+    # depois de separar/juntar códigos reaproveitados, sobram linhas vazias que só poluem
+    def _sem_linhas_proprias_vazias(tabela, sigla):
+        if tabela.empty:
+            return tabela
+        cods = tabela.index.get_level_values("CD_CONTA")
+        propria = [_conta_propria_da_empresa(c.split("~")[0], sigla) for c in cods]
+        vazia = tabela.fillna(0).eq(0).all(axis=1)
+        return tabela[~(pd.Series(propria, index=tabela.index) & vazia)]
+
+    dfc = _sem_linhas_proprias_vazias(dfc, "DFC_MI")
+
+    arrendamentos = arrendamentos_no_passivo(demonstracoes.get("Balanço Patrimonial Passivo", pd.DataFrame()))
+
     dre = preparar_bloco(dre, CLASSIFICACAO_DRE, modo_data="fim")
+    colunas_balanco = list(balanco.columns)
     balanco = preparar_bloco(balanco, CLASSIFICACAO_BP, modo_data="unica")
+    # Arrendamentos (IFRS 16) não aparecem no nível 3 do Balanço: seguem junto do bloco,
+    # por data, para a aba de indicadores e o site calcularem a dívida com e sem eles
+    balanco.attrs["arrendamentos"] = {
+        rotulo: {k: float(arrendamentos[k].get(c, 0.0)) for k in ("dentro", "fora")}
+        for c, rotulo in zip(colunas_balanco, balanco.columns)
+    } if not arrendamentos.empty else {}
     dfc = preparar_bloco(dfc, CLASSIFICACAO_DFC, modo_data="fim")
 
     return [

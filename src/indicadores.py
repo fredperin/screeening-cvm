@@ -114,6 +114,11 @@ def adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=None
             return None
         return "SUM(" + ",".join(f"{aba}{col(j - 3)}{r}:{col(j)}{r}" for r in linhas) + ")"
 
+    arrendamentos = por_titulo["Balanço Patrimonial"].attrs.get("arrendamentos", {})
+
+    def arrend(j, onde):
+        return float(arrendamentos.get(rotulos[j], {}).get(onde, 0.0))
+
     linhas_da = dfc.linhas_por_descricao("6.01.01", PADRAO_DA, EXCLUI_DA)
     linhas_capex = dfc.linhas_por_descricao("6.02", PADRAO_CAPEX, EXCLUI_CAPEX)
 
@@ -163,13 +168,21 @@ def adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=None
     secao("POSIÇÃO — saldo no fim de cada período")
     linha("Caixa e Equivalentes", FMT_NUM, lambda j: pontual(bp, "1.01.01", j) or "0")
     linha("Aplicações Financeiras", FMT_NUM, lambda j: pontual(bp, "1.01.02", j) or "0")
-    linha("Dívida Bruta (empréstimos CP + LP)", FMT_NUM,
+    linha("Empréstimos, financiamentos e debêntures (CP + LP)", FMT_NUM,
           lambda j: "+".join(x for x in (pontual(bp, "2.01.04", j), pontual(bp, "2.02.01", j)) if x) or "0")
-    linha("Dívida Líquida", FMT_NUM,
-          lambda j: f"{c('Dívida Bruta (empréstimos CP + LP)', j)}-{c('Caixa e Equivalentes', j)}-{c('Aplicações Financeiras', j)}")
+    linha("Arrendamentos IFRS 16 dentro de empréstimos (valor, ver Notas)", FMT_NUM, lambda j: repr(arrend(j, "dentro")))
+    linha("Arrendamentos IFRS 16 em outras contas (valor, ver Notas)", FMT_NUM, lambda j: repr(arrend(j, "fora")))
+    linha("Dívida Bruta sem arrendamentos", FMT_NUM,
+          lambda j: f"{c('Empréstimos, financiamentos e debêntures (CP + LP)', j)}-{c('Arrendamentos IFRS 16 dentro de empréstimos (valor, ver Notas)', j)}")
+    linha("Dívida Bruta com arrendamentos (IFRS 16)", FMT_NUM,
+          lambda j: f"{c('Empréstimos, financiamentos e debêntures (CP + LP)', j)}+{c('Arrendamentos IFRS 16 em outras contas (valor, ver Notas)', j)}")
+    linha("Dívida Líquida sem arrendamentos", FMT_NUM,
+          lambda j: f"{c('Dívida Bruta sem arrendamentos', j)}-{c('Caixa e Equivalentes', j)}-{c('Aplicações Financeiras', j)}")
+    linha("Dívida Líquida com arrendamentos (IFRS 16)", FMT_NUM,
+          lambda j: f"{c('Dívida Bruta com arrendamentos (IFRS 16)', j)}-{c('Caixa e Equivalentes', j)}-{c('Aplicações Financeiras', j)}")
     linha("Patrimônio Líquido (incl. não controladores)", FMT_NUM, lambda j: pontual(bp, "2.03", j))
-    linha("Capital Investido (Dívida Líquida + PL)", FMT_NUM,
-          lambda j: f"{c('Dívida Líquida', j)}+{c('Patrimônio Líquido (incl. não controladores)', j)}")
+    linha("Capital Investido (Dívida Líquida sem arrendamentos + PL)", FMT_NUM,
+          lambda j: f"{c('Dívida Líquida sem arrendamentos', j)}+{c('Patrimônio Líquido (incl. não controladores)', j)}")
 
     # --- seção 3: indicadores -------------------------------------------
     secao("INDICADORES")
@@ -181,12 +194,14 @@ def adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=None
     linha("Margem EBIT", FMT_PCT, lambda j: div(c("EBIT (Resultado antes do resultado financeiro e tributos)", j), c("Receita Líquida", j)))
     linha("Margem Líquida", FMT_PCT, lambda j: div(c("Lucro Líquido (consolidado)", j), c("Receita Líquida", j)))
     linha("Margem FCF (FCF / Receita)", FMT_PCT, lambda j: div(c("Fluxo de Caixa Livre (FCO − Capex)", j), c("Receita Líquida", j)))
-    linha("Dívida Líquida / EBITDA", FMT_X, lambda j: div(c("Dívida Líquida", j), c("EBITDA", j)))
-    linha("Dívida Líquida / Patrimônio Líquido", FMT_X, lambda j: div(c("Dívida Líquida", j), c("Patrimônio Líquido (incl. não controladores)", j)))
+    linha("Dívida Líquida / EBITDA — sem arrendamentos", FMT_X, lambda j: div(c("Dívida Líquida sem arrendamentos", j), c("EBITDA", j)))
+    linha("Dívida Líquida / EBITDA — com arrendamentos (IFRS 16)", FMT_X, lambda j: div(c("Dívida Líquida com arrendamentos (IFRS 16)", j), c("EBITDA", j)))
+    linha("Dívida Líquida / PL — sem arrendamentos", FMT_X, lambda j: div(c("Dívida Líquida sem arrendamentos", j), c("Patrimônio Líquido (incl. não controladores)", j)))
+    linha("Dívida Líquida / PL — com arrendamentos (IFRS 16)", FMT_X, lambda j: div(c("Dívida Líquida com arrendamentos (IFRS 16)", j), c("Patrimônio Líquido (incl. não controladores)", j)))
     linha("Liquidez Corrente", FMT_X, lambda j: div(pontual(bp, "1.01", j), pontual(bp, "2.01", j)))
     linha("ROE (Lucro Líquido LTM / PL final)", FMT_PCT, lambda j: div(c("Lucro Líquido (consolidado)", j), c("Patrimônio Líquido (incl. não controladores)", j)))
     linha("ROIC (NOPAT LTM / Capital Investido final)", FMT_PCT,
-          lambda j: div(f"{c('EBIT (Resultado antes do resultado financeiro e tributos)', j)}*(1-{ALIQ})", c("Capital Investido (Dívida Líquida + PL)", j)))
+          lambda j: div(f"{c('EBIT (Resultado antes do resultado financeiro e tributos)', j)}*(1-{ALIQ})", c("Capital Investido (Dívida Líquida sem arrendamentos + PL)", j)))
     linha("Conversão de Caixa (FCO / EBITDA)", FMT_PCT, lambda j: div(c("Fluxo de Caixa Operacional (FCO)", j), c("EBITDA", j)))
     linha("Conversão de Lucro (FCF / Lucro Líquido)", FMT_PCT, lambda j: div(c("Fluxo de Caixa Livre (FCO − Capex)", j), c("Lucro Líquido (consolidado)", j)))
 
@@ -224,8 +239,10 @@ def adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=None
     notas = [
         "LTM = soma dos últimos 4 trimestres seguidos da DRE/DFC; fica em branco se a empresa não publicou algum desses trimestres.",
         "Saldos (caixa, dívida, PL) são os do fim do trimestre. 'n/d' = divisão por zero.",
-        "Dívida Bruta = Empréstimos e Financiamentos do Passivo Circulante (2.01.04) + Não Circulante (2.02.01). Não inclui arrendamentos nem debêntures lançadas em outras contas.",
-        "ROIC = EBIT × (1 − alíquota da célula B2) ÷ (Dívida Líquida + PL) do fim do período — não usa capital médio.",
+        "Empréstimos e financiamentos = 2.01.04 (circulante) + 2.02.01 (não circulante); pelo padrão da CVM já incluem as debêntures.",
+        "Arrendamentos (IFRS 16): passivos cuja descrição cita arrendamento/direito de uso, em qualquer nível do Passivo, identificados por descrição (valores, não fórmulas). 'Dentro' = lançados dentro de empréstimos (2.0x.04.03 etc.); 'outras contas' = fora deles.",
+        "Dívida sem arrendamentos = empréstimos − arrendamentos lançados dentro deles. Dívida com arrendamentos = empréstimos + arrendamentos em outras contas.",
+        "ROIC = EBIT × (1 − alíquota da célula B2) ÷ (Dívida Líquida sem arrendamentos + PL) do fim do período — não usa capital médio.",
         "EBITDA = EBIT + D&A. D&A e Capex NÃO são contas padronizadas da CVM: são somadas por descrição na DFC e podem divergir do número divulgado pela empresa.",
         "D&A (DFC 6.01.01): " + ("; ".join(dfc.descricoes[r - dfc.linha_dados] for r in linhas_da) or "nenhuma linha encontrada — D&A = 0 e o EBITDA fica igual ao EBIT"),
         "Capex (DFC 6.02, sinal invertido): " + ("; ".join(dfc.descricoes[r - dfc.linha_dados] for r in linhas_capex) or "nenhuma linha encontrada — Capex = 0"),

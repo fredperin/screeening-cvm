@@ -152,7 +152,8 @@ def gerar_indice():
             "ebitda_ltm": _ultimo(ltm, "ebitda"), "ebit_ltm": _ultimo(ltm, "ebit"), "fcf_ltm": _ultimo(ltm, "fcf"),
             "pl": _ultimo(ltm, "pl"), "divida_liquida": _ultimo(ltm, "divida_liquida"),
             "m_liquida_ltm": _ultimo(ltm, "m_liquida"), "roe": _ultimo(ltm, "roe"), "roic": _ultimo(ltm, "roic"),
-            "dl_ebitda": _ultimo(ltm, "dl_ebitda"),
+            "dl_ebitda": _ultimo(ltm, "dl_ebitda"), "dl_ebitda_ifrs16": _ultimo(ltm, "dl_ebitda_ifrs16"),
+            "divida_liquida_ifrs16": _ultimo(ltm, "divida_liquida_ifrs16"), "arrendamentos": _ultimo(ltm, "arrendamentos"),
         })
     indice.sort(key=lambda e: e["nome"])
     (DIR_DADOS_SITE / "empresas.json").write_text(json.dumps(indice, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

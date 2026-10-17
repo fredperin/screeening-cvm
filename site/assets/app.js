@@ -264,7 +264,7 @@ async function paginaEmpresas() {
       <input class="filtro" id="filtro" placeholder="filtrar por nome, ticker ou setor"></div>
     <div class="painel"><div class="rolagem"><table class="tabela" id="tab">
       <thead><tr><th>Papel</th><th>Empresa</th><th>Setor</th><th>Market cap</th><th>Receita LTM</th><th>Lucro LTM</th>
-      <th>Margem líq.</th><th>ROE</th><th>Dív.líq./EBITDA</th><th>P/L</th><th>DY 12m</th></tr></thead><tbody></tbody></table></div></div>`;
+      <th>Margem líq.</th><th>ROE</th><th>DL/EBITDA</th><th>DL/EBITDA c/ IFRS16</th><th>P/L</th><th>DY 12m</th></tr></thead><tbody></tbody></table></div></div>`;
   const corpo = app.querySelector("tbody");
   function desenhar(f = "") {
     const q = f.trim().toUpperCase();
@@ -272,7 +272,7 @@ async function paginaEmpresas() {
       .map((e) => `<tr class="clicavel" onclick="location.hash='#/empresa/${esc(e.id)}'">
         <td>${esc(e.tickers.join(" / "))}</td><td>${esc(e.nome.slice(0, 38))}</td><td class="sub">${esc((e.setor || "").slice(0, 30))}</td>
         <td>${reais(e.mc)}</td><td>${reais(e.receita_ltm)}</td><td class="${classeSinal(e.lucro_ltm)}">${reais(e.lucro_ltm)}</td>
-        <td>${pct(e.m_liquida_ltm)}</td><td>${pct(e.roe)}</td><td>${vezes(e.dl_ebitda)}</td><td>${vezes(e.pl)}</td><td>${pct(e.dy, 2)}</td></tr>`).join("");
+        <td>${pct(e.m_liquida_ltm)}</td><td>${pct(e.roe)}</td><td>${vezes(e.dl_ebitda)}</td><td>${vezes(e.dl_ebitda_ifrs16)}</td><td>${vezes(e.pl)}</td><td>${pct(e.dy, 2)}</td></tr>`).join("");
   }
   desenhar();
   document.getElementById("filtro").addEventListener("input", (ev) => desenhar(ev.target.value));
@@ -281,6 +281,7 @@ async function paginaEmpresas() {
 /* ============ Empresa ============ */
 let VISAO = "trimestral";
 let FC_SEL = "todos";
+let DIV_IFRS16 = false;
 const OPCOES_FC = [["todos", "Todos"], ["fco", "FCO"], ["fci", "FCI"], ["fcfin", "FCFi"], ["soma", "Soma"]];
 
 const INDICADORES_LTM = [
@@ -288,8 +289,12 @@ const INDICADORES_LTM = [
   ["FCO", "fco", reais], ["Capex", "capex", reais], ["FCF", "fcf", reais],
   ["Crescimento da receita", "cresc_receita", pct], ["Margem bruta", "m_bruta", pct], ["Margem EBITDA", "m_ebitda", pct],
   ["Margem EBIT", "m_ebit", pct], ["Margem líquida", "m_liquida", pct], ["Margem FCF", "m_fcf", pct],
-  ["Alíquota efetiva de IR", "aliquota_efetiva", pct], ["Caixa + aplicações", null, reais], ["Dívida bruta", "divida_bruta", reais],
-  ["Dívida líquida", "divida_liquida", reais], ["Dív. líquida / EBITDA", "dl_ebitda", vezes], ["Dív. líquida / PL", "dl_pl", vezes],
+  ["Alíquota efetiva de IR", "aliquota_efetiva", pct], ["Caixa + aplicações", null, reais],
+  ["Dívida bruta (sem IFRS 16)", "divida_bruta", reais], ["Arrendamentos (IFRS 16)", "arrendamentos", reais],
+  ["Dívida bruta (com IFRS 16)", "divida_bruta_ifrs16", reais],
+  ["Dívida líquida (sem IFRS 16)", "divida_liquida", reais], ["Dívida líquida (com IFRS 16)", "divida_liquida_ifrs16", reais],
+  ["Dív. líquida / EBITDA (sem IFRS 16)", "dl_ebitda", vezes], ["Dív. líquida / EBITDA (com IFRS 16)", "dl_ebitda_ifrs16", vezes],
+  ["Dív. líquida / PL (sem IFRS 16)", "dl_pl", vezes], ["Dív. líquida / PL (com IFRS 16)", "dl_pl_ifrs16", vezes],
   ["Cobertura de juros (EBIT/desp. fin.)", "cobertura_juros", vezes], ["Liquidez corrente", "liquidez_corrente", vezes],
   ["ROE", "roe", pct], ["ROA", "roa", pct], ["ROIC (IR 34%)", "roic", pct],
   ["Conversão de caixa (FCO/EBITDA)", "conv_caixa", pct], ["Conversão de lucro (FCF/LL)", "conv_lucro", pct],
@@ -351,7 +356,7 @@ async function paginaEmpresa(id) {
     D&amp;A: ${esc((nt.da || []).join("; ") || "nenhuma linha encontrada (EBITDA = EBIT)")}<br>
     Capex: ${esc((nt.capex || []).join("; ") || "nenhuma linha encontrada")}<br>
     Dividendos pagos: ${esc((nt.dividendos || []).join("; ") || "nenhuma linha encontrada")}<br>
-    Dívida bruta = empréstimos e financiamentos (CP + LP), sem arrendamentos.`;
+    Dívida bruta sem IFRS 16 = empréstimos, financiamentos e debêntures (CP + LP); com IFRS 16 = soma também os passivos de arrendamento, identificados pela descrição no balanço.`;
 }
 
 function desenharGraficosEmpresa(emp) {
@@ -368,14 +373,17 @@ function desenharGraficosEmpresa(emp) {
     ["EBIT e margem EBIT", { series: [{ nome: "EBIT", valores: S.ebit, cor: COR.azul }, { nome: "Margem EBIT", valores: S.m_ebit, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
     ["Lucro líquido e margem líquida", { series: [{ nome: "Lucro líquido", valores: S.lucro_liquido, cor: COR.verde }, { nome: "Margem líquida", valores: S.m_liquida, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
     ["Resultado financeiro", { series: [{ nome: "Receitas financeiras", valores: S.rec_fin, cor: COR.verde, pilha: "fin" }, { nome: "Despesas financeiras", valores: S.desp_fin, cor: COR.vermelho, pilha: "fin" }, { nome: "Resultado financeiro", valores: S.res_fin, tipo: "line", cor: COR.ambar }] }],
-    ["Endividamento", { series: [{ nome: "Dívida bruta", valores: S.divida_bruta, cor: COR.vermelho }, { nome: "Caixa + aplicações", valores: soma(S.caixa, S.aplicacoes), cor: COR.verde }, { nome: "Dívida líquida", valores: S.divida_liquida, cor: COR.azul }, { nome: "Dív. líq./EBITDA", valores: S.dl_ebitda, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "vezes" }],
     ["Retorno (LTM)", { series: [{ nome: "ROE", valores: S.roe, tipo: "line", cor: COR.ambar }, { nome: "ROIC", valores: S.roic, tipo: "line", cor: COR.ciano }], eixoEsq: "pct" }],
   ];
   area.innerHTML = defs.map((d, i) => `<div class="painel"><h2>${d[0]}</h2><div class="grafico" id="ge-${i}"></div></div>`).join("")
     + `<div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Fluxo de caixa (DFC)</h2>
         <div class="seletor" id="sel-fc">${OPCOES_FC.map(([k, r]) => `<button data-k="${k}" class="${k === FC_SEL ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
         <div class="grafico" id="ge-fc"></div>
-        <div class="nota">FCO = operacional · FCI = investimento · FCFi = financiamento · Soma = FCO + FCI + FCFi (variação do caixa, antes da variação cambial).</div></div>`;
+        <div class="nota">FCO = operacional · FCI = investimento · FCFi = financiamento · Soma = FCO + FCI + FCFi (variação do caixa, antes da variação cambial).</div></div>
+      <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Endividamento</h2>
+        <div class="seletor" id="sel-div"><button data-k="sem" class="${DIV_IFRS16 ? "" : "ativo"}">Sem IFRS 16</button><button data-k="com" class="${DIV_IFRS16 ? "ativo" : ""}">+ Arrendamentos (IFRS 16)</button></div></div>
+        <div class="grafico" id="ge-div"></div>
+        <div class="nota">Sem IFRS 16: empréstimos, financiamentos e debêntures. Com IFRS 16: soma os passivos de arrendamento (aluguéis, frota, aeronaves) identificados no balanço. Dív. líq./EBITDA usa o EBITDA dos últimos 12 meses.</div></div>`;
   defs.forEach((d, i) => grafico(document.getElementById(`ge-${i}`), { rotulos: rot, ...d[1] }));
   const vazio = S.receita.map(() => null);
   const fco = S.fco || vazio, fci = S.fci || vazio, fcfin = S.fcfin || vazio;
@@ -397,6 +405,26 @@ function desenharGraficosEmpresa(emp) {
     desenharFc();
   });
   desenharFc();
+
+  let gDiv = null;
+  const caixaTotal = soma(S.caixa, S.aplicacoes);
+  const desenharDiv = () => {
+    if (gDiv) { gDiv.dispose(); graficos.splice(graficos.indexOf(gDiv), 1); }
+    const com = DIV_IFRS16 && S.divida_bruta_ifrs16;
+    gDiv = grafico(document.getElementById("ge-div"), { rotulos: rot, eixoDir: "vezes", janela: 16, series: [
+      { nome: "Dívida bruta (empréstimos)", valores: S.divida_bruta, cor: COR.vermelho, pilha: "divida" },
+      ...(com ? [{ nome: "Arrendamentos (IFRS 16)", valores: S.arrendamentos, cor: COR.roxo, pilha: "divida" }] : []),
+      { nome: "Caixa + aplicações", valores: caixaTotal, cor: COR.verde },
+      { nome: com ? "Dívida líquida c/ arrend." : "Dívida líquida", valores: com ? S.divida_liquida_ifrs16 : S.divida_liquida, cor: COR.azul },
+      { nome: com ? "Dív. líq./EBITDA c/ arrend." : "Dív. líq./EBITDA", valores: com ? S.dl_ebitda_ifrs16 : S.dl_ebitda, tipo: "line", eixo: "dir", cor: COR.ambar }] });
+  };
+  document.getElementById("sel-div").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    DIV_IFRS16 = b.dataset.k === "com";
+    document.querySelectorAll("#sel-div button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenharDiv();
+  });
+  desenharDiv();
   redesenharDividendos();
 }
 
