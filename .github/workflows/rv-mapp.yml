@@ -17,6 +17,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  issues: write
 
 concurrency:
   group: rv-mapp
@@ -54,6 +55,41 @@ jobs:
         run: python -m pipeline.rodar ${{ inputs.tudo && '--tudo' || '' }}
         env:
           PYTHONUTF8: "1"
+
+      # Agentes automáticos (sem IA): saúde das fontes e anomalias nos dados gerados
+      - name: Monitorar fontes
+        if: always()
+        continue-on-error: true
+        run: python -m pipeline.monitor
+        env:
+          PYTHONUTF8: "1"
+
+      - name: Validar dados
+        if: always()
+        continue-on-error: true
+        run: python -m pipeline.validar
+        env:
+          PYTHONUTF8: "1"
+
+      # Problema -> abre (ou comenta) uma issue com o rótulo rv-mapp-alerta, que chega por e-mail.
+      # Tudo normal -> fecha a issue aberta, se houver.
+      - name: Alerta no GitHub
+        if: always()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          aberta=$(gh issue list --label rv-mapp-alerta --state open --json number -q '.[0].number' || true)
+          if [ -f data/pipeline/alerta.md ]; then
+            gh label create rv-mapp-alerta --color B60205 --description "Falha detectada pelo monitor da R.V. Mapp" --force
+            if [ -n "$aberta" ]; then
+              gh issue comment "$aberta" --body-file data/pipeline/alerta.md
+            else
+              gh issue create --title "R.V. Mapp: problema nas fontes de dados ($(date +%d/%m/%Y))"                 --label rv-mapp-alerta --body-file data/pipeline/alerta.md
+            fi
+          elif [ -n "$aberta" ]; then
+            gh issue close "$aberta" --comment "Fontes e dados voltaram ao normal em $(date +%d/%m/%Y)."
+          fi
 
       # Salva logo após os dados (mesmo se a publicação abaixo falhar)
       - name: Salvar cache de dados
