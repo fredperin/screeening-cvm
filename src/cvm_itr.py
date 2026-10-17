@@ -68,6 +68,19 @@ def baixar_zip_ano(ano: int, fonte: str = "ITR", forcar: bool = False) -> Path:
     return caminho
 
 
+_BASE_PRE_CARREGADA = None
+
+
+def usar_base_pre_carregada(base) -> None:
+    """
+    Faz _ler_demonstracao() ler de um DataFrame já em memória (linhas de UMA empresa,
+    com as colunas extras FONTE, ANO, SIGLA e TIPO) em vez de abrir o ZIP da CVM.
+    Usado pelo pipeline em lote; None volta ao comportamento normal.
+    """
+    global _BASE_PRE_CARREGADA
+    _BASE_PRE_CARREGADA = base
+
+
 def _ler_demonstracao(ano: int, sigla: str, tipo: str, cnpj: str, fonte: str = "ITR") -> pd.DataFrame:
     """
     Lê e filtra por CNPJ uma demonstração específica (ex: BPA_con) de dentro do ZIP anual,
@@ -82,6 +95,13 @@ def _ler_demonstracao(ano: int, sigla: str, tipo: str, cnpj: str, fonte: str = "
     Returns:
         DataFrame filtrado, já com CNPJ_CIA normalizado
     """
+    if _BASE_PRE_CARREGADA is not None:
+        b = _BASE_PRE_CARREGADA
+        df = b[(b["FONTE"] == fonte) & (b["ANO"] == ano) & (b["SIGLA"] == sigla) & (b["TIPO"] == tipo)]
+        # Colunas que não existem nessa demonstração (ex: DT_INI_EXERC no Balanço) vêm
+        # 100% vazias do Parquet combinado e precisam sair, como no CSV original.
+        return df.drop(columns=["FONTE", "ANO", "SIGLA", "TIPO"]).dropna(axis=1, how="all").reset_index(drop=True)
+
     try:
         caminho_zip = baixar_zip_ano(ano, fonte)
     except requests.exceptions.HTTPError:
@@ -339,7 +359,6 @@ def _normalizar_descricoes(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-_FINS_DE_TRIMESTRE_VALIDOS = {(3, 31), (6, 30), (9, 30), (12, 31)}
 _DURACOES_VALIDAS_DIAS = [90, 91, 92, 181, 182, 183, 273, 274, 275, 365, 366]  # ~3, 6, 9 e 12 meses
 
 
@@ -355,7 +374,16 @@ def _validar_periodos(bruto: pd.DataFrame, sigla: str) -> pd.DataFrame:
         return bruto
 
     dt_fim = pd.to_datetime(bruto["DT_FIM_EXERC"])
-    fim_valido = dt_fim.apply(lambda d: (d.month, d.day) in _FINS_DE_TRIMESTRE_VALIDOS)
+    # A Camil (exercício mar-fev) informa o fim do ano fiscal como 28/02 mesmo em ano
+    # bissexto, enquanto o balanço vem em 29/02: normaliza para o último dia do mês.
+    fev_bissexto = (dt_fim.dt.month == 2) & (dt_fim.dt.day == 28) & dt_fim.dt.is_leap_year
+    if fev_bissexto.any():
+        bruto = bruto.copy()
+        dt_fim = dt_fim.where(~fev_bissexto, dt_fim + pd.offsets.MonthEnd(0))
+        bruto["DT_FIM_EXERC"] = dt_fim.dt.strftime("%Y-%m-%d")
+    # Fim de mês, não necessariamente mar/jun/set/dez: há exercícios abr-mar (São Martinho)
+    # e mar-fev (Camil). A duração (3/6/9/12 meses) continua sendo checada abaixo.
+    fim_valido = dt_fim.dt.is_month_end
 
     duracao_valida = pd.Series(True, index=bruto.index)
     if "DT_INI_EXERC" in bruto.columns:
@@ -509,7 +537,7 @@ def montar_documento_padrao(
     2) Balanço Patrimonial — Ativo + Passivo juntos, até nível 3, datas em dd/mm/aa
     3) DFC método indireto — até nível 4, também isolado por trimestre (a CVM só
        publica acumulado; cada trimestre é obtido subtraindo o acumulado
-       anterior — ver padrao_visual.isolar_dfc), datas em dd/mm/aa
+       anterior — ver padrao_visual.isolar_trimestres), datas em dd/mm/aa
 
     Os três blocos são alinhados para ter exatamente os MESMOS períodos (ver
     padrao_visual.alinhar_periodos) — o Balanço só compara com o fechamento
@@ -531,7 +559,7 @@ def montar_documento_padrao(
     """
     from src.padrao_visual import (
         EXCLUSOES_DRE, CLASSIFICACAO_DRE, CLASSIFICACAO_BP, CLASSIFICACAO_DFC,
-        remover_contas, calcular_quarto_trimestre, isolar_dfc, somente_trimestre_isolado,
+        remover_contas, isolar_trimestres,
         filtrar_data_minima, alinhar_periodos, preparar_bloco,
     )
 
@@ -539,8 +567,7 @@ def montar_documento_padrao(
 
     dre = filtrar_nivel(demonstracoes.get("Demonstração do Resultado", pd.DataFrame()), nivel_dre)
     dre = remover_contas(dre, EXCLUSOES_DRE)
-    dre = calcular_quarto_trimestre(dre)  # deriva o 4T (DFP anual - ITR 9m), antes de isolar
-    dre = somente_trimestre_isolado(dre)
+    dre = isolar_trimestres(dre)  # trimestre isolado, com o 4T derivado (DFP anual − 9M)
 
     bpa = filtrar_nivel(demonstracoes.get("Balanço Patrimonial Ativo", pd.DataFrame()), nivel_bp)
     bpp = filtrar_nivel(demonstracoes.get("Balanço Patrimonial Passivo", pd.DataFrame()), nivel_bp)
@@ -549,7 +576,7 @@ def montar_documento_padrao(
     dfc = filtrar_nivel(
         demonstracoes.get("Demonstração do Fluxo de Caixa (Método Indireto)", pd.DataFrame()), nivel_dfc
     )
-    dfc = isolar_dfc(dfc)  # a CVM só publica acumulado; isola cada trimestre por subtração
+    dfc = isolar_trimestres(dfc, preferir_derivado=True)  # a CVM só publica acumulado; isola cada trimestre por subtração
 
     if data_minima:
         dre = filtrar_data_minima(dre, data_minima)

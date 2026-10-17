@@ -98,7 +98,7 @@ ROTULOS_CADASTRO = {
 
 def exportar_documento_padrao(
     blocos: list, nome_empresa: str, ano_inicio: int, ano_fim: int = None, dados_cadastrais: dict = None,
-    ano_exibicao: int = None,
+    ano_exibicao: int = None, destino: Path = None, abas_extras: list = None,
 ) -> Path:
     """
     Exporta o documento padrão do projeto: DRE, Balanço Patrimonial e DFC
@@ -118,6 +118,9 @@ def exportar_documento_padrao(
         ano_exibicao:     se informado, períodos de anos anteriores ficam na aba Demonstrações
                           só como colunas OCULTAS (alimentam o LTM dos primeiros trimestres
                           da aba de indicadores) em vez de aparecerem
+        destino:          caminho do .xlsx; sem ele, vai para data/processed com nome derivado da empresa
+        abas_extras:      lista de (nome_da_aba, [(titulo, DataFrame), ...]) — tabelas empilhadas
+                          numa aba própria (ex: Dividendos), antes da aba de indicadores
         dados_cadastrais: opcional — saída de buscar_dados_cadastrais(); se informado,
                           vira uma aba "Cadastro" separada (setor, situação, tipo de
                           mercado, controle acionário, auditor etc. — não é dado
@@ -127,7 +130,7 @@ def exportar_documento_padrao(
     """
     slug = "".join(c if c.isalnum() else "_" for c in nome_empresa).strip("_")[:25].rstrip("_")
     sufixo_ano = str(ano_inicio) if not ano_fim or ano_fim == ano_inicio else f"{ano_inicio}_{ano_fim}"
-    caminho = PROCESSED_DIR / f"{slug}_Padrao_{sufixo_ano}.xlsx"
+    caminho = destino or PROCESSED_DIR / f"{slug}_Padrao_{sufixo_ano}.xlsx"
     aba = "Demonstrações"
 
     # (linha_do_titulo_1_indexed, titulo, linha_inicio_dados_1_indexed, estilos_por_linha)
@@ -168,11 +171,25 @@ def exportar_documento_padrao(
             # +1 (título/cabeçalho) + len(df) (dados) + 2 (linhas em branco de separação)
             linha += 1 + len(df) + 2
 
+        # (aba, linha_do_titulo_1_indexed, n_colunas) de cada tabela extra, para formatar depois
+        titulos_extras = []
+        for nome_aba, tabelas in abas_extras or []:
+            linha_extra = 0
+            for titulo_tabela, tabela in tabelas:
+                pd.DataFrame([[titulo_tabela]]).to_excel(writer, sheet_name=nome_aba, startrow=linha_extra,
+                                                         index=False, header=False)
+                if tabela is None or tabela.empty:
+                    tabela = pd.DataFrame({"": ["Sem dados disponíveis"]})
+                tabela.to_excel(writer, sheet_name=nome_aba, startrow=linha_extra + 1, index=False)
+                titulos_extras.append((nome_aba, linha_extra + 1, max(len(tabela.columns), 1)))
+                linha_extra += 2 + len(tabela) + 2
+
     _formatar_documento_padrao(caminho, aba, blocos_posicionados)
 
     from src.indicadores import adicionar_aba_indicadores
     wb = load_workbook(_caminho_longo(caminho))
     adicionar_aba_indicadores(wb, blocos_posicionados, blocos, ano_exibicao=ano_exibicao)
+    _formatar_abas_extras(wb, titulos_extras)
     if ano_exibicao:
         ws = wb[aba]
         primeiro_df = next(df for _, df in blocos if df is not None and not df.empty)
@@ -185,6 +202,27 @@ def exportar_documento_padrao(
     gravar_valores_em_cache(_caminho_longo(caminho), load_workbook(_caminho_longo(caminho)))
     print(f"\n📁 Arquivo salvo: {caminho}")
     return caminho
+
+
+def _formatar_abas_extras(wb, titulos_extras):
+    fill_titulo = PatternFill("solid", fgColor="EAC037")
+    fill_cabecalho = PatternFill("solid", fgColor=COR_TOTAL)
+    for nome_aba, linha_titulo, n_colunas in titulos_extras:
+        ws = wb[nome_aba]
+        for k in range(1, n_colunas + 1):
+            ws.cell(linha_titulo, k).fill = fill_titulo
+            cab = ws.cell(linha_titulo + 1, k)
+            cab.fill, cab.font = fill_cabecalho, Font(color="FFFFFF", bold=True)
+        ws.cell(linha_titulo, 1).font = Font(bold=True)
+    for nome_aba in {t[0] for t in titulos_extras}:
+        ws = wb[nome_aba]
+        for coluna in ws.columns:
+            largura = max((len(str(c.value)) for c in coluna[1:] if c.value is not None), default=10)
+            ws.column_dimensions[get_column_letter(coluna[0].column)].width = min(largura + 3, 40)
+        for linha in ws.iter_rows():
+            for c in linha:
+                if isinstance(c.value, float):
+                    c.number_format = "#,##0.00##" if abs(c.value) < 1000 else FORMATO_NUMERO
 
 
 def _formatar_aba_cadastro(ws):

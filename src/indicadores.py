@@ -315,6 +315,8 @@ def gravar_valores_em_cache(caminho, wb):
     import zipfile
     from xml.sax.saxutils import escape
 
+    if ABA_INDICADORES not in wb.sheetnames:
+        return  # aba não foi gerada (ex: empresa sem DFC indireta)
     valores = _valores_em_cache(wb)
     indice = wb.sheetnames.index(ABA_INDICADORES) + 1
     nome_xml = f"xl/worksheets/sheet{indice}.xml"

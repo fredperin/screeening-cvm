@@ -55,71 +55,50 @@ def remover_contas(tabela: pd.DataFrame, codigos_excluidos: set) -> pd.DataFrame
     return tabela[~tabela.index.get_level_values("CD_CONTA").isin(codigos_excluidos)]
 
 
-def calcular_quarto_trimestre(tabela: pd.DataFrame) -> pd.DataFrame:
+def isolar_trimestres(tabela: pd.DataFrame, limite_dias: int = 100, preferir_derivado: bool = False) -> pd.DataFrame:
     """
-    A CVM não publica o 4º trimestre isolado em lugar nenhum — o ITR só cobre
-    1T/2T/3T (o "acumulado até dezembro" só aparece no DFP, o relatório anual).
-    Aqui ele é calculado: Q4 = Acumulado Jan-Dez (DFP) − Acumulado Jan-Set (ITR).
+    Devolve só colunas de trimestre isolado, para QUALQUER ano fiscal (jan-dez,
+    abr-mar como São Martinho/Raízen, mar-fev como Camil).
 
-    Precisa rodar ANTES de somente_trimestre_isolado(), pois usa as colunas
-    acumuladas (que depois são descartadas).
+    A CVM publica períodos acumulados desde o início do exercício (e, na DRE do
+    ITR, também o trimestre isolado). Cada trimestre isolado que não vier pronto
+    é obtido pela diferença entre dois acumulados com o MESMO início, separados
+    por ~3 meses: 2T = 6M − 3M, 3T = 9M − 6M, 4T = 12M (DFP) − 9M. Se faltar um
+    acumulado, o trimestre que depende dele não é calculado — nunca gera número errado.
+
+    Quando a CVM traz o trimestre isolado pronto E ele também pode ser derivado, os
+    dois podem divergir (reapresentações). Regra, igual à do documento padrão original:
+    o último trimestre do exercício (12M − 9M) e, com preferir_derivado (DFC), todos
+    os trimestres usam o valor derivado; os demais usam o isolado publicado.
     """
     if tabela.empty:
         return tabela
 
-    tabela = tabela.copy()
-    novas_colunas = {}
-    for rotulo in tabela.columns:
-        if " a " not in rotulo:
-            continue
+    def limites(rotulo):
         inicio, fim = rotulo.split(" a ")
-        ano = fim[:4]
-        eh_ano_completo = inicio == f"{ano}-01-01" and fim == f"{ano}-12-31"
-        rotulo_9m = f"{ano}-01-01 a {ano}-09-30"
-        if eh_ano_completo and rotulo_9m in tabela.columns:
-            rotulo_q4 = f"{ano}-10-01 a {ano}-12-31"
-            novas_colunas[rotulo_q4] = tabela[rotulo] - tabela[rotulo_9m]
+        return pd.Timestamp(inicio), pd.Timestamp(fim)
 
-    for rotulo, serie in novas_colunas.items():
-        tabela[rotulo] = serie
-    return tabela
+    com_periodo = [c for c in tabela.columns if " a " in c]
+    isolados = {c: tabela[c] for c in com_periodo if (limites(c)[1] - limites(c)[0]).days <= limite_dias}
 
+    por_inicio = {}
+    for c in com_periodo:
+        por_inicio.setdefault(c.split(" a ")[0], []).append(c)
+    for grupo in por_inicio.values():
+        grupo = sorted(grupo, key=lambda c: c.split(" a ")[1])
+        for anterior, atual in zip(grupo, grupo[1:]):
+            fim_anterior, fim_atual = limites(anterior)[1], limites(atual)[1]
+            if not 80 <= (fim_atual - fim_anterior).days <= 100:
+                continue
+            rotulo = f"{(fim_anterior + pd.Timedelta(days=1)).date()} a {fim_atual.date()}"
+            anual = (fim_atual - limites(atual)[0]).days >= 360
+            if preferir_derivado or anual:
+                isolados[rotulo] = tabela[atual] - tabela[anterior]
+            else:
+                isolados.setdefault(rotulo, tabela[atual] - tabela[anterior])
 
-def isolar_dfc(tabela: pd.DataFrame) -> pd.DataFrame:
-    """
-    O DFC nunca traz trimestre isolado — a CVM só publica acumulado
-    (Jan-Mar, Jan-Jun, Jan-Set via ITR, Jan-Dez via DFP). Aqui cada
-    trimestre é isolado por subtração do acumulado anterior:
-        1T = Jan-Mar (já vem isolado, não precisa de conta)
-        2T = (Jan-Jun) − (Jan-Mar)
-        3T = (Jan-Set) − (Jan-Jun)
-        4T = (Jan-Dez) − (Jan-Set)
-    Se faltar algum acumulado do ano (ex: ano ainda em andamento, sem
-    fechamento anual publicado), o(s) trimestre(s) que dependem dele
-    simplesmente não são calculados — nunca gera número errado.
-    """
-    if tabela.empty:
-        return tabela
-
-    anos = sorted({c.split(" a ")[-1][:4] for c in tabela.columns if " a " in c})
-    novas_colunas = {}
-
-    for ano in anos:
-        col_1t = f"{ano}-01-01 a {ano}-03-31"
-        col_1s = f"{ano}-01-01 a {ano}-06-30"
-        col_9m = f"{ano}-01-01 a {ano}-09-30"
-        col_ano = f"{ano}-01-01 a {ano}-12-31"
-
-        if col_1t in tabela.columns:
-            novas_colunas[col_1t] = tabela[col_1t]
-        if col_1s in tabela.columns and col_1t in tabela.columns:
-            novas_colunas[f"{ano}-04-01 a {ano}-06-30"] = tabela[col_1s] - tabela[col_1t]
-        if col_9m in tabela.columns and col_1s in tabela.columns:
-            novas_colunas[f"{ano}-07-01 a {ano}-09-30"] = tabela[col_9m] - tabela[col_1s]
-        if col_ano in tabela.columns and col_9m in tabela.columns:
-            novas_colunas[f"{ano}-10-01 a {ano}-12-31"] = tabela[col_ano] - tabela[col_9m]
-
-    return pd.DataFrame(novas_colunas, index=tabela.index)
+    ordem = sorted(isolados, key=lambda c: c.split(" a ")[1])
+    return pd.DataFrame({c: isolados[c] for c in ordem}, index=tabela.index)
 
 
 def _data_fim(rotulo: str) -> str:
@@ -185,7 +164,10 @@ def alinhar_periodos(dre: pd.DataFrame, balanco: pd.DataFrame, dfc: pd.DataFrame
     datas_dre = {_data_fim(c) for c in dre.columns}
     datas_bp = {_data_fim(c) for c in balanco.columns}
     datas_dfc = {_data_fim(c) for c in dfc.columns}
-    datas_comuns = datas_dre & datas_bp & datas_dfc
+    # Empresa que publica a DFC só pelo método direto (ex: Belora, Revee) fica sem DFC
+    # indireta: alinha só DRE e Balanço, em vez de zerar a interseção.
+    conjuntos = [d for d in (datas_dre, datas_bp, datas_dfc) if d]
+    datas_comuns = set.intersection(*conjuntos) if conjuntos else set()
 
     _avisar_periodos_descartados(datas_dre, datas_bp, datas_dfc, datas_comuns)
 
@@ -196,29 +178,6 @@ def alinhar_periodos(dre: pd.DataFrame, balanco: pd.DataFrame, dfc: pd.DataFrame
     _avisar_buracos_no_meio(sorted(datas_comuns))
 
     return dre, balanco, dfc
-
-
-def somente_trimestre_isolado(tabela: pd.DataFrame, limite_dias: int = 100) -> pd.DataFrame:
-    """
-    Mantém só as colunas de período "isolado" (~3 meses), descartando as
-    acumuladas no ano (que têm a MESMA data final que a coluna isolada do
-    mesmo trimestre, e por isso geram cabeçalhos duplicados/ambíguos).
-    """
-    if tabela.empty:
-        return tabela
-
-    def eh_isolado(rotulo: str) -> bool:
-        if " a " not in rotulo:
-            return True  # não tem período (ex: Balanço, que é data única)
-        inicio, fim = rotulo.split(" a ")
-        dias = (pd.Timestamp(fim) - pd.Timestamp(inicio)).days
-        return dias <= limite_dias
-
-    colunas_mantidas = [c for c in tabela.columns if eh_isolado(c)]
-    # calcular_quarto_trimestre() acrescenta as colunas de 4T no fim da lista,
-    # fora de ordem cronológica — reordena pela data final de cada período.
-    colunas_mantidas = sorted(colunas_mantidas, key=lambda c: c.split(" a ")[-1])
-    return tabela[colunas_mantidas]
 
 
 def _formatar_rotulo_data(rotulo: str, modo: str) -> str:
