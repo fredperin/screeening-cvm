@@ -1,0 +1,25 @@
+:root {
+  --fundo: #0d1117;
+  --painel: #11161d;
+  --borda: #30363d;
+  --texto: #c9d1d9;
+  --texto-forte: #e6edf3;
+  --texto-fraco: #8b949e;
+  --ambar: #f0b429;
+  --verde: #3fb950;
+  --vermelho: #f85149;
+  --azul: #1f6feb;
+  --mono: "JetBrains Mono", "IBM Plex Mono", ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.carregando { padding: 24px; color: var(--ambar); }

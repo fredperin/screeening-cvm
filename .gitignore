@@ -18,3 +18,12 @@ __pycache__/
 
 # Estado interno de sessão do Claude Code (não é código do projeto)
 .claude/scheduled_tasks.lock
+
+# Plataforma R.V. Mapp: tudo que o pipeline gera é refeito no GitHub Actions
+# e publicado direto no GitHub Pages, sem passar pelo histórico do Git
+data/pipeline/
+site/dados/
+site/downloads/
+
+# Arquivos pessoais
+downloads/
