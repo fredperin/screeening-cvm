@@ -182,7 +182,9 @@ def gerar(pausa=0.2):
             "segmento": (b3 or {}).get("segmento"), "market_cap": mcap,
             "proventos_12m_por_acao": round(prov_12m, 6) if prov_12m else 0.0,
             "dy_12m": (prov_12m / preco_ref) if (prov_12m and preco_ref) else None,
-            "proximos_proventos": [p for p in proventos_b3 if p["data_com"] and p["data_com"] >= hoje.isoformat()],
+            # data-com ou pagamento ainda por vir (a B3 anuncia com data-com passada e pagamento em parcelas futuras)
+            "proximos_proventos": [p for p in proventos_b3 if (p["data_com"] or "") >= hoje.isoformat()
+                                   or (p["pagamento"] or "") >= hoje.isoformat()],
         })
         if i % 25 == 0:
             print(f"   {i}/{len(universo)} empresas")

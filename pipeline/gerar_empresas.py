@@ -102,7 +102,8 @@ def tabelas_dividendos(id_, dados):
     } for p in prov.get("proventos_b3", [])])
 
     anual = dados["anual"]
-    s = anual["series"]
+    vazio = [None] * len(anual["periodos"])
+    s = {k: anual["series"].get(k, vazio) for k in ("div_pagos", "lucro_liquido", "payout")}
     dfc = pd.DataFrame({
         "Exercício (fim)": anual["periodos"],
         "Dividendos + JCP pagos (R$)": s["div_pagos"],

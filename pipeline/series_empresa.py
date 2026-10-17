@@ -232,6 +232,11 @@ def _div(a, b):
     return a / b.where(b != 0)
 
 
+def _div_pos(a, b):
+    """Divide só por denominador positivo: ROE com PL negativo ou dívida/EBITDA com EBITDA negativo não têm leitura."""
+    return a / b.where(b > 0)
+
+
 def _um_ano_antes(serie):
     """Valor do mesmo período um ano antes (mesmo mês — o dia muda em fevereiro de ano bissexto), ou NaN."""
     mapa = {(d.year, d.month): v for d, v in zip(serie.index, serie.values)}
@@ -250,22 +255,22 @@ def adicionar_indicadores(visoes, aliquota=0.34):
         v["m_fcf"] = _div(v["fcf"], v["receita"])
         v["cresc_receita"] = _div(v["receita"], _um_ano_antes(v["receita"])) - 1
         v["cresc_lucro"] = _div(v["lucro_liquido"], _um_ano_antes(v["lucro_liquido"])) - 1
-        v["payout"] = _div(v["div_pagos"], v["lucro_liquido"])
-        v["aliquota_efetiva"] = _div(-v["ir"], v["lair"])
+        v["payout"] = _div_pos(v["div_pagos"], v["lucro_liquido"])
+        v["aliquota_efetiva"] = _div_pos(-v["ir"], v["lair"])
         v["capex_receita"] = _div(v["capex"], v["receita"])
-        v["capex_da"] = _div(v["capex"], v["da"])
+        v["capex_da"] = _div_pos(v["capex"], v["da"])
         v["liquidez_corrente"] = _div(v["ativo_circ"], v["passivo_circ"])
-        v["dl_pl"] = _div(v["divida_liquida"], v["pl"])
+        v["dl_pl"] = _div_pos(v["divida_liquida"], v["pl"])
 
         # Múltiplos e retornos sempre sobre o LTM da mesma data, em qualquer visão
         base = ltm.reindex(v.index)
-        v["dl_ebitda"] = _div(v["divida_liquida"], base["ebitda"])
-        v["roe"] = _div(base["lucro_liquido"], v["pl"])
-        v["roa"] = _div(base["lucro_liquido"], v["ativo_total"])
-        v["roic"] = _div(base["ebit"] * (1 - aliquota), v["divida_liquida"] + v["pl"])
-        v["cobertura_juros"] = _div(base["ebit"], -base["desp_fin"])
-        v["conv_caixa"] = _div(base["fco"], base["ebitda"])
-        v["conv_lucro"] = _div(base["fcf"], base["lucro_liquido"])
+        v["dl_ebitda"] = _div_pos(v["divida_liquida"], base["ebitda"])
+        v["roe"] = _div_pos(base["lucro_liquido"], v["pl"])
+        v["roa"] = _div_pos(base["lucro_liquido"], v["ativo_total"])
+        v["roic"] = _div_pos(base["ebit"] * (1 - aliquota), v["divida_liquida"] + v["pl"])
+        v["cobertura_juros"] = _div_pos(base["ebit"], -base["desp_fin"])
+        v["conv_caixa"] = _div_pos(base["fco"], base["ebitda"])
+        v["conv_lucro"] = _div_pos(base["fcf"], base["lucro_liquido"])
     return visoes
 
 

@@ -4,11 +4,34 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>R.V. Mapp</title>
-  <link rel="stylesheet" href="assets/estilo.css">
+  <link rel="icon" href="data:,">
+  <meta name="description" content="R.V. Mapp — resultados das empresas da B3, macroeconomia e juros, em estilo terminal.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap">
+  <link rel="stylesheet" href="assets/estilo.css?v=__VERSAO__">
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.1/dist/echarts.min.js"></script>
 </head>
 <body>
-  <main id="app">
-    <p class="carregando">R.V. Mapp — em construção</p>
-  </main>
+  <header class="topo">
+    <a class="marca" href="#/">R.V. Mapp<span>&gt;</span></a>
+    <nav class="nav" id="nav">
+      <a href="#/" data-rota="inicio">Início</a>
+      <a href="#/empresas" data-rota="empresas">Empresas</a>
+      <a href="#/macro" data-rota="macro">Macro</a>
+      <a href="#/juros" data-rota="juros">Juros</a>
+      <a href="#/downloads" data-rota="downloads">Downloads</a>
+    </nav>
+    <div class="comando">
+      <input id="comando" type="search" placeholder="> ticker ou empresa (ex: WEGE3)" autocomplete="off" spellcheck="false">
+      <div class="sugestoes" id="sugestoes"></div>
+    </div>
+  </header>
+  <main id="app"><p class="carregando">Carregando…</p></main>
+  <footer class="rodape">
+    Fontes: CVM (demonstrações ITR/DFP e cadastro), B3 (cotações, proventos, quantidade de ações e curvas DI),
+    Banco Central (séries SGS e boletim Focus), Tesouro Nacional (Tesouro Direto) e Yahoo Finance (histórico de
+    proventos por ação e cotação semanal, não oficial). Conteúdo informativo, não é recomendação de investimento.
+  </footer>
+  <script src="assets/app.js?v=__VERSAO__"></script>
 </body>
 </html>
