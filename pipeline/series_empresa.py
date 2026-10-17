@@ -15,7 +15,8 @@ import pandas as pd
 
 from src.indicadores import EXCLUI_CAPEX, EXCLUI_DA, PADRAO_CAPEX, PADRAO_DA
 
-PADRAO_DIV = re.compile(r"dividend|juros sobre (o )?capital|\bjcp\b", re.I)
+ESCALAS = {"MIL": 1000, "UNIDADE": 1}
+PADRAO_DIV = re.compile(r"dividend|juros sobre (?:o )?capital|\bjcp\b", re.I)
 EXCLUI_DIV = re.compile(r"receb", re.I)
 
 FLUXOS = {
@@ -36,32 +37,74 @@ def _por_codigo(df, fator):
     return t * fator
 
 
-def _soma_por_descricao(dfc_cod, descricoes, prefixo, padrao, exclui):
+def linhas_dfc(base):
+    """
+    Linhas da DFC indireta prontas para somar por descrição: em R$, com o rótulo do
+    período e, para cada período, SÓ o envio mais recente que o contém (consolidado
+    quando houver). Isso importa porque os códigos de nível 3/4 da DFC são próprios
+    de cada empresa e mudam de significado entre anos (a Klabin lançava dividendos em
+    6.03.05 até 2022 e em 6.03.08 depois) — por isso cada linha é identificada pela
+    descrição DO PRÓPRIO envio, nunca pela descrição mais recente daquele código.
+    """
+    d = base[(base["SIGLA"] == "DFC_MI") & base["DT_INI_EXERC"].notna()].copy()
+    if d.empty:
+        return d
+    fim = pd.to_datetime(d["DT_FIM_EXERC"])
+    fev = (fim.dt.month == 2) & (fim.dt.day == 28) & fim.dt.is_leap_year
+    d["DT_FIM_EXERC"] = fim.where(~fev, fim + pd.offsets.MonthEnd(0)).dt.strftime("%Y-%m-%d")
+    d["PER"] = d["DT_INI_EXERC"] + " a " + d["DT_FIM_EXERC"]
+    d["VL"] = d["VL_CONTA"] * d["ESCALA_MOEDA"].map(ESCALAS).fillna(1)
+    com_con = set(d.loc[d["TIPO"] == "con", "PER"])
+    d = d[(d["TIPO"] == "con") == d["PER"].isin(com_con)]
+    d["_ENVIO"] = d["DT_REFER"] + "|" + d["VERSAO"].astype(str).str.zfill(3)
+    return d[d["_ENVIO"] == d.groupby("PER")["_ENVIO"].transform("max")]
+
+
+def serie_por_descricao(linhas, prefixo, padrao, exclui):
+    """
+    Soma, por período, as linhas cuja descrição casa com o padrão e isola cada
+    trimestre. Devolve (trimestral {data_fim: valor}, anual {data_fim: valor}, descrições usadas).
+    """
+    from src.padrao_visual import isolar_trimestres
+
+    if linhas.empty:
+        return {}, {}, []
     nivel = prefixo.count(".") + 1
-    escolhidas = [
-        cd for cd, desc in zip(dfc_cod.index, descricoes)
-        if cd.startswith(prefixo + ".") and cd.count(".") == nivel and padrao.search(str(desc)) and not exclui.search(str(desc))
-    ]
-    soma = dfc_cod.loc[escolhidas].sum() if escolhidas else pd.Series(0.0 if len(dfc_cod) else float("nan"), index=dfc_cod.columns)
-    return soma, [descricoes[list(dfc_cod.index).index(cd)] for cd in escolhidas]
+    cd = linhas["CD_CONTA"]
+    casa = (cd.str.startswith(prefixo + ".") & (cd.str.count(r"\.") == nivel)
+            & linhas["DS_CONTA"].str.contains(padrao) & ~linhas["DS_CONTA"].str.contains(exclui))
+    escolhidas = linhas[casa]
+    soma = escolhidas.groupby("PER")["VL"].sum().reindex(sorted(linhas["PER"].unique()), fill_value=0.0)
+    isolada = isolar_trimestres(pd.DataFrame([soma]), preferir_derivado=True).iloc[0]
+    tri = {datetime.strptime(c.split(" a ")[1], "%Y-%m-%d").date(): v for c, v in isolada.items()}
+    anual = {}
+    for per, v in soma.items():
+        ini, fim = per.split(" a ")
+        if (pd.Timestamp(fim) - pd.Timestamp(ini)).days >= 360:
+            anual[datetime.strptime(fim, "%Y-%m-%d").date()] = v
+    return tri, anual, sorted(escolhidas["DS_CONTA"].str.strip().unique())
+
+
+SERIES_DESCRICAO = {
+    "da": ("6.01.01", PADRAO_DA, EXCLUI_DA, 1),
+    "capex": ("6.02", PADRAO_CAPEX, EXCLUI_CAPEX, -1),
+    "div_pagos": ("6.03", PADRAO_DIV, EXCLUI_DIV, -1),
+}
 
 
 def _consecutivos(datas):
     return all(70 <= (b - a).days <= 105 for a, b in zip(datas, datas[1:]))
 
 
-def montar_trimestral(blocos, fator):
+def montar_trimestral(blocos, fator, base):
     """DataFrame com uma linha por trimestre (índice = data de fim) e as séries base em R$."""
     por_titulo = {t: d for t, d in blocos if d is not None and not d.empty}
     dre = _por_codigo(por_titulo["DRE"], fator)
     bp = _por_codigo(por_titulo["Balanço Patrimonial"], fator)
     if "DFC (Método Indireto)" in por_titulo:
-        dfc_df = por_titulo["DFC (Método Indireto)"]
-        dfc = _por_codigo(dfc_df, fator)
-        desc_dfc = list(dfc_df.index)
+        dfc = _por_codigo(por_titulo["DFC (Método Indireto)"], fator)
     else:  # empresa que só publica DFC pelo método direto: séries de caixa ficam vazias
         dfc = pd.DataFrame(columns=dre.columns, dtype=float)
-        desc_dfc = []
 
     def linha(tab, cd):
         return tab.loc[cd] if cd in tab.index else pd.Series(float("nan"), index=tab.columns)
@@ -72,16 +115,19 @@ def montar_trimestral(blocos, fator):
     for nome, cd in SALDOS.items():
         q[nome] = linha(bp, cd)
 
-    da, linhas_da = _soma_por_descricao(dfc, desc_dfc, "6.01.01", PADRAO_DA, EXCLUI_DA)
-    capex, linhas_capex = _soma_por_descricao(dfc, desc_dfc, "6.02", PADRAO_CAPEX, EXCLUI_CAPEX)
-    div, linhas_div = _soma_por_descricao(dfc, desc_dfc, "6.03", PADRAO_DIV, EXCLUI_DIV)
-    q["da"], q["capex"], q["div_pagos"] = da, -capex, -div
+    linhas = linhas_dfc(base)
+    notas = {}
+    tem_dfc = len(dfc) > 0
+    for nome, (prefixo, padrao, exclui, sinal) in SERIES_DESCRICAO.items():
+        tri, _, usadas = serie_por_descricao(linhas, prefixo, padrao, exclui)
+        valores = pd.Series({d: tri.get(d, 0.0 if tem_dfc else float("nan")) for d in q.index})
+        q[nome] = sinal * valores
+        notas[{"da": "da", "capex": "capex", "div_pagos": "dividendos"}[nome]] = usadas
     q["ebitda"] = q["ebit"] + q["da"]
     q["fcf"] = q["fco"] - q["capex"]
     q["divida_bruta"] = q[["emprest_cp", "emprest_lp"]].sum(axis=1, min_count=1)
     q["divida_liquida"] = q["divida_bruta"].fillna(0) - q["caixa"].fillna(0) - q["aplicacoes"].fillna(0)
     q = q.sort_index()
-    notas = {"da": linhas_da, "capex": linhas_capex, "dividendos": linhas_div}
     return q, notas
 
 
@@ -136,9 +182,6 @@ def montar_visoes(q, mes_fim_exercicio=12):
     }
 
 
-ESCALAS = {"MIL": 1000, "UNIDADE": 1}
-
-
 def fluxos_anuais_dfp(base):
     """
     Fluxos anuais direto da DFP (o número oficial do ano), em R$, um por data de fim
@@ -161,15 +204,14 @@ def fluxos_anuais_dfp(base):
     dfp["VL"] = dfp["VL_CONTA"] * dfp["ESCALA_MOEDA"].map(ESCALAS).fillna(1)
 
     tabela = dfp.pivot_table(index="CD_CONTA", columns="DT_FIM_EXERC", values="VL", aggfunc="first")
-    descricoes = dfp.sort_values("DT_REFER").drop_duplicates("CD_CONTA", keep="last").set_index("CD_CONTA")["DS_CONTA"]
-    desc = [descricoes.get(cd, "") for cd in tabela.index]
 
     a = pd.DataFrame(index=tabela.columns)
     for nome, cd in FLUXOS.items():
         a[nome] = tabela.loc[cd] if cd in tabela.index else float("nan")
-    a["da"] = _soma_por_descricao(tabela, desc, "6.01.01", PADRAO_DA, EXCLUI_DA)[0]
-    a["capex"] = -_soma_por_descricao(tabela, desc, "6.02", PADRAO_CAPEX, EXCLUI_CAPEX)[0]
-    a["div_pagos"] = -_soma_por_descricao(tabela, desc, "6.03", PADRAO_DIV, EXCLUI_DIV)[0]
+    linhas = linhas_dfc(base)
+    for nome, (prefixo, padrao, exclui, sinal) in SERIES_DESCRICAO.items():
+        _, anual, _ = serie_por_descricao(linhas, prefixo, padrao, exclui)
+        a[nome] = [sinal * anual[d] if d in anual else float("nan") for d in a.index]
     a["ebitda"] = a["ebit"] + a["da"]
     a["fcf"] = a["fco"] - a["capex"]
     return a

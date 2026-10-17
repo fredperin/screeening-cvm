@@ -74,7 +74,7 @@ def processar(empresa, log):
         else:
             blocos_reais = blocos
 
-    q, notas = montar_trimestral(blocos_reais, fator)
+    q, notas = montar_trimestral(blocos_reais, fator, base)
     visoes = adicionar_indicadores(aplicar_anual_dfp(montar_visoes(q, mes_fim_exercicio(base)), base))
     dados = {
         "id": id_empresa(empresa.tickers_lista),
