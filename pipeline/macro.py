@@ -26,6 +26,9 @@ SERIES = {
     "eur": (21619, "Euro PTAX (venda)", "R$"),
     "pib_anual": (7326, "PIB, variação real anual", "%"),
     "pib_indice": (22109, "PIB trimestral, índice dessazonalizado", "índice"),
+    "pib_indice_obs": (22099, "PIB trimestral, índice observado (sem ajuste)", "índice"),
+    "ibcbr": (24363, "IBC-Br, índice observado (sem ajuste)", "índice"),
+    "ibcbr_dessaz": (24364, "IBC-Br, índice dessazonalizado", "índice"),
 }
 FOCUS = {"ipca": "IPCA", "selic": "Selic", "cambio": "Câmbio", "pib": "PIB Total"}
 
@@ -72,8 +75,8 @@ def _empacotar(serie, nome, unidade, casas=4):
     }
 
 
-def baixar_focus(indicador):
-    """Mediana diária das expectativas para o ano corrente e o seguinte, desde 2 anos atrás."""
+def baixar_focus(indicador, todos_os_anos=False):
+    """Mediana diária das expectativas (ano corrente e seguinte, ou todos os anos projetados), desde 2 anos atrás."""
     hoje = date.today()
     filtro = (f"Indicador eq '{indicador}' and baseCalculo eq 0 and Data ge '{hoje.year - 2}-01-01'")
     # O Olinda rejeita espaço codificado como "+" (padrão do requests): monta a URL com %20
@@ -82,7 +85,8 @@ def baixar_focus(indicador):
     dados = _get(url)
     df = pd.DataFrame(dados.get("value", []) if isinstance(dados, dict) else [])
     saida = {}
-    for ano in (hoje.year, hoje.year + 1):
+    anos = sorted({int(a) for a in df["DataReferencia"].unique() if str(a).isdigit() and int(a) >= hoje.year})         if todos_os_anos and not df.empty else (hoje.year, hoje.year + 1)
+    for ano in anos:
         sub = df[df["DataReferencia"] == str(ano)].sort_values("Data") if not df.empty else df
         if sub.empty:
             continue
@@ -111,7 +115,17 @@ def gerar():
     real = ((1 + juntos["selic"] / 100) / (1 + juntos["ipca"] / 100) - 1) * 100
     saida["juro_real"] = _empacotar(real, "Juro real ex-post (Selic meta ÷ IPCA 12m)", "% a.a.")
 
-    focus = {chave: baixar_focus(nome) for chave, nome in FOCUS.items()}
+    # Acumulado em 4 trimestres (como o IBGE divulga): soma dos últimos 4 trimestres sobre os 4 anteriores
+    obs = brutas["pib_indice_obs"]
+    saida["pib_12m"] = _empacotar(((obs.rolling(4).sum() / obs.rolling(4).sum().shift(4) - 1) * 100).dropna(),
+                                  "PIB acumulado em 4 trimestres (12 meses)", "%")
+    ibc = brutas["ibcbr_dessaz"]
+    saida["ibcbr_mensal"] = _empacotar(((ibc / ibc.shift(1) - 1) * 100).dropna(), "IBC-Br, variação mensal dessazonalizada", "%")
+    ibc_obs = brutas["ibcbr"]
+    saida["ibcbr_12m"] = _empacotar(((ibc_obs.rolling(12).sum() / ibc_obs.rolling(12).sum().shift(12) - 1) * 100).dropna(),
+                                    "IBC-Br acumulado em 12 meses", "%")
+
+    focus = {chave: baixar_focus(nome, todos_os_anos=(chave == "selic")) for chave, nome in FOCUS.items()}
     arquivo = DIR_DADOS_SITE / "macro.json"
     arquivo.write_text(json.dumps({"gerado_em": date.today().isoformat(), "series": saida, "focus": focus},
                                   ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

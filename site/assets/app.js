@@ -75,7 +75,8 @@ function formatar(tipo, v) {
  * series: [{nome, valores, tipo:"bar"|"line", eixo:"esq"|"dir", cor}]
  * eixoEsq/eixoDir: "reais" | "pct" | "pctPronto" | "vezes" | "preco"
  */
-function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTempo = false, xNome = null, degrau = false }) {
+function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTempo = false, xNome = null, degrau = false,
+  janela = 24, inicioTempo = null, deslizante = false }) {
   const g = echarts.init(el, null, { renderer: "canvas" });
   graficos.push(g);
   const eixosY = [eixoValor(eixoEsq, "left")];
@@ -83,7 +84,7 @@ function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTemp
   g.setOption({
     backgroundColor: "transparent",
     textStyle: { fontFamily: "JetBrains Mono" },
-    grid: { left: 64, right: eixoDir ? 64 : 24, top: 36, bottom: 48 },
+    grid: { left: 64, right: eixoDir ? 64 : 24, top: 36, bottom: deslizante ? 70 : 48 },
     legend: { top: 0, type: "scroll", textStyle: { color: COR.texto, fontSize: 11 }, itemHeight: 8, itemGap: 14, pageTextStyle: { color: COR.cinza } },
     tooltip: {
       trigger: "axis", backgroundColor: "#151c25", borderColor: COR.borda, textStyle: { color: COR.texto, fontSize: 12 },
@@ -101,14 +102,18 @@ function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTemp
       ? { type: "time", axisLabel: { color: COR.cinza }, axisLine: { lineStyle: { color: COR.borda } }, splitLine: { show: false } }
       : xNome
         ? { type: "value", name: xNome, nameLocation: "middle", nameGap: 28, nameTextStyle: { color: COR.cinza }, axisLabel: { color: COR.cinza }, axisLine: { lineStyle: { color: COR.borda } }, splitLine: { show: false }, scale: true }
-        : { type: "category", data: rotulos, axisLabel: { color: COR.cinza }, axisLine: { lineStyle: { color: COR.borda } } },
+        : { type: "category", data: rotulos, axisLabel: { color: COR.cinza, hideOverlap: true }, axisLine: { lineStyle: { color: COR.borda } } },
     yAxis: eixosY,
-    dataZoom: rotulos && rotulos.length > 24 && !xNome ? [{ type: "inside", start: Math.max(0, 100 - (24 / rotulos.length) * 100), end: 100 }] : [],
+    dataZoom: xTempo
+      ? (inicioTempo ? [{ type: "inside", startValue: inicioTempo },
+        ...(deslizante ? [{ type: "slider", startValue: inicioTempo, height: 16, bottom: 30, borderColor: COR.borda, textStyle: { color: COR.cinza },
+          fillerColor: "rgba(240,180,41,.15)", dataBackground: { lineStyle: { color: COR.cinza }, areaStyle: { color: "#1b2430" } } }] : [])] : [])
+      : rotulos && rotulos.length > janela && !xNome ? [{ type: "inside", start: Math.max(0, 100 - (janela / rotulos.length) * 100), end: 100 }] : [],
     series: series.map((s) => ({
       name: s.nome, type: s.tipo || "bar", data: s.valores, yAxisIndex: s.eixo === "dir" ? 1 : 0,
       itemStyle: { color: s.cor }, lineStyle: { color: s.cor, width: 2, type: s.tracejado ? "dashed" : "solid" },
       symbol: s.tipo === "line" && !xTempo && s.valores.length < 40 ? "circle" : "none", symbolSize: 4,
-      connectNulls: true, barMaxWidth: 28, step: degrau && s.tipo === "line" ? "end" : false, smooth: false,
+      connectNulls: true, barMaxWidth: 28, step: degrau && s.tipo === "line" ? "end" : false, smooth: false, stack: s.pilha,
     })),
   });
   return g;
@@ -275,6 +280,8 @@ async function paginaEmpresas() {
 
 /* ============ Empresa ============ */
 let VISAO = "trimestral";
+let FC_SEL = "todos";
+const OPCOES_FC = [["todos", "Todos"], ["fco", "FCO"], ["fci", "FCI"], ["fcfin", "FCFi"], ["soma", "Soma"]];
 
 const INDICADORES_LTM = [
   ["Receita líquida", "receita", reais], ["EBITDA", "ebitda", reais], ["EBIT", "ebit", reais], ["Lucro líquido", "lucro_liquido", reais],
@@ -317,13 +324,13 @@ async function paginaEmpresa(id) {
       ${cartao("EV/EBITDA", vezes(ev && pos(L("ebitda")) ? ev / L("ebitda") : null), "LTM")}
       ${cartao("EV/EBIT", vezes(ev && pos(L("ebit")) ? ev / L("ebit") : null), "LTM")}
       ${cartao("FCF yield", pct(mc && L("fcf") != null ? L("fcf") / mc : null), "FCF LTM ÷ market cap")}
-      ${cartao("DY 12m", pct(m.dy_12m, 2), "proventos B3 ÷ preço")}
+      ${cartao("DY 12m", pct(m.dy_12m, 2), "proventos B3 (data-com 12m) ÷ preço atual")}
       ${cartao("ROE / ROIC", `${pct(L("roe"))} / ${pct(L("roic"))}`, "LTM")}
     </div>
     <div class="cabecalho"><h2 style="margin:0">Resultados</h2>
       <div class="seletor" id="visao">${["trimestral", "semestral", "anual"].map((v) => `<button data-v="${v}" class="${v === VISAO ? "ativo" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</div></div>
     <div class="grade" id="graficos-empresa"></div>
-    <div class="secao painel"><h2>Indicadores (LTM)</h2><div class="rolagem" id="tab-ind"></div></div>
+    <div class="secao painel"><h2>Indicadores — anuais e último LTM</h2><div class="rolagem" id="tab-ind"></div></div>
     <div class="secao"><h2>Dividendos</h2><div class="grade" id="dividendos"></div></div>
     <div class="secao painel nota" id="notas"></div>`;
 
@@ -360,23 +367,50 @@ function desenharGraficosEmpresa(emp) {
     ["EBITDA e margem EBITDA", { series: [{ nome: "EBITDA", valores: S.ebitda, cor: COR.azul }, { nome: "Margem EBITDA", valores: S.m_ebitda, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
     ["EBIT e margem EBIT", { series: [{ nome: "EBIT", valores: S.ebit, cor: COR.azul }, { nome: "Margem EBIT", valores: S.m_ebit, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
     ["Lucro líquido e margem líquida", { series: [{ nome: "Lucro líquido", valores: S.lucro_liquido, cor: COR.verde }, { nome: "Margem líquida", valores: S.m_liquida, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
-    ["Resultado financeiro", { series: [{ nome: "Receitas financeiras", valores: S.rec_fin, cor: COR.verde }, { nome: "Despesas financeiras", valores: S.desp_fin, cor: COR.vermelho }, { nome: "Resultado financeiro", valores: S.res_fin, tipo: "line", cor: COR.ambar }] }],
-    ["Fluxo de caixa", { series: [{ nome: "FCO", valores: S.fco, cor: COR.azul }, { nome: "Capex", valores: neg(S.capex), cor: COR.vermelho }, { nome: "FCF", valores: S.fcf, cor: COR.verde }, { nome: "Margem FCF", valores: S.m_fcf, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
+    ["Resultado financeiro", { series: [{ nome: "Receitas financeiras", valores: S.rec_fin, cor: COR.verde, pilha: "fin" }, { nome: "Despesas financeiras", valores: S.desp_fin, cor: COR.vermelho, pilha: "fin" }, { nome: "Resultado financeiro", valores: S.res_fin, tipo: "line", cor: COR.ambar }] }],
     ["Endividamento", { series: [{ nome: "Dívida bruta", valores: S.divida_bruta, cor: COR.vermelho }, { nome: "Caixa + aplicações", valores: soma(S.caixa, S.aplicacoes), cor: COR.verde }, { nome: "Dívida líquida", valores: S.divida_liquida, cor: COR.azul }, { nome: "Dív. líq./EBITDA", valores: S.dl_ebitda, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "vezes" }],
     ["Retorno (LTM)", { series: [{ nome: "ROE", valores: S.roe, tipo: "line", cor: COR.ambar }, { nome: "ROIC", valores: S.roic, tipo: "line", cor: COR.ciano }], eixoEsq: "pct" }],
   ];
-  area.innerHTML = defs.map((d, i) => `<div class="painel"><h2>${d[0]}</h2><div class="grafico" id="ge-${i}"></div></div>`).join("");
+  area.innerHTML = defs.map((d, i) => `<div class="painel"><h2>${d[0]}</h2><div class="grafico" id="ge-${i}"></div></div>`).join("")
+    + `<div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Fluxo de caixa (DFC)</h2>
+        <div class="seletor" id="sel-fc">${OPCOES_FC.map(([k, r]) => `<button data-k="${k}" class="${k === FC_SEL ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
+        <div class="grafico" id="ge-fc"></div>
+        <div class="nota">FCO = operacional · FCI = investimento · FCFi = financiamento · Soma = FCO + FCI + FCFi (variação do caixa, antes da variação cambial).</div></div>`;
   defs.forEach((d, i) => grafico(document.getElementById(`ge-${i}`), { rotulos: rot, ...d[1] }));
+  const vazio = S.receita.map(() => null);
+  const fco = S.fco || vazio, fci = S.fci || vazio, fcfin = S.fcfin || vazio;
+  const somaFc = fco.map((x, i) => (x == null && fci[i] == null && fcfin[i] == null ? null : (x || 0) + (fci[i] || 0) + (fcfin[i] || 0)));
+  const seriesFc = {
+    fco: { nome: "FCO", valores: fco, cor: COR.azul }, fci: { nome: "FCI", valores: fci, cor: COR.vermelho },
+    fcfin: { nome: "FCFi", valores: fcfin, cor: COR.roxo }, soma: { nome: "Soma (FCO+FCI+FCFi)", valores: somaFc, cor: COR.verde },
+  };
+  let gFc = null;
+  const desenharFc = () => {
+    if (gFc) { gFc.dispose(); graficos.splice(graficos.indexOf(gFc), 1); }
+    const escolhidas = FC_SEL === "todos" ? [seriesFc.fco, seriesFc.fci, seriesFc.fcfin] : [seriesFc[FC_SEL]];
+    gFc = grafico(document.getElementById("ge-fc"), { rotulos: rot, series: escolhidas, janela: 12 });
+  };
+  document.getElementById("sel-fc").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    FC_SEL = b.dataset.k;
+    document.querySelectorAll("#sel-fc button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenharFc();
+  });
+  desenharFc();
   redesenharDividendos();
 }
 
 function desenharIndicadores(emp) {
-  const ltm = emp.ltm, n = ltm.periodos.length;
-  const cols = ltm.periodos.map((p, i) => i).slice(-8);
-  const valor = (k, i) => (k ? ltm.series[k][i] : (ltm.series.caixa[i] || 0) + (ltm.series.aplicacoes[i] || 0));
-  document.getElementById("tab-ind").innerHTML = n === 0 ? `<p class="sub">Sem 4 trimestres seguidos para calcular LTM.</p>` : `
-    <table class="tabela"><tr><th>Indicador</th>${cols.map((i) => `<th>${dataBR(ltm.periodos[i])}</th>`).join("")}</tr>
-    ${INDICADORES_LTM.map(([nome, k, f]) => `<tr><td>${nome}</td>${cols.map((i) => `<td>${f(valor(k, i))}</td>`).join("")}</tr>`).join("")}</table>`;
+  // Últimos 8 anos fechados (ou o máximo disponível) + o último LTM
+  const anual = emp.anual, ltm = emp.ltm, mesFim = emp.mes_fim_exercicio || 12;
+  const cols = anual.periodos.map((p, i) => ({ visao: anual, i, titulo: rotuloPeriodo(p, "anual", mesFim) })).slice(-8);
+  const nl = ltm.periodos.length - 1;
+  if (nl >= 0 && ltm.periodos[nl] !== anual.periodos[anual.periodos.length - 1]) cols.push({ visao: ltm, i: nl, titulo: `LTM ${dataBR(ltm.periodos[nl])}` });
+  const valor = (v, k, i) => (k ? (v.series[k] || [])[i] : ((v.series.caixa || [])[i] || 0) + ((v.series.aplicacoes || [])[i] || 0));
+  document.getElementById("tab-ind").innerHTML = cols.length === 0 ? `<p class="sub">Sem anos fechados nem LTM disponíveis.</p>` : `
+    <table class="tabela"><tr><th>Indicador</th>${cols.map((c) => `<th>${c.titulo}</th>`).join("")}</tr>
+    ${INDICADORES_LTM.map(([nome, k, f]) => `<tr><td>${nome}</td>${cols.map((c) => `<td>${f(valor(c.visao, k, c.i))}</td>`).join("")}</tr>`).join("")}</table>
+    <div class="nota">Colunas anuais: exercício fechado (DFP). Última coluna: últimos 12 meses (LTM). Retornos e múltiplos de endividamento usam o LTM da data.</div>`;
 }
 
 let ULTIMO_DIV = null;
@@ -402,20 +436,26 @@ function redesenharDividendos(primeira = false) {
     area.innerHTML = `
       <div class="painel"><h2>Dividendos + JCP pagos (DFC) e payout</h2><div class="grafico" id="gd-dfc"></div></div>
       <div class="painel"><h2>Proventos por ação ${esc(prov && prov.papel_referencia ? "· " + prov.papel_referencia : "")} e DY</h2><div class="grafico" id="gd-acao"></div>
-        <div class="nota">Histórico por ação: Yahoo Finance (não oficial). DY do ano = proventos ÷ preço médio do ano.</div></div>
-      <div class="painel"><h2>Proventos anunciados (B3)</h2><div class="rolagem rolagem-y"><table class="tabela">
-        <tr><th>Tipo</th><th>Classe</th><th>Data-com</th><th>Pagamento</th><th>R$/ação</th><th>Referente</th></tr>
-        ${b3.length ? b3.map((p) => `<tr><td>${esc(p.tipo)}</td><td>${esc(p.classe)}</td><td>${dataBR(p.data_com)}</td><td>${dataBR(p.pagamento)}</td><td>${num(p.valor, 6)}</td><td class="sub">${esc(p.referente || "")}</td></tr>`).join("")
-          : `<tr><td colspan="6" class="sub">A B3 não informou proventos recentes.</td></tr>`}
-      </table></div><div class="nota">Proventos 12m (classe de referência): R$ ${num(m.proventos_12m_por_acao, 4)} por ação · a API da B3 traz cerca dos últimos 12 meses.</div></div>
-      <div class="painel"><h2>Cotação semanal ${esc(prov && prov.papel_referencia ? "· " + prov.papel_referencia : "")}</h2><div class="grafico" id="gd-cot"></div></div>`;
+        <div class="nota">${prov && prov.fonte_por_acao === "B3"
+          ? "Proventos anunciados (dividendos + JCP) por ação, somados pelo ano da data-com — fonte B3. DY do ano = soma, provento a provento, de valor ÷ preço de fechamento na data-com (também da B3)."
+          : "Proventos por ação somados pelo ano da data ex — fonte Yahoo Finance (não oficial). DY do ano = proventos ÷ preço médio semanal do ano (Yahoo)."}
+          Não é o valor pago na DFC: esse está no gráfico ao lado, pelo caixa efetivamente pago no ano.</div></div>
+      <div class="painel"><h2>Proventos anunciados (B3) — últimos 3 anos</h2><div class="rolagem rolagem-y"><table class="tabela">
+        <tr><th>Tipo</th><th>Classe</th><th>Data-com</th><th>Pagamento</th><th>R$/ação</th><th>Preço data-com</th><th>Aprovado</th></tr>
+        ${b3.length ? b3.map((p) => `<tr><td>${esc(p.tipo)}</td><td>${esc(p.classe)}</td><td>${dataBR(p.data_com)}</td><td>${dataBR(p.pagamento)}</td><td>${num(p.valor, 6)}</td><td>${p.preco_data_com ? num(p.preco_data_com, 2) : "—"}</td><td class="sub">${dataBR(p.aprovado)}</td></tr>`).join("")
+          : `<tr><td colspan="7" class="sub">A B3 não informou proventos.</td></tr>`}
+      </table></div><div class="nota">Proventos 12m (${esc(prov && prov.classe_referencia || "classe de referência")}): R$ ${num(m.proventos_12m_por_acao, 4)} por ação, data-com nos últimos 12 meses.
+        A data de pagamento só é informada pela B3 para cerca dos últimos 12 meses.</div></div>
+      <div class="painel"><h2>Cotação semanal ${esc(prov && prov.papel_referencia ? "· " + prov.papel_referencia : "")}</h2><div class="grafico" id="gd-cot"></div>
+        <div class="nota">Fechamento semanal dos últimos 10 anos, sem ajuste por proventos — fonte Yahoo Finance (não oficial).</div></div>`;
   }
   grafico(document.getElementById("gd-dfc"), { rotulos: rot, eixoDir: "pct", series: [
     { nome: "Dividendos + JCP pagos", valores: A.div_pagos, cor: COR.verde },
     { nome: "Payout", valores: A.payout, tipo: "line", eixo: "dir", cor: COR.ambar }] });
-  grafico(document.getElementById("gd-acao"), { rotulos: anos, eixoEsq: "preco", eixoDir: "pct", series: [
+  const dyAno = (prov && prov.dy_ano) || {};
+  grafico(document.getElementById("gd-acao"), { rotulos: anos, eixoEsq: "preco", eixoDir: "pct", janela: 12, series: [
     { nome: "R$ por ação", valores: anos.map((a) => porAno[a]), cor: COR.verde },
-    { nome: "DY", valores: anos.map((a) => { const p = precoMedio(a); return p ? porAno[a] / p : null; }), tipo: "line", eixo: "dir", cor: COR.ambar }] });
+    { nome: "DY", valores: anos.map((a) => { if (dyAno[a] != null) return dyAno[a]; const p = precoMedio(a); return p ? porAno[a] / p : null; }), tipo: "line", eixo: "dir", cor: COR.ambar }] });
   if (cot) grafico(document.getElementById("gd-cot"), { xTempo: true, eixoEsq: "preco", series: [
     { nome: "Fechamento", valores: cot.datas.map((d, i) => [d, cot.fechamento[i]]), tipo: "line", cor: COR.ambar }] });
   else document.getElementById("gd-cot").innerHTML = `<p class="sub">Cotação histórica indisponível.</p>`;
@@ -427,7 +467,7 @@ async function paginaMacro() {
   const macro = await dados("dados/macro.json");
   const S = macro.series, F = macro.focus;
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS) e boletim Focus · atualizado em ${dataBR(macro.gerado_em)}</div></div>
+    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS) e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
       <div class="seletor" id="janela">${[[1, "1A"], [5, "5A"], [10, "10A"], [99, "Máx"]].map(([a, r]) => `<button data-a="${a}" class="${a === JANELA_MACRO ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
     <div class="grade-cartoes">
       ${cartao("IPCA mensal", pctPronto(ultimo(S.ipca).valor), ultimo(S.ipca).data?.slice(0, 7))}
@@ -450,32 +490,58 @@ async function paginaMacro() {
 
 function desenharMacro(S, F) {
   graficos.splice(0).forEach((g) => g.dispose());
-  const desde = new Date(); desde.setFullYear(desde.getFullYear() - JANELA_MACRO);
-  const corte = JANELA_MACRO >= 99 ? "0000" : desde.toISOString().slice(0, 10);
-  const P = (s) => (s ? s.datas.map((d, i) => [d, s.valores[i]]).filter((p) => p[0] >= corte) : []);
+  // Histórico completo em todos os gráficos; os botões só escolhem a janela inicial (dá para dar zoom para trás)
+  const inicio = (anos) => { if (anos >= 99) return null; const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
+  const corte = inicio(JANELA_MACRO);
+  const P = (s) => (s ? s.datas.map((d, i) => [d, s.valores[i]]) : []);
   const defs = [
     ["IPCA", { series: [{ nome: "Mensal", valores: P(S.ipca), cor: COR.azul }, { nome: "12 meses", valores: P(S.ipca_12m), tipo: "line", eixo: "dir", cor: COR.vermelho }], eixoEsq: "pctPronto", eixoDir: "pctPronto" }],
     ["IGP-M", { series: [{ nome: "Mensal", valores: P(S.igpm), cor: COR.azul }, { nome: "12 meses", valores: P(S.igpm_12m), tipo: "line", eixo: "dir", cor: COR.vermelho }], eixoEsq: "pctPronto", eixoDir: "pctPronto" }],
     ["Selic meta e CDI", { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "CDI", valores: P(S.cdi), tipo: "line", cor: COR.ciano }], eixoEsq: "pctPronto", degrau: true }],
     ["Juro real ex-post (Selic ÷ IPCA 12m)", { series: [{ nome: "Juro real", valores: P(S.juro_real), tipo: "line", cor: COR.verde }], eixoEsq: "pctPronto" }],
     ["Câmbio PTAX", { series: [{ nome: "Dólar", valores: P(S.usd), tipo: "line", cor: COR.verde }, { nome: "Euro", valores: P(S.eur), tipo: "line", cor: COR.roxo }], eixoEsq: "preco" }],
-    ["PIB", { series: [{ nome: "Trimestral (dessaz.)", valores: P(S.pib_tri), cor: COR.azul }], eixoEsq: "pctPronto" }],
+    ["PIB", { series: [{ nome: "Trimestral (dessaz., tri/tri)", valores: P(S.pib_tri), cor: COR.azul }, { nome: "Acumulado em 12 meses", valores: P(S.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto" }],
+    ["IBC-Br (prévia mensal do PIB)", { series: [{ nome: "Mensal (dessaz., m/m)", valores: P(S.ibcbr_mensal), cor: COR.azul }, { nome: "Acumulado em 12 meses", valores: P(S.ibcbr_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto", inicio: inicio(Math.min(JANELA_MACRO, 3)) }],
   ];
   const area = document.getElementById("graficos-macro");
   area.innerHTML = defs.map((d, i) => `<div class="painel"><h2>${d[0]}</h2><div class="grafico" id="gm-${i}"></div></div>`).join("");
-  defs.forEach((d, i) => grafico(document.getElementById(`gm-${i}`), { xTempo: true, ...d[1] }));
+  defs.forEach((d, i) => {
+    const { inicio: ini, ...opcoes } = d[1];
+    grafico(document.getElementById(`gm-${i}`), { xTempo: true, inicioTempo: (ini !== undefined ? ini : corte) || "1990-01-01", deslizante: true, ...opcoes });
+  });
 
   const nomes = { ipca: "IPCA (%)", selic: "Selic fim de ano (% a.a.)", cambio: "Câmbio fim de ano (R$/US$)", pib: "PIB (%)" };
   const fa = document.getElementById("graficos-focus");
   fa.innerHTML = Object.keys(nomes).map((k) => `<div class="painel"><h2>${nomes[k]}</h2><div class="grafico" id="gf-${k}"></div></div>`).join("");
   Object.keys(nomes).forEach((k) => {
-    const anos = Object.keys(F[k] || {});
+    const anos = Object.keys(F[k] || {}).sort();
     grafico(document.getElementById(`gf-${k}`), { xTempo: true, eixoEsq: k === "cambio" ? "preco" : "pctPronto",
-      series: anos.map((a, i) => ({ nome: a, valores: F[k][a].datas.map((d, j) => [d, F[k][a].valores[j]]), tipo: "line", cor: [COR.ambar, COR.ciano][i % 2] })) });
+      series: anos.map((a, i) => ({ nome: a, valores: F[k][a].datas.map((d, j) => [d, F[k][a].valores[j]]), tipo: "line", cor: PALETA_DATAS[i % PALETA_DATAS.length] })) });
   });
 }
 
 /* ============ Juros ============ */
+const GRUPOS_TESOURO = [
+  ["Tesouro Prefixado", "Prefixado (LTN)"], ["Tesouro Prefixado com Juros Semestrais", "Prefixado com juros semestrais (NTN-F)"],
+  ["Tesouro IPCA+", "IPCA+ (NTN-B Principal)"], ["Tesouro IPCA+ com Juros Semestrais", "IPCA+ com juros semestrais (NTN-B)"],
+  ["Tesouro Selic", "Selic (LFT)"], ["Tesouro Renda+ Aposentadoria Extra", "Renda+"], ["Tesouro Educa+", "Educa+"],
+  ["Tesouro IGPM+ com Juros Semestrais", "IGP-M+ com juros semestrais (NTN-C)"],
+];
+
+function variacaoSemana(tes, t) {
+  const c = tes.curvas["1 semana"];
+  if (!c) return null;
+  const ponto = [...c.prefixado, ...c.ipca].find((p) => p.vencimento === t.vencimento && p.titulo === t.tipo);
+  return ponto ? t.taxa_compra - ponto.taxa : null;
+}
+
+function interpolar(pontos, anos) {
+  if (!pontos || !pontos.length || anos < pontos[0].anos || anos > pontos[pontos.length - 1].anos) return null;
+  const k = pontos.findIndex((p) => p.anos >= anos);
+  if (pontos[k].anos === anos || k === 0) return pontos[k].taxa;
+  const a = pontos[k - 1], b = pontos[k];
+  return a.taxa + ((anos - a.anos) / (b.anos - a.anos)) * (b.taxa - a.taxa);
+}
 async function paginaJuros() {
   const [di, tes] = await Promise.all([dados("dados/curva_di.json").catch(() => null), dados("dados/tesouro.json")]);
   app.innerHTML = `
@@ -486,10 +552,17 @@ async function paginaJuros() {
       <div class="painel"><h2>Tesouro prefixado</h2><div class="grafico alto" id="gj-pre"></div></div>
       <div class="painel"><h2>Tesouro IPCA+ (juro real)</h2><div class="grafico alto" id="gj-ipca"></div></div>
       <div class="painel"><h2>Inflação implícita (prefixado × IPCA+)</h2><div class="grafico alto" id="gj-impl"></div></div>
-      <div class="painel"><h2>Títulos à venda — Tesouro Direto (${dataBR(tes.data_base)})</h2><div class="rolagem rolagem-y"><table class="tabela" id="tab-tit">
-        <tr><th>Título</th><th>Vencimento</th><th>Taxa compra</th><th>PU compra</th></tr>
-        ${tes.titulos.map((t) => `<tr class="clicavel" data-id="${esc(t.id)}"><td>${esc(t.tipo)}</td><td>${dataBR(t.vencimento)}</td><td>${num(t.taxa_compra, 2)}%</td><td>R$ ${num(t.pu_compra, 2)}</td></tr>`).join("")}
-      </table></div><div class="nota">Clique num título para ver o histórico de taxa e preço.</div></div>
+      <div class="painel"><h2>Taxas DI por prazo (B3)</h2><div class="rolagem" id="tab-vertices"></div>
+        <div class="nota">Interpolação linear da curva DI nos prazos (anos de 252 dias úteis). DI x IPCA = juro real.</div></div>
+      <div class="painel largo"><h2>Títulos à venda — Tesouro Direto (${dataBR(tes.data_base)})</h2><div class="grade" id="tab-tit">
+        ${GRUPOS_TESOURO.filter(([tipo]) => tes.titulos.some((t) => t.tipo === tipo)).map(([tipo, nome]) => `
+          <div><div class="sub" style="margin:4px 0 6px;color:var(--ambar)">${esc(nome)}</div><table class="tabela">
+            <tr><th>Vencimento</th><th>Taxa compra</th><th>Var. 1 sem.</th><th>PU compra</th></tr>
+            ${tes.titulos.filter((t) => t.tipo === tipo).map((t) => { const v = variacaoSemana(tes, t);
+              return `<tr class="clicavel" data-id="${esc(t.id)}"><td>${dataBR(t.vencimento)}</td><td>${num(t.taxa_compra, 2)}%</td>
+                <td class="${v == null ? "" : v > 0 ? "neg" : "pos"}">${v == null ? "—" : `${v > 0 ? "+" : ""}${num(v * 100, 0)} bp`}</td><td>R$ ${num(t.pu_compra, 2)}</td></tr>`; }).join("")}
+          </table></div>`).join("")}
+      </div><div class="nota">Clique num título para ver o histórico de taxa e preço. Variação em pontos-base (bp) contra a curva de 1 semana atrás (quando o título está nela).</div></div>
       <div class="painel largo" id="painel-titulo" style="display:none"><h2 id="titulo-hist"></h2><div class="grafico alto" id="gj-hist"></div></div>
     </div>
     <div class="nota secao">A curva DI vem do arquivo "Taxas de Mercado para Swaps" da B3 (fim de dia). As curvas do Tesouro usam a taxa de compra
@@ -514,6 +587,15 @@ async function paginaJuros() {
   grafico(document.getElementById("gj-ipca"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: porData(tes.curvas, "ipca", 99) });
   grafico(document.getElementById("gj-impl"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: porData(tes.curvas, "inflacao_implicita", 99) });
   ["gj-pre", "gj-ipca", "gj-impl"].forEach((id) => notaDatas(id, tes.curvas));
+
+  if (di) {
+    const datasDi = Object.keys(di.curvas);
+    const prazos = [[0.5, "6 meses"], [1, "1 ano"], [2, "2 anos"], [3, "3 anos"], [5, "5 anos"], [10, "10 anos"]];
+    const linhas = (campo) => prazos.map(([a, r]) => `<tr><td>${r}</td>${datasDi.map((d) => `<td>${pctPronto(interpolar(di.curvas[d][campo], a))}</td>`).join("")}</tr>`).join("");
+    document.getElementById("tab-vertices").innerHTML = `<table class="tabela">
+      <tr><th>DI x Pré</th>${datasDi.map((d) => `<th>${d}<br><span class="sub">${dataBR(di.curvas[d].data)}</span></th>`).join("")}</tr>${linhas("pre")}
+      <tr><th>DI x IPCA</th>${datasDi.map(() => "<th></th>").join("")}</tr>${linhas("ipca")}</table>`;
+  }
 
   let gHist = null;
   document.getElementById("tab-tit").addEventListener("click", async (ev) => {

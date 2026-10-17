@@ -22,7 +22,7 @@ EXCLUI_DIV = re.compile(r"receb", re.I)
 FLUXOS = {
     "receita": "3.01", "lucro_bruto": "3.03", "ebit": "3.05", "res_fin": "3.06",
     "rec_fin": "3.06.01", "desp_fin": "3.06.02", "lair": "3.07", "ir": "3.08",
-    "lucro_liquido": "3.11", "fco": "6.01",
+    "lucro_liquido": "3.11", "fco": "6.01", "fci": "6.02", "fcfin": "6.03", "var_caixa": "6.05",
 }
 SALDOS = {
     "ativo_total": "1", "ativo_circ": "1.01", "caixa": "1.01.01", "aplicacoes": "1.01.02",
