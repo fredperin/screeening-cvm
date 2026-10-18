@@ -166,12 +166,18 @@ CHECAGENS = {
 
 
 def main():
+    import time
     resultados = {}
     for nome, funcao in CHECAGENS.items():
-        try:
-            resultados[nome] = {"ok": True, "detalhe": funcao()}
-        except Exception as e:
-            resultados[nome] = {"ok": False, "detalhe": str(e)[:300] or repr(e)}
+        # até 3 tentativas: oscilação momentânea de uma API não deve virar alerta
+        for tentativa in range(3):
+            try:
+                resultados[nome] = {"ok": True, "detalhe": funcao()}
+                break
+            except Exception as e:
+                resultados[nome] = {"ok": False, "detalhe": str(e)[:300] or repr(e)}
+                if tentativa < 2:
+                    time.sleep(15)
         marca = "✅" if resultados[nome]["ok"] else "❌"
         print(f"{marca} {nome}: {resultados[nome]['detalhe']}")
 
