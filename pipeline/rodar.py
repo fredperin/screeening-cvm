@@ -49,7 +49,7 @@ def versao_do_codigo():
 
 
 def main(tudo=False):
-    from pipeline import curva_di, eventos, ficha, fre_textos, macro, mercado, resumos, tesouro
+    from pipeline import agenda, curva_di, eventos, ficha, fre_textos, macro, mercado, resumos, tesouro
     from pipeline.cvm_lote import atualizar_base_cvm
     from pipeline.gerar_empresas import DIR_EMPRESAS, gerar_indice
     from pipeline.gerar_empresas import main as gerar_empresas
@@ -57,6 +57,7 @@ def main(tudo=False):
 
     status = {}
     _etapa("macro", macro.gerar, status)
+    _etapa("agenda", agenda.gerar, status)
     _etapa("tesouro", tesouro.gerar, status)
     _etapa("curva_di", curva_di.gerar, status)
     _etapa("mercado", mercado.gerar, status)

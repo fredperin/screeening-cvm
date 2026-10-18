@@ -154,7 +154,7 @@ async function iniciarBusca() {
 
 /* ============ roteamento ============ */
 const app = document.getElementById("app");
-const ROTAS = { "": paginaInicio, empresas: paginaEmpresas, empresa: paginaEmpresa, macro: paginaMacro, juros: paginaJuros, downloads: paginaDownloads };
+const ROTAS = { "": paginaInicio, empresas: paginaEmpresas, empresa: paginaEmpresa, macro: paginaMacro, juros: paginaJuros, agenda: paginaAgenda, downloads: paginaDownloads };
 
 async function rotear() {
   limparGraficos();
@@ -185,10 +185,10 @@ function cartao(rotulo, valor, det = "") {
 }
 
 async function paginaInicio() {
-  const [macro, tesouro, di, mercado, fatos] = await Promise.all([
+  const [macro, tesouro, di, mercado, fatos, agenda] = await Promise.all([
     dados("dados/macro.json").catch(() => null), dados("dados/tesouro.json").catch(() => null),
     dados("dados/curva_di.json").catch(() => null), dados("dados/mercado.json").catch(() => null),
-    dados("dados/eventos_recentes.json").catch(() => null),
+    dados("dados/eventos_recentes.json").catch(() => null), dados("dados/agenda.json").catch(() => null),
   ]);
   const s = macro ? macro.series : {};
   const selic = ultimo(s.selic_meta), ipca = ultimo(s.ipca_12m), cdi = ultimo(s.cdi), usd = ultimo(s.usd), real = ultimo(s.juro_real);
@@ -220,6 +220,8 @@ async function paginaInicio() {
           <td>${reais(e.receita_tri)}</td><td class="${classeSinal(e.cresc_receita_tri)}">${pct(e.cresc_receita_tri)}</td>
           <td>${reais(e.lucro_tri)}</td><td class="${classeSinal(e.cresc_lucro_tri)}">${pct(e.cresc_lucro_tri)}</td></tr>`).join("")}
       </table></div></div>
+      <div class="painel"><h2>Agenda — próximos 14 dias</h2>${tabelaAgenda(agenda, 14)}
+        <div class="nota"><a href="#/agenda">Ver agenda completa</a></div></div>
       <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Data</th><th>Papel</th><th style="text-align:left">Assunto</th></tr>
         ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 40).map((e) => `<tr><td>${dataBR(e.data)}</td>
@@ -728,6 +730,64 @@ async function paginaJuros() {
       { nome: "Taxa compra", valores: t.datas.map((d, i) => [d, t.taxa_compra[i] || null]), tipo: "line", eixo: "dir", cor: COR.ambar }] });
     painel.scrollIntoView({ behavior: "smooth", block: "center" });
   });
+}
+
+/* ============ Agenda ============ */
+const CATEGORIAS_AGENDA = {
+  copom: ["Copom", COR.ambar], inflacao: ["Inflação", COR.vermelho], atividade: ["Atividade", COR.azul],
+  trabalho: ["Emprego", COR.verde], bc: ["Banco Central", COR.ciano],
+};
+const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+
+function linhaAgenda(e) {
+  const [nome, cor] = CATEGORIAS_AGENDA[e.categoria] || [e.categoria, COR.cinza];
+  const d = new Date(`${e.data}T12:00:00`);
+  return `<tr><td>${dataBR(e.data)} <span class="sub">${DIAS_SEMANA[d.getDay()]}</span></td>
+    <td style="text-align:left"><span style="color:${cor}">●</span> ${esc(nome)}</td>
+    <td style="text-align:left;white-space:normal">${esc(e.evento)}${e.detalhe ? `<div class="sub" style="font-size:11px">${esc(e.detalhe)}</div>` : ""}</td>
+    <td class="sub">${esc(e.fonte)}</td></tr>`;
+}
+
+function tabelaAgenda(agenda, dias, filtro = "todos") {
+  if (!agenda || !agenda.eventos) return `<p class="sub">Agenda indisponível.</p>`;
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const limite = new Date(hoje); limite.setDate(limite.getDate() + dias);
+  const lista = agenda.eventos.filter((e) => {
+    const d = new Date(`${e.data}T12:00:00`);
+    return d >= hoje && d <= limite && (filtro === "todos" || e.categoria === filtro);
+  });
+  if (!lista.length) return `<p class="sub">Nenhum evento no período.</p>`;
+  return `<div class="rolagem rolagem-y"><table class="tabela"><tr><th>Data</th><th style="text-align:left">Tipo</th>
+    <th style="text-align:left">Evento</th><th>Fonte</th></tr>${lista.map(linhaAgenda).join("")}</table></div>`;
+}
+
+async function paginaAgenda() {
+  const agenda = await dados("dados/agenda.json");
+  let filtro = "todos", janela = 90;
+  app.innerHTML = `
+    <div class="cabecalho"><div><h1>Agenda</h1><div class="sub">Copom, inflação, atividade e emprego · fontes: Banco Central, IBGE e FGV · atualizado em ${dataBR(agenda.gerado_em)}</div></div>
+      <div class="seletor" id="janela-ag">${[[14, "2 sem."], [30, "1 mês"], [90, "3 meses"], [400, "Tudo"]].map(([d, r]) => `<button data-d="${d}" class="${d === janela ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
+    <div class="seletor" id="filtro-ag" style="margin-bottom:10px">
+      <button data-k="todos" class="ativo">Todos</button>
+      ${Object.entries(CATEGORIAS_AGENDA).map(([k, [n, c]]) => `<button data-k="${k}"><span style="color:${c}">●</span> ${n}</button>`).join("")}
+    </div>
+    <div class="painel" id="tab-agenda"></div>
+    <div class="nota secao">Datas oficiais publicadas por cada instituição; podem mudar. A decisão do Copom sai ao fim do segundo dia de reunião,
+      e a ata na terça da semana seguinte. O calendário da FGV (IGP-M) cobre o mês corrente.</div>`;
+  const desenhar = () => (document.getElementById("tab-agenda").innerHTML = tabelaAgenda(agenda, janela, filtro));
+  document.getElementById("filtro-ag").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    filtro = b.dataset.k;
+    document.querySelectorAll("#filtro-ag button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenhar();
+  });
+  document.getElementById("janela-ag").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    janela = Number(b.dataset.d);
+    document.querySelectorAll("#janela-ag button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenhar();
+  });
+  desenhar();
 }
 
 /* ============ Downloads ============ */

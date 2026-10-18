@@ -139,6 +139,18 @@ def checar_yahoo():
     return f"WEGE3 até {ultimo}"
 
 
+def checar_agenda():
+    """Calendários do Banco Central, IBGE e FGV (gerados por pipeline.agenda)."""
+    arq = DIR_DADOS_SITE / "agenda.json"
+    assert arq.exists(), "agenda.json não foi gerado"
+    agenda = json.loads(arq.read_text(encoding="utf-8"))
+    assert not agenda["falhas"], "fonte da agenda falhou — " + "; ".join(agenda["falhas"])
+    fontes = {e["fonte"] for e in agenda["eventos"]}
+    faltando = {"Banco Central", "IBGE"} - fontes
+    assert not faltando, f"agenda sem eventos de {', '.join(faltando)}"
+    return f"{len(agenda['eventos'])} eventos ({', '.join(sorted(fontes))})"
+
+
 def checar_atualizacao():
     """Resultado da própria atualização (status.json gerado por pipeline.rodar)."""
     arq = DIR_DADOS_SITE / "status.json"
@@ -162,6 +174,7 @@ CHECAGENS = {
     "Banco Central — Focus": checar_focus,
     "Tesouro Direto": checar_tesouro,
     "Yahoo Finance": checar_yahoo,
+    "Agenda (Banco Central, IBGE, FGV)": checar_agenda,
 }
 
 
