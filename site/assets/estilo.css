@@ -98,6 +98,10 @@ table.tabela tr.clicavel { cursor: pointer; }
 .nota { color: var(--texto-fraco); font-size: 11px; line-height: 1.6; }
 .rodape { color: var(--texto-fraco); font-size: 11px; padding: 18px 16px 30px; border-top: 1px solid var(--borda); margin-top: 24px; line-height: 1.7; }
 .secao { margin-top: 18px; }
+.resumo h3 { color: var(--texto-forte); font-size: 14px; margin: 14px 0 6px; }
+.resumo h4 { color: var(--ambar); font-size: 13px; margin: 10px 0 4px; }
+.resumo p, .resumo li { line-height: 1.65; }
+.resumo ul { margin: 4px 0 8px 18px; padding: 0; }
 
 @media (max-width: 720px) {
   main { padding: 10px; }

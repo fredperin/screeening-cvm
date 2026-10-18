@@ -311,10 +311,11 @@ const INDICADORES_LTM = [
 
 async function paginaEmpresa(id) {
   ULTIMO_DIV = null;
-  const [emp, mercado, prov, ficha, eventos] = await Promise.all([
+  const [emp, mercado, prov, ficha, eventos, negocio, resumo] = await Promise.all([
     dados(`dados/empresas/${id}.json`), dados("dados/mercado.json").catch(() => ({ empresas: [] })),
     dados(`dados/proventos/${id}.json`).catch(() => null), dados(`dados/fichas/${id}.json`).catch(() => null),
-    dados(`dados/eventos/${id}.json`).catch(() => null),
+    dados(`dados/eventos/${id}.json`).catch(() => null), dados(`dados/negocio/${id}.json`).catch(() => null),
+    dados(`dados/resumos/${id}.json`).catch(() => null),
   ]);
   const m = mercado.empresas.find((x) => x.id === id) || {};
   const ltm = emp.ltm, n = ltm.periodos.length - 1;
@@ -348,6 +349,8 @@ async function paginaEmpresa(id) {
         <div class="rolagem rolagem-y" id="lista-eventos"></div>
         <div class="nota">Fatos relevantes, comunicados ao mercado e avisos aos acionistas dos últimos 3 anos, com link para o documento oficial na CVM.</div></div>
     </div>
+    <div id="resumo-aprofundado"></div>
+    <div class="painel secao" id="negocio" style="margin-bottom:14px"></div>
     <div class="cabecalho"><h2 style="margin:0">Resultados</h2>
       <div class="seletor" id="visao">${["trimestral", "semestral", "anual"].map((v) => `<button data-v="${v}" class="${v === VISAO ? "ativo" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</div></div>
     <div class="grade" id="graficos-empresa"></div>
@@ -362,6 +365,7 @@ async function paginaEmpresa(id) {
     desenharGraficosEmpresa(emp);
   });
   desenharFicha(ficha);
+  desenharNegocio(negocio, resumo);
   desenharEventos(eventos, "todos");
   document.getElementById("sel-ev").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
@@ -392,6 +396,24 @@ function desenharEventos(eventos, filtro) {
     ${lista.slice(0, 150).map((e) => `<tr><td>${dataBR(e.data)}</td><td style="text-align:left" class="${e.categoria === "fato" ? "" : "sub"}">${NOME_CATEGORIA[e.categoria]}</td>
       <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")}</table>`
     : `<p class="sub">Nenhum documento desse tipo nos últimos 3 anos.</p>`;
+}
+
+function desenharNegocio(neg, resumo) {
+  const r = document.getElementById("resumo-aprofundado");
+  r.innerHTML = resumo && resumo.html ? `<div class="painel secao resumo" style="margin-bottom:14px">
+      <h2>${esc(resumo.titulo || "Resumo aprofundado")}</h2>
+      ${resumo.html}
+      <div class="nota">Resumo aprofundado R.V. Mapp${resumo.atualizado ? ` · atualizado em ${dataBR(resumo.atualizado)}` : ""} · elaborado a partir do Formulário de Referência e de documentos da empresa.</div>
+    </div>` : "";
+  const area = document.getElementById("negocio");
+  if (!neg || !neg.secoes || !neg.secoes.length) { area.innerHTML = `<h2>Negócio</h2><p class="sub">Trechos do Formulário de Referência indisponíveis.</p>`; return; }
+  const paragrafos = (t) => t.split(/\n\n+/).map((p) => `<p style="margin:0 0 8px;line-height:1.65">${esc(p)}</p>`).join("");
+  area.innerHTML = `<h2>Negócio — trechos oficiais do Formulário de Referência</h2>
+    ${neg.secoes.map((s, i) => `<details ${i === 0 ? "open" : ""} style="margin:6px 0">
+      <summary style="cursor:pointer;color:var(--ambar)">${esc(s.titulo)}</summary>
+      <div style="margin-top:8px">${paragrafos(s.texto)}${s.cortado ? `<p class="sub">… trecho. <a href="${esc(neg.link)}" target="_blank" rel="noopener">Leia a seção completa no formulário</a>.</p>` : ""}</div>
+    </details>`).join("")}
+    <div class="nota">Texto da própria empresa, extraído do ${esc(neg.fonte)} entregue à CVM, sem edição.</div>`;
 }
 
 function desenharFicha(f) {

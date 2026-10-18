@@ -49,7 +49,7 @@ def versao_do_codigo():
 
 
 def main(tudo=False):
-    from pipeline import curva_di, eventos, ficha, macro, mercado, tesouro
+    from pipeline import curva_di, eventos, ficha, fre_textos, macro, mercado, resumos, tesouro
     from pipeline.cvm_lote import atualizar_base_cvm
     from pipeline.gerar_empresas import DIR_EMPRESAS, gerar_indice
     from pipeline.gerar_empresas import main as gerar_empresas
@@ -62,6 +62,8 @@ def main(tudo=False):
     _etapa("mercado", mercado.gerar, status)
     _etapa("eventos", eventos.gerar, status)
     _etapa("ficha", ficha.gerar, status)
+    _etapa("fre_textos", fre_textos.gerar, status)
+    _etapa("resumos", resumos.gerar, status)
 
     cnpjs = set(universo_selecionado()["CNPJ_CIA"].str.replace(r"\D", "", regex=True))
     reprocessados = _etapa("cvm_base", lambda: atualizar_base_cvm(cnpjs), status) or []

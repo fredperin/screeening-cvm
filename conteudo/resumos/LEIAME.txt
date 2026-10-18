@@ -1,0 +1,13 @@
+Resumos aprofundados das empresas acompanhadas (R.V. Mapp).
+
+Um arquivo por empresa: {TICKER}.md (ex.: WEGE3.md), escrito sob demanda.
+O site mostra a seção "Resumo aprofundado" na página da empresa quando o arquivo existe.
+Apagar o arquivo tira o resumo do site na próxima atualização.
+
+Formato:
+# Título
+Atualizado em: AAAA-MM-DD
+
+## Seção
+Parágrafo com **negrito**.
+- item de lista
