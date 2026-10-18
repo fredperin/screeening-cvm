@@ -27,8 +27,11 @@ button { font-family: var(--mono); }
   display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
   padding: 10px 16px; border-bottom: 1px solid var(--borda);
 }
-.marca { color: var(--ambar); font-weight: 700; font-size: 15px; letter-spacing: .5px; margin-right: 8px; }
-.marca span { color: var(--texto-fraco); font-weight: 400; }
+.marca { display: inline-flex; align-items: center; gap: 8px; color: var(--ambar); font-weight: 700; font-size: 15px; letter-spacing: .3px; margin-right: 8px; }
+.marca:hover { text-decoration: none; }
+.marca img { display: block; }
+.marca-cursor { color: var(--texto-fraco); font-weight: 400; margin-left: -4px; }
+@media (max-width: 480px) { .marca-nome, .marca-cursor { display: none; } }
 .nav { display: flex; gap: 6px; flex-wrap: wrap; }
 .nav a {
   padding: 4px 10px; border: 1px solid var(--borda); border-radius: 4px; color: var(--texto-fraco);

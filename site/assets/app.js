@@ -403,7 +403,7 @@ function desenharNegocio(neg, resumo) {
   r.innerHTML = resumo && resumo.html ? `<div class="painel secao resumo" style="margin-bottom:14px">
       <h2>${esc(resumo.titulo || "Resumo aprofundado")}</h2>
       ${resumo.html}
-      <div class="nota">Resumo aprofundado R.V. Mapp${resumo.atualizado ? ` · atualizado em ${dataBR(resumo.atualizado)}` : ""} · elaborado a partir do Formulário de Referência e de documentos da empresa.</div>
+      <div class="nota">Resumo aprofundado${resumo.atualizado ? ` · atualizado em ${dataBR(resumo.atualizado)}` : ""} · elaborado a partir do Formulário de Referência e de documentos da empresa.</div>
     </div>` : "";
   const area = document.getElementById("negocio");
   if (!neg || !neg.secoes || !neg.secoes.length) { area.innerHTML = `<h2>Negócio</h2><p class="sub">Trechos do Formulário de Referência indisponíveis.</p>`; return; }
