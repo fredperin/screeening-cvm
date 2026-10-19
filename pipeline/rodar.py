@@ -4,8 +4,8 @@ Orquestrador da atualização diária da R.V. Mapp (roda no GitHub Actions).
 - Todo dia: Banco Central/Focus, agenda, Tesouro, curva DI da B3, cotações e proventos,
   notícias e planilhas de Macro e Juros.
 - Empresas (JSON + Excel): só quando a CVM republicou algum ZIP, quando ainda não
-  existem arquivos gerados, às segundas-feiras (para o Excel pegar os proventos
-  novos) ou com --tudo.
+  existem arquivos gerados, quando o código dos cálculos mudou, uma vez por semana no
+  fim de semana (para o Excel pegar os proventos novos) ou com --tudo.
 
 Uma fonte que falhar não derruba as outras: o erro vai para site/dados/status.json.
 
@@ -15,7 +15,7 @@ Uso: py -m pipeline.rodar [--tudo]
 import json
 import sys
 import traceback
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO
 
@@ -49,6 +49,15 @@ def versao_do_codigo():
     return h.hexdigest()
 
 
+def semanal_pendente(arq):
+    """Refação semanal no fim de semana: a primeira execução de sábado ou domingo que ainda não a fez."""
+    hoje = date.today()
+    if hoje.weekday() < 5:
+        return False
+    sabado = hoje - timedelta(days=hoje.weekday() - 5)
+    return not arq.exists() or arq.read_text().strip() < sabado.isoformat()
+
+
 def main(tudo=False):
     from pipeline import agenda, curva_di, eventos, ficha, fre_textos, macro, mercado, noticias, offshore, planilhas, resumos, tesouro
     from pipeline.cvm_lote import atualizar_base_cvm
@@ -76,13 +85,17 @@ def main(tudo=False):
     arq_versao = DIR_INTERMEDIARIO / "versao_codigo_empresas.txt"
     versao = versao_do_codigo()
     codigo_mudou = not arq_versao.exists() or arq_versao.read_text() != versao
-    if tudo or reprocessados or sem_arquivos or codigo_mudou or date.today().weekday() == 0:
+    arq_semanal = DIR_INTERMEDIARIO / "ultima_atualizacao_semanal_empresas.txt"
+    semanal = semanal_pendente(arq_semanal)
+    if tudo or reprocessados or sem_arquivos or codigo_mudou or semanal:
         motivo = ("tudo" if tudo else "cvm atualizada" if reprocessados else "sem arquivos" if sem_arquivos
-                  else "código mudou" if codigo_mudou else "atualização semanal")
+                  else "código mudou" if codigo_mudou else "atualização semanal (fim de semana)")
         print(f"Gerando empresas ({motivo}); ZIPs reprocessados: {reprocessados}")
         _etapa("empresas", gerar_empresas, status)
         if status.get("empresas", {}).get("ok"):
             arq_versao.write_text(versao)
+            if date.today().weekday() >= 5:  # qualquer refação completa no fim de semana já vale como a semanal
+                arq_semanal.write_text(date.today().isoformat())
     _etapa("indice", gerar_indice, status)
 
     status_final = {"atualizado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
