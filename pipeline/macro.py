@@ -126,6 +126,20 @@ def baixar_focus(indicador, todos_os_anos=False):
     return saida
 
 
+def _regrediu(nova, antiga, compactada=False):
+    """Série baixada menor que a publicada antes (começo, fim ou pontos a menos) indica resposta incompleta da API."""
+    if not antiga or not antiga["datas"]:
+        return None
+    if nova.empty:
+        return "a API devolveu a série vazia"
+    ini, fim = nova.index[0].strftime("%Y-%m-%d"), nova.index[-1].strftime("%Y-%m-%d")
+    if ini > antiga["datas"][0] or fim < antiga["datas"][-1]:
+        return f"série veio de {ini} a {fim}, menor que a publicada ({antiga['datas'][0]} a {antiga['datas'][-1]})"
+    if not compactada and len(nova) < len(antiga["datas"]):
+        return f"série veio com {len(nova)} pontos, menos que os {len(antiga['datas'])} publicados"
+    return None
+
+
 def gerar():
     # Uma série que falhar fica com a versão publicada anteriormente (as outras seguem atualizadas)
     anterior = DIR_DADOS_SITE / "macro.json"
@@ -133,7 +147,11 @@ def gerar():
     brutas, falhas = {}, []
     for chave, (codigo, _, _) in SERIES.items():
         try:
-            brutas[chave] = baixar_sgs(codigo)
+            nova = baixar_sgs(codigo)
+            problema = _regrediu(nova, anteriores.get(chave), compactada=(chave == "selic_meta"))
+            if problema:
+                raise RuntimeError(problema)
+            brutas[chave] = nova
         except Exception as e:
             if chave not in anteriores:
                 raise

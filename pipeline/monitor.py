@@ -162,6 +162,71 @@ def checar_noticias():
     return f"{len(d['itens'])} manchetes; mais recente {d['itens'][0]['data'][:10]}"
 
 
+# Validação das séries do Macro: (frequência, defasagem máxima em dias, faixa plausível de valores)
+# Defasagem conta da data do último ponto (dia 1 do mês/trimestre/ano de referência) até hoje.
+SERIES_MACRO = {
+    "ipca": ("M", 75, (-3, 5)), "igpm": ("M", 75, (-6, 9)), "incc": ("M", 75, (-3, 6)),
+    "nucleo_ex0": ("M", 75, (-2, 4)), "nucleo_ex2": ("M", 75, (-2, 4)), "nucleo_ex3": ("M", 75, (-2, 4)),
+    "nucleo_ms": ("M", 75, (-2, 4)), "nucleo_dp": ("M", 75, (-2, 4)), "nucleo_p55": ("M", 75, (-2, 4)),
+    "ibcbr": ("M", 110, (50, 250)), "ibcbr_dessaz": ("M", 110, (50, 250)),
+    "pib_indice": ("T", 250, (50, 400)), "pib_indice_obs": ("T", 250, (50, 400)),
+    "pib_anual": ("A", 800, (-10, 15)), "pib_nominal": ("A", 800, (1e11, 1e14)),
+    "selic_meta": ("D", 6, (1, 30)), "cdi": ("D", 6, (1, 30)), "usd": ("D", 6, (1, 15)), "eur": ("D", 6, (1, 15)),
+}
+PASSO_MESES = {"M": 1, "T": 3, "A": 12}
+
+
+def _url_site():
+    import os
+    dono, _, repo = os.environ.get("GITHUB_REPOSITORY", "fredperin/screeening-cvm").partition("/")
+    return f"https://{dono}.github.io/{repo}"
+
+
+def checar_macro():
+    """Cada série do Macro: completa, sem buracos, em dia, com valores plausíveis e não menor que a publicada."""
+    macro = json.loads((DIR_DADOS_SITE / "macro.json").read_text(encoding="utf-8"))
+    S, problemas = macro["series"], []
+    if macro.get("falhas"):
+        problemas.append("séries mantidas na versão anterior por falha da API — " + "; ".join(macro["falhas"]))
+    for chave, (freq, max_dias, (minimo, maximo)) in SERIES_MACRO.items():
+        s = S.get(chave)
+        if not s or not s["datas"]:
+            problemas.append(f"{chave}: série ausente ou vazia")
+            continue
+        if _dias(s["datas"][-1]) > max_dias:
+            problemas.append(f"{chave}: último dado em {s['datas'][-1]} (mais de {max_dias} dias)")
+        fora = [(d, v) for d, v in zip(s["datas"], s["valores"]) if not (minimo <= v <= maximo)]
+        if fora:
+            problemas.append(f"{chave}: {len(fora)} valor(es) fora da faixa plausível, ex. {fora[-1][0]} = {fora[-1][1]}")
+        if freq in PASSO_MESES:
+            meses = [int(d[:4]) * 12 + int(d[5:7]) for d in s["datas"]]
+            buracos = [s["datas"][i] for i in range(1, len(meses)) if meses[i] - meses[i - 1] != PASSO_MESES[freq]]
+            if buracos:
+                problemas.append(f"{chave}: {len(buracos)} buraco(s) na série, o primeiro antes de {buracos[0]}")
+    for k, anos in macro.get("focus", {}).items():
+        atual = anos.get(str(date.today().year))
+        if not atual or _dias(atual["datas"][-1]) > 12:
+            problemas.append(f"Focus {k}: sem projeção recente para {date.today().year}")
+
+    # Comparação com a versão publicada no site (antes desta atualização)
+    comparadas = 0
+    try:
+        publicada = requests.get(f"{_url_site()}/dados/macro.json", timeout=60).json()["series"]
+        for chave, s in S.items():
+            p = publicada.get(chave)
+            if not p or not p["datas"]:
+                continue
+            comparadas += 1
+            if s["datas"][-1] < p["datas"][-1] or s["datas"][0] > p["datas"][0] or (chave != "selic_meta" and len(s["datas"]) < len(p["datas"])):
+                problemas.append(f"{chave}: menor que a versão publicada ({s['datas'][0]}–{s['datas'][-1]}, {len(s['datas'])} pontos;"
+                                 f" publicada {p['datas'][0]}–{p['datas'][-1]}, {len(p['datas'])} pontos)")
+    except Exception as e:
+        comparadas = f"não comparado com o site ({str(e)[:60]})"
+
+    assert not problemas, " | ".join(problemas)
+    return f"{len(SERIES_MACRO)} séries em dia, completas e sem buracos; comparadas com o site: {comparadas}"
+
+
 def checar_atualizacao():
     """Resultado da própria atualização (status.json gerado por pipeline.rodar)."""
     arq = DIR_DADOS_SITE / "status.json"
@@ -183,6 +248,7 @@ CHECAGENS = {
     "B3 — curva DI (swaps)": checar_b3_curva_di,
     "Banco Central — SGS": checar_bcb,
     "Banco Central — Focus": checar_focus,
+    "Macro — séries completas e em dia": checar_macro,
     "Tesouro Direto": checar_tesouro,
     "Yahoo Finance": checar_yahoo,
     "Agenda (Banco Central, IBGE, FGV)": checar_agenda,
