@@ -1,0 +1,87 @@
+name: R.V. Mapp - Tesouro Direto ao longo do dia
+
+# Três atualizações por dia útil só dos títulos públicos (preços do momento do Tesouro Direto)
+on:
+  schedule:
+    - cron: "15 13,16,20 * * 1-5"   # 10:15, 13:15 e 17:15 (horário de Brasília), segunda a sexta
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: read
+
+concurrency:
+  group: rv-mapp-intradia
+  cancel-in-progress: true
+
+jobs:
+  atualizar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      seguir: ${{ steps.diaria.outputs.seguir }}
+    steps:
+      # Se a atualização diária estiver rodando, ela já traz os preços do momento e publica o site inteiro:
+      # esta execução para, para não publicar por cima dela com dados antigos das outras seções
+      - id: diaria
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          rodando=$(gh run list -R "$GITHUB_REPOSITORY" --workflow rv-mapp.yml --json status -q '[.[] | select(.status != "completed")] | length')
+          if [ "$rodando" != "0" ]; then echo "Atualização diária em andamento; nada a fazer."; echo "seguir=nao" >> "$GITHUB_OUTPUT"; else echo "seguir=sim" >> "$GITHUB_OUTPUT"; fi
+
+      - uses: actions/checkout@v4
+        if: steps.diaria.outputs.seguir == 'sim'
+
+      - uses: actions/setup-python@v5
+        if: steps.diaria.outputs.seguir == 'sim'
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+
+      - if: steps.diaria.outputs.seguir == 'sim'
+        run: pip install -r pipeline/requirements.txt
+
+      # Os dados de todas as seções vêm da última atualização diária
+      - name: Restaurar cache de dados
+        if: steps.diaria.outputs.seguir == 'sim'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/raw
+            data/pipeline
+            site/dados
+            site/downloads
+          key: rvmapp-dados-${{ github.run_id }}
+          restore-keys: rvmapp-dados-
+
+      - name: Atualizar Tesouro Direto
+        if: steps.diaria.outputs.seguir == 'sim'
+        run: python -m pipeline.intradia
+        env:
+          PYTHONUTF8: "1"
+
+      - if: steps.diaria.outputs.seguir == 'sim'
+        run: sed -i "s/__VERSAO__/i${{ github.run_number }}/g" site/index.html
+
+      - uses: actions/configure-pages@v5
+        if: steps.diaria.outputs.seguir == 'sim'
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.diaria.outputs.seguir == 'sim'
+        with:
+          path: site
+
+  publicar:
+    needs: atualizar
+    if: needs.atualizar.outputs.seguir == 'sim'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

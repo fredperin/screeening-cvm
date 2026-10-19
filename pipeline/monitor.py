@@ -130,6 +130,16 @@ def checar_tesouro():
     return "arquivo ok"
 
 
+def checar_tesouro_tempo_real():
+    """Preços do momento do site do Tesouro Direto (não oficial), gerados por pipeline.tesouro."""
+    tes = json.loads((DIR_DADOS_SITE / "tesouro.json").read_text(encoding="utf-8"))
+    assert not tes.get("falha_tempo_real"), tes["falha_tempo_real"]
+    tr = tes.get("tempo_real")
+    if not tr:  # fora do horário: o último preço do Tesouro Direto não é mais novo que o oficial
+        return "sem preço mais novo que a referência oficial"
+    return f"{len(tr['titulos'])} títulos precificados em {tr['precificado_em'].replace('T', ' ')}"
+
+
 def checar_yahoo():
     import yfinance as yf
     hist = yf.Ticker("WEGE3.SA").history(period="10d")
@@ -249,7 +259,8 @@ CHECAGENS = {
     "Banco Central — SGS": checar_bcb,
     "Banco Central — Focus": checar_focus,
     "Macro — séries completas e em dia": checar_macro,
-    "Tesouro Direto": checar_tesouro,
+    "Tesouro Direto (oficial)": checar_tesouro,
+    "Tesouro Direto — tempo real (não oficial)": checar_tesouro_tempo_real,
     "Yahoo Finance": checar_yahoo,
     "Agenda (Banco Central, IBGE, FGV)": checar_agenda,
     "Notícias (Banco Central, IBGE, CVM, Agência Brasil)": checar_noticias,

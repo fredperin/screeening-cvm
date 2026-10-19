@@ -169,7 +169,7 @@ window.EXPLICATIVOS = {
     titulo: "Tesouro prefixado",
     html: `<p>Taxa de compra dos títulos prefixados no <b>Tesouro Direto</b>, por prazo até o vencimento. Usa o título sem cupom
       (LTN) e, nos prazos onde ele não existe, o título com juros semestrais (NTN-F).</p>
-      <p class="sub">Fonte: Tesouro Nacional (Tesouro Transparente).</p>`,
+      <p class="sub">Fonte oficial: Tesouro Nacional (Tesouro Transparente), com 1 a 2 dias úteis de atraso; "último oficial" é a data de referência.</p>`,
   },
   tesouro_ipca: {
     titulo: "Tesouro IPCA+",
@@ -183,6 +183,23 @@ window.EXPLICATIVOS = {
       <code>(1 + taxa prefixada) ÷ (1 + taxa real) − 1</code>. Também chamada de breakeven.</p>
       <p>Não é exatamente a expectativa de inflação: inclui um prêmio pelo risco de a inflação surpreender e diferenças de liquidez
         entre os títulos. A curva prefixada é interpolada nos vencimentos do IPCA+, sem extrapolar.</p>`,
+  },
+  tesouro_tempo_real: {
+    titulo: "Tesouro Direto em tempo real (não oficial)",
+    html: `<p>Taxas e preços que o <b>site do Tesouro Direto</b> está praticando agora: o Tesouro abre o dia com preços
+      e os repreça ao longo do pregão quando o mercado se move. São as taxas pelas quais um investidor compraria o título naquele momento.</p>
+      <h4>Por que "não oficial"</h4>
+      <ul>
+        <li>Os números são do próprio Tesouro Direto, mas são lidos de um endereço interno do site, <b>sem documentação nem garantia</b>
+          de que continue igual. Se o Tesouro mudar o site, a leitura pode parar.</li>
+        <li>Para evitar um número errado, cada taxa só é publicada se o preço for positivo e a taxa estiver a no máximo 1 ponto percentual
+          da última taxa oficial do mesmo título. O que não passa é descartado e gera alerta.</li>
+        <li>Atualizado 3 vezes por dia útil (por volta de 10h15, 13h15 e 17h15; o agendamento do GitHub pode atrasar).</li>
+      </ul>
+      <h4>Oficial</h4>
+      <p>Os painéis "oficial" usam os <b>dados abertos do Tesouro Transparente</b> (Tesouro Nacional): um registro por dia útil, com a taxa
+        da manhã, publicado com 1 a 2 dias úteis de atraso — por isso mostram sempre a data de referência. O histórico de cada título
+        e as planilhas usam só os dados oficiais.</p>`,
   },
   vertices: {
     titulo: "Taxas DI por prazo",

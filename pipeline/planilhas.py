@@ -74,9 +74,10 @@ def gerar_juros():
     di = json.loads(arq_di.read_text(encoding="utf-8")) if arq_di.exists() else None
     destino = DIR_DOWNLOADS_SITE / "juros.xlsx"
     with pd.ExcelWriter(destino, engine="openpyxl", datetime_format="DD/MM/YYYY", date_format="DD/MM/YYYY") as w:
-        _leia_me(w, [f"Juros — Tesouro Direto de {tes['data_base']}" + (f"; curva DI de {di['curvas']['hoje']['data']}" if di else ""),
+        _leia_me(w, [f"Juros — Tesouro Direto oficial com referência {tes['data_base']}" + (f"; curva DI de {di['curvas']['hoje']['data']}" if di else ""),
                      "Curva DI: arquivo 'Taxas de Mercado para Swaps' da B3 (DI x Pré e DI x IPCA), % a.a., base 252.",
-                     "Tesouro: taxas e preços do Tesouro Direto (Tesouro Transparente). Taxas em % a.a.",
+                     "Tesouro oficial: dados abertos do Tesouro Transparente (1 registro por dia útil, 1–2 dias de atraso). Taxas em % a.a.",
+                     "Aba 'Tesouro agora (NÃO OFICIAL)': preços do momento lidos do site do Tesouro Direto, sem documentação nem garantia.",
                      "Histórico: taxa e PU de compra de cada título desde o início da série, uma coluna por título."])
         if di:
             linhas = []
@@ -94,6 +95,11 @@ def gerar_juros():
         pd.DataFrame(linhas).to_excel(w, sheet_name="Curvas do Tesouro", index=False)
         pd.DataFrame([{"Título": t["tipo"], "Vencimento": pd.Timestamp(t["vencimento"]), "Taxa compra (% a.a.)": t["taxa_compra"],
                        "PU compra (R$)": t["pu_compra"]} for t in tes["titulos"]]).to_excel(w, sheet_name="Títulos à venda", index=False)
+        tr = tes.get("tempo_real")
+        if tr:
+            pd.DataFrame([{"Título": t["tipo"], "Vencimento": pd.Timestamp(t["vencimento"]), "Taxa compra agora (% a.a.)": t["taxa_compra"],
+                           "PU compra agora (R$)": t["pu_compra"], "Precificado em": t["precificado_em"].replace("T", " ")}
+                          for t in tr["titulos"]]).to_excel(w, sheet_name="Tesouro agora (NÃO OFICIAL)", index=False)
         taxas, precos = {}, {}
         for t in tes["titulos"]:
             arq = DIR_DADOS_SITE / "tesouro" / f"{t['id']}.json"

@@ -68,6 +68,7 @@ h2 { font-size: 13px; color: var(--ambar); margin: 0 0 8px; font-weight: 600; te
 .cabecalho { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 14px; }
 
 .grade { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); }
+.grade > * { min-width: 0; }
 .grade-cartoes { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); margin-bottom: 12px; }
 .painel { background: var(--painel); border: 1px solid var(--borda); border-radius: 6px; padding: 10px 12px; min-width: 0; }
 .painel.largo { grid-column: 1 / -1; }
@@ -150,6 +151,8 @@ body.sem-rolagem { overflow: hidden; }
 .grade-noticias .rolagem-y { max-height: 70vh; }
 .etiqueta { display: inline-block; font-size: 10px; border: 1px solid var(--borda); border-radius: 3px; padding: 0 4px; margin-left: 4px; }
 .painel.em-construcao { border-style: dashed; }
+.painel.tempo-real { border: 1px dashed var(--ambar); }
+.selo { display: inline-block; margin-left: 6px; padding: 1px 6px; border: 1px solid var(--ambar); border-radius: 3px; font-size: 10px; letter-spacing: .4px; vertical-align: middle; }
 .aviso { border: 1px dashed var(--ambar); color: var(--ambar); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; }
 
 @media (max-width: 720px) {

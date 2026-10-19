@@ -5,7 +5,7 @@ const COR = {
   ambar: "#f0b429", verde: "#3fb950", vermelho: "#f85149", azul: "#388bfd", ciano: "#39c5cf",
   roxo: "#a371f7", cinza: "#8b949e", texto: "#c9d1d9", borda: "#263040", grade: "#1b2430",
 };
-const PALETA_DATAS = ["#f0b429", "#39c5cf", "#a371f7", "#3fb950", "#8b949e"];
+const PALETA_DATAS = ["#f0b429", "#39c5cf", "#a371f7", "#3fb950", "#8b949e", "#db61a2"];
 const cache = {};
 const graficos = [];
 const app = document.getElementById("app");
@@ -328,7 +328,7 @@ async function paginaInicio() {
       ${cartao("CDI", pctPronto(cdi.valor), dataBR(cdi.data))}
       ${cartao("Juro real ex-post", pctPronto(real.valor), "Selic ÷ IPCA 12m")}
       ${cartao("Dólar PTAX", usd.valor ? `R$ ${num(usd.valor, 4)}` : "—", dataBR(usd.data))}
-      ${cartao("IPCA+ mais longo", ipcaLongo ? pctPronto(ipcaLongo.taxa) : "—", ipcaLongo ? `venc. ${dataBR(ipcaLongo.vencimento)}` : "")}
+      ${cartao("IPCA+ mais longo", ipcaLongo ? pctPronto(ipcaLongo.taxa) : "—", ipcaLongo ? `oficial de ${dataBR(tesouro.data_base)} · venc. ${ipcaLongo.vencimento.slice(0, 4)}` : "")}
     </div>
     <div class="grade">
       <div class="painel" data-info="curva_di"><h2>Curva DI x Pré — hoje vs. 1 ano</h2><div class="grafico" id="g-di"></div></div>
@@ -865,20 +865,56 @@ function interpolar(pontos, anos) {
   const a = pontos[k - 1], b = pontos[k];
   return a.taxa + ((anos - a.anos) / (b.anos - a.anos)) * (b.taxa - a.taxa);
 }
+// Tesouro Direto em tempo real (não oficial): painel separado, nunca misturado aos dados oficiais
+function painelTempoReal(tes) {
+  const tr = tes.tempo_real;
+  if (!tr) return `<div class="painel largo tempo-real" data-info="tesouro_tempo_real"><h2>Tesouro Direto agora <span class="selo">tempo real · não oficial</span></h2>
+    <p class="sub">${tes.falha_tempo_real ? `Indisponível no momento (${esc(tes.falha_tempo_real.slice(0, 160))}).`
+      : "Sem preço mais novo que a referência oficial (fora do horário de negociação, ou o oficial já está em dia)."} Os dados oficiais abaixo seguem válidos.</p></div>`;
+  const oficial = Object.fromEntries(tes.titulos.map((t) => [`${t.tipo}|${t.vencimento}`, t]));
+  const [dia, hora] = [tr.precificado_em.slice(0, 10), tr.precificado_em.slice(11, 16)];
+  return `<div class="painel largo tempo-real" data-info="tesouro_tempo_real">
+    <h2>Tesouro Direto agora — preços de ${dataBR(dia)} às ${hora} <span class="selo">tempo real · não oficial</span></h2>
+    <div class="grade"><div class="grafico alto" id="gj-agora"></div>
+      <div class="rolagem rolagem-y"><table class="tabela"><tr><th>Título</th><th>Vencimento</th><th>Taxa agora</th><th>vs. oficial</th><th>PU agora</th><th>Hora</th></tr>
+        ${tr.titulos.map((t) => { const o = oficial[`${t.tipo}|${t.vencimento}`]; const dif = o ? (t.taxa_compra - o.taxa_compra) * 100 : null;
+          return `<tr><td>${esc(t.tipo.replace("Tesouro ", ""))}</td><td>${dataBR(t.vencimento)}</td><td>${num(t.taxa_compra, 2)}%</td>
+            <td class="${dif == null ? "" : dif > 0 ? "neg" : "pos"}">${dif == null ? "—" : `${dif > 0 ? "+" : ""}${num(dif, 0)} bp`}</td>
+            <td>R$ ${num(t.pu_compra, 2)}</td><td class="sub">${esc((t.precificado_em || "").slice(11, 16))}</td></tr>`; }).join("")}</table></div></div>
+    <div class="nota">Fonte: site do Tesouro Direto — as taxas pelas quais o Tesouro Direto está vendendo agora, repreçadas ao longo do dia.
+      <b>Não oficial:</b> lidas de um endereço interno do site, sem documentação nem garantia; cada taxa passa por travas (preço positivo e no máximo
+      1 ponto de diferença da última taxa oficial) antes de ser publicada. Atualizado 3 vezes por dia útil. "vs. oficial" compara com a referência
+      oficial de ${dataBR(tes.data_base)}.</div></div>`;
+}
+
+function desenharTempoReal(tes) {
+  const tr = tes.tempo_real, el = document.getElementById("gj-agora");
+  if (!tr || !el) return;
+  const pts = (lista) => (lista || []).map((p) => [p.anos, p.taxa]);
+  const of = tes.curvas.hoje || {};
+  grafico(el, { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: [
+    { nome: "Prefixado agora", valores: pts(tr.curva.prefixado), tipo: "line", cor: COR.ambar },
+    { nome: `Prefixado oficial ${dataBR(of.data)}`, valores: pts(of.prefixado), tipo: "line", cor: COR.ambar, tracejado: true },
+    { nome: "IPCA+ agora", valores: pts(tr.curva.ipca), tipo: "line", cor: COR.ciano },
+    { nome: `IPCA+ oficial ${dataBR(of.data)}`, valores: pts(of.ipca), tipo: "line", cor: COR.ciano, tracejado: true }] });
+}
+
 async function paginaJuros() {
   const [di, tes] = await Promise.all([dados("dados/curva_di.json").catch(() => null), dados("dados/tesouro.json")]);
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Juros</h1><div class="sub">Curvas DI (B3) e Tesouro Direto · taxas em % a.a.</div></div>
+    <div class="cabecalho"><div><h1>Juros</h1><div class="sub">Curvas DI (B3, fim do dia) e Tesouro Direto · taxas em % a.a. ·
+      Tesouro oficial com <b>referência ${dataBR(tes.data_base)}</b> (o Tesouro Transparente publica com 1–2 dias úteis de atraso)</div></div>
       <a class="botao" href="downloads/juros.xlsx" download>Baixar planilha de Juros</a></div>
     <div class="grade">
       <div data-info="curva_di" class="painel"><h2>Curva DI x Pré (B3)</h2><div class="grafico alto" id="gj-di"></div></div>
       <div data-info="di_ipca" class="painel"><h2>Curva DI x IPCA, juro real (B3) · a partir de 3 meses</h2><div class="grafico alto" id="gj-dic"></div></div>
-      <div data-info="tesouro_pre" class="painel"><h2>Tesouro prefixado</h2><div class="grafico alto" id="gj-pre"></div></div>
-      <div data-info="tesouro_ipca" class="painel"><h2>Tesouro IPCA+ (juro real)</h2><div class="grafico alto" id="gj-ipca"></div></div>
-      <div data-info="inflacao_implicita" class="painel"><h2>Inflação implícita (prefixado × IPCA+)</h2><div class="grafico alto" id="gj-impl"></div></div>
+      ${painelTempoReal(tes)}
+      <div data-info="tesouro_pre" class="painel"><h2>Tesouro prefixado — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-pre"></div></div>
+      <div data-info="tesouro_ipca" class="painel"><h2>Tesouro IPCA+ (juro real) — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-ipca"></div></div>
+      <div data-info="inflacao_implicita" class="painel"><h2>Inflação implícita (prefixado × IPCA+) — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-impl"></div></div>
       <div data-info="vertices" class="painel"><h2>Taxas DI por prazo (B3)</h2><div class="rolagem" id="tab-vertices"></div>
         <div class="nota">Interpolação linear da curva DI nos prazos (anos de 252 dias úteis). DI x IPCA = juro real.</div></div>
-      <div data-info="titulos" class="painel largo"><h2>Títulos à venda — Tesouro Direto (${dataBR(tes.data_base)})</h2><div class="grade" id="tab-tit">
+      <div data-info="titulos" class="painel largo"><h2>Títulos — Tesouro Direto oficial · referência ${dataBR(tes.data_base)}</h2><div class="grade" id="tab-tit">
         ${GRUPOS_TESOURO.filter(([tipo]) => tes.titulos.some((t) => t.tipo === tipo)).map(([tipo, nome]) => `
           <div><div class="sub" style="margin:4px 0 6px;color:var(--ambar)">${esc(nome)}</div><table class="tabela">
             <tr><th>Vencimento</th><th>Taxa compra</th><th>Var. 1 sem.</th><th>PU compra</th></tr>
@@ -886,7 +922,8 @@ async function paginaJuros() {
               return `<tr class="clicavel" data-id="${esc(t.id)}"><td>${dataBR(t.vencimento)}</td><td>${num(t.taxa_compra, 2)}%</td>
                 <td class="${v == null ? "" : v > 0 ? "neg" : "pos"}">${v == null ? "—" : `${v > 0 ? "+" : ""}${num(v * 100, 0)} bp`}</td><td>R$ ${num(t.pu_compra, 2)}</td></tr>`; }).join("")}
           </table></div>`).join("")}
-      </div><div class="nota">Clique num título para ver o histórico de taxa e preço. Variação em pontos-base (bp) contra a curva de 1 semana atrás (quando o título está nela).</div></div>
+      </div><div class="nota">Fonte oficial: Tesouro Transparente (dados abertos do Tesouro Nacional), taxa de compra da manhã de ${dataBR(tes.data_base)}.
+        Clique num título para ver o histórico oficial de taxa e preço. Variação em pontos-base (bp) contra a curva de 1 semana antes.</div></div>
       <div class="painel largo" id="painel-titulo" style="display:none"><h2 id="titulo-hist"></h2><div class="grafico alto" id="gj-hist"></div></div>
     </div>
     <div class="nota secao">A curva DI vem do arquivo "Taxas de Mercado para Swaps" da B3 (fim de dia). As curvas do Tesouro usam a taxa de compra
@@ -896,9 +933,9 @@ async function paginaJuros() {
   const rotulos = Object.keys(tes.curvas);
   const porData = (fonte, campo, maxAnos, minAnos = 0) => rotulos
     .filter((r) => fonte[r] && fonte[r][campo] && fonte[r][campo].length)
-    .map((r, i) => ({ nome: r, valores: fonte[r][campo].filter((p) => p.anos <= maxAnos && p.anos >= minAnos).map((p) => [p.anos, p.taxa]),
+    .map((r, i) => ({ nome: fonte === tes.curvas && r === "hoje" ? "último oficial" : r, valores: fonte[r][campo].filter((p) => p.anos <= maxAnos && p.anos >= minAnos).map((p) => [p.anos, p.taxa]),
       tipo: "line", cor: PALETA_DATAS[i], tracejado: i > 0 }));
-  const datas = (fonte) => rotulos.filter((r) => fonte[r]).map((r) => `${r}: ${dataBR(fonte[r].data)}`).join(" · ");
+  const datas = (fonte) => rotulos.filter((r) => fonte[r]).map((r) => `${fonte === tes.curvas && r === "hoje" ? "último oficial" : r}: ${dataBR(fonte[r].data)}`).join(" · ");
   const notaDatas = (id, fonte) => document.getElementById(id).insertAdjacentHTML("afterend", `<div class="nota">${datas(fonte)}</div>`);
   if (di) {
     grafico(document.getElementById("gj-di"), { xNome: "anos (dias úteis/252)", eixoEsq: "pctPronto", series: porData(di.curvas, "pre", 10) });
@@ -920,6 +957,8 @@ async function paginaJuros() {
       <tr><th>DI x Pré</th>${datasDi.map((d) => `<th>${d}<br><span class="sub">${dataBR(di.curvas[d].data)}</span></th>`).join("")}</tr>${linhas("pre")}
       <tr><th>DI x IPCA</th>${datasDi.map(() => "<th></th>").join("")}</tr>${linhas("ipca")}</table>`;
   }
+
+  desenharTempoReal(tes);
 
   let gHist = null;
   document.getElementById("tab-tit").addEventListener("click", async (ev) => {
