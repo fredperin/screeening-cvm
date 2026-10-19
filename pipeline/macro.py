@@ -182,7 +182,8 @@ def gerar():
     saida["pib_tri"] = _empacotar(((pib / pib.shift(1) - 1) * 100).dropna(), "PIB, variação trimestral dessazonalizada", "%")
 
     # Juro real ex-post: Selic meta no fim de cada mês descontado do IPCA 12 meses
-    selic_mes = brutas["selic_meta"].resample("MS").last()
+    # usa a Selic diária (antes de guardar só as mudanças): meses sem reunião do Copom também entram
+    selic_mes = selic.resample("MS").last().ffill()
     ipca12 = acumulado_12m(brutas["ipca"])
     juntos = pd.concat([selic_mes, ipca12], axis=1, keys=["selic", "ipca"]).dropna()
     real = ((1 + juntos["selic"] / 100) / (1 + juntos["ipca"] / 100) - 1) * 100

@@ -288,6 +288,52 @@ window.EXPLICATIVOS = {
     html: `<p>Crescimento real do PIB: barras contra o trimestre anterior (com ajuste sazonal) e linha contra o mesmo trimestre do ano anterior.</p>
       <p class="sub">Fonte: Eurostat (namq_10_gdp).</p>`,
   },
+  juros_mundo: {
+    titulo: "Juros básicos comparados",
+    html: `<ul>
+        <li><b>Selic meta</b> (Copom, Banco Central do Brasil).</li>
+        <li><b>Fed Funds</b>: o Fed define uma banda de 0,25 ponto; o gráfico usa o teto da banda.</li>
+        <li><b>BCE</b>: taxa de depósito, a que na prática ancora os juros de curto prazo na Zona do Euro.</li>
+      </ul>
+      <p>O <b>diferencial</b> (Selic menos a taxa de fora) é o "carry": quanto mais alto, maior o atrativo de aplicar em reais —
+        com o risco de câmbio e de crédito do Brasil.</p>
+      <p class="sub">Fontes: Banco Central (SGS), Fed de Nova York, BCE.</p>`,
+  },
+  juro_real_mundo: {
+    titulo: "Juro real ex-post comparado",
+    html: `<p>Para cada país, a taxa básica vigente no fim do mês descontada da inflação acumulada em 12 meses:
+      <code>(1 + taxa básica) ÷ (1 + inflação 12m) − 1</code>. Mostra quão apertada está a política monetária em cada lugar,
+      olhando para a inflação que já aconteceu.</p>
+      <p class="sub">Brasil: Selic e IPCA. EUA: teto dos Fed Funds e CPI. Zona do Euro: depósito do BCE e HICP.</p>`,
+  },
+  curvas_mundo: {
+    titulo: "Curvas de juros comparadas",
+    html: `<ul>
+        <li><b>Brasil:</b> curva DI x Pré da B3 (até 10 anos), fim do dia.</li>
+        <li><b>EUA:</b> curva par de Treasuries do Tesouro americano (até 30 anos).</li>
+        <li><b>Zona do Euro:</b> curva à vista dos títulos AAA estimada pelo BCE (até 30 anos).</li>
+      </ul>
+      <p>As três são nominais, cada uma na sua moeda. As datas de referência aparecem na legenda.</p>`,
+  },
+  inflacao_mundo: {
+    titulo: "Inflação comparada",
+    html: `<ul>
+        <li><b>Brasil:</b> IPCA (IBGE), meta contínua de 3%; núcleos = média dos 5 núcleos do Banco Central.</li>
+        <li><b>EUA:</b> CPI (BLS). O Fed persegue 2% medido pelo PCE, que costuma ficar um pouco abaixo do CPI; núcleo sem alimentos e energia.</li>
+        <li><b>Zona do Euro:</b> HICP (Eurostat), meta de 2% do BCE; núcleo sem energia, alimentos, álcool e fumo.</li>
+      </ul>
+      <p>"Distância da meta" = inflação em 12 meses menos a meta de cada banco central (para os EUA, 2% aplicado ao CPI, como aproximação).</p>`,
+  },
+  pib_mundo: {
+    titulo: "PIB comparado",
+    html: `<p>Crescimento real contra um ano antes. Brasil: acumulado em 4 trimestres contra os 4 anteriores (IBGE).
+      Zona do Euro: trimestre contra o mesmo trimestre do ano anterior (Eurostat). EUA entram quando houver a chave do FRED.</p>`,
+  },
+  desemprego_mundo: {
+    titulo: "Desemprego comparado",
+    html: `<p>Taxas com ajuste sazonal: EUA (BLS) e Zona do Euro (Eurostat). O desemprego do Brasil (PNAD Contínua, IBGE) entra em seguida.
+      As metodologias são próximas (padrão da OIT), mas não idênticas.</p>`,
+  },
   receita: {
     titulo: "Receita líquida",
     html: `<p>Vendas de produtos e serviços já descontados impostos sobre vendas, devoluções e abatimentos (linha 3.01 da DRE

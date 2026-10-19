@@ -254,11 +254,13 @@ const ROTAS = {
   on: { "": paginaInicio, noticias: paginaNoticias, macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
   off: Object.fromEntries(SECOES.map(([k]) => [k, (p) => paginaOffshore(k, p)])),
 };
+const SECOES_CONS = [["", "Juros"], ["inflacao", "Inflação"], ["atividade", "Atividade e emprego"]];
+ROTAS.cons = Object.fromEntries(SECOES_CONS.map(([k]) => [k, () => paginaConsolidado(k)]));
 const ROTAS_ANTIGAS = { agenda: "noticias" };  // endereços de antes da divisão Onshore/Offshore
 
 function desenharNav(lado, secao) {
   document.querySelectorAll("#lados a").forEach((a) => a.classList.toggle("ativo", a.dataset.lado === lado));
-  document.getElementById("nav").innerHTML = SECOES.map(([k, nome]) =>
+  document.getElementById("nav").innerHTML = (lado === "cons" ? SECOES_CONS : SECOES).map(([k, nome]) =>
     `<a href="#/${lado || "on"}${k ? `/${k}` : ""}" class="${lado && k === secao ? "ativo" : ""}">${nome}</a>`).join("");
   document.body.dataset.lado = lado || "";
 }
@@ -269,7 +271,7 @@ async function rotear() {
   fecharModal();
   const partes = location.hash.replace(/^#\/?/, "").split("/");
   if (partes[0] === "status") { desenharNav(null, null); return executar(paginaStatus); }
-  if (partes[0] !== "on" && partes[0] !== "off") {
+  if (!["on", "off", "cons"].includes(partes[0])) {
     partes[0] = ROTAS_ANTIGAS[partes[0]] || partes[0];
     location.replace(`#/on/${partes.join("/")}`.replace(/\/+$/, ""));
     return;
@@ -1100,7 +1102,21 @@ function emConstrucao(itens) {
 
 const Pares = (s) => (s ? s.datas.map((d, i) => [d, s.valores[i]]) : []);
 const curvaPts = (c) => (c ? c.pontos.map((p) => [p.anos, p.taxa]) : []);
-const ateHoje = (s) => { const p = Pares(s); if (p.length) p.push([new Date().toISOString().slice(0, 10), p[p.length - 1][1]]); return p; };
+// Taxa básica guardada só nas mudanças: repete o valor mês a mês até hoje, para a linha não sumir
+// quando a última mudança fica antes da janela do gráfico
+const ateHoje = (s) => {
+  const p = Pares(s);
+  if (!p.length) return p;
+  const saida = [], fim = new Date().toISOString().slice(0, 10), d = new Date(`${p[0][0].slice(0, 7)}-01T12:00:00`);
+  let i = 0, atual = p[0][1];
+  for (let iso = p[0][0]; iso <= fim; d.setMonth(d.getMonth() + 1), iso = d.toISOString().slice(0, 10)) {
+    while (i < p.length && p[i][0] <= iso) { saida.push(p[i]); atual = p[i][1]; i++; }
+    if (saida.length && saida[saida.length - 1][0] < iso) saida.push([iso, atual]);
+  }
+  while (i < p.length) { saida.push(p[i]); atual = p[i][1]; i++; }
+  saida.push([fim, atual]);
+  return saida;
+};
 const desde = (anos) => { const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
 
 function painelG(id, titulo, info, extra = "", classe = "") {
@@ -1250,6 +1266,115 @@ async function paginaOffshore(secao, parametro) {
     Object.fromEntries(["hoje", "1 ano"].filter((k) => N[k]).map((k) => [k, N[k]]))) });
   grafico(document.getElementById("gi-juros"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", degrau: true, series: [
     { nome: "Fed Funds (limite superior)", valores: ateHoje(F.meta_max), tipo: "line", cor: COR.verde }, { nome: "BCE (depósito)", valores: ateHoje(E.deposito), tipo: "line", cor: COR.roxo }] });
+}
+
+/* ============ Consolidado: Brasil, EUA e Zona do Euro nos mesmos gráficos ============ */
+const PAISES = { br: ["Brasil", COR.verde], eua: ["EUA", COR.azul], euro: ["Zona do Euro", COR.roxo] };
+
+// valor de uma série "em degraus" (taxa básica) vigente em cada data
+function vigente(serie, datas) {
+  const pares = Pares(serie);
+  let k = 0, atual = null;
+  return datas.map((d) => { while (k < pares.length && pares[k][0] <= d) atual = pares[k++][1]; return atual; });
+}
+
+// juro real ex-post mensal: (1 + taxa básica vigente no mês) ÷ (1 + inflação 12 meses) − 1
+function juroReal(taxa, inflacao12m) {
+  const fimDoMes = inflacao12m.datas.map((d) => { const x = new Date(`${d}T12:00:00`); x.setMonth(x.getMonth() + 1, 0); return x.toISOString().slice(0, 10); });
+  const t = vigente(taxa, fimDoMes);
+  return inflacao12m.datas.map((d, i) => [d, t[i] == null ? null : ((1 + t[i] / 100) / (1 + inflacao12m.valores[i] / 100) - 1) * 100]).filter((p) => p[1] != null);
+}
+
+async function paginaConsolidado(secao) {
+  const [macro, off, di] = await Promise.all([dados("dados/macro.json"), dados("dados/offshore.json").catch(() => null), dados("dados/curva_di.json").catch(() => null)]);
+  const S = macro.series, T = (off && off.treasuries) || {}, F = (off && off.fed) || {}, B = (off && off.bls) || {}, E = (off && off.bce) || {}, Z = (off && off.eurostat) || {};
+  const u = (s) => ultimo(s);
+  const mes = (s) => (u(s).data ? `${MESES[Number(u(s).data.slice(5, 7)) - 1]}/${u(s).data.slice(2, 4)}` : "");
+  const titulos = { "": "Juros", inflacao: "Inflação", atividade: "Atividade e emprego" };
+  const cab = `<div class="cabecalho"><div><h1>Consolidado · ${titulos[secao] || "Juros"}</h1>
+    <div class="sub">Brasil, Estados Unidos e Zona do Euro nos mesmos gráficos · mesmas fontes oficiais das seções Onshore e Offshore
+      <span style="color:${PAISES.br[1]}">●</span> Brasil <span style="color:${PAISES.eua[1]}">●</span> EUA <span style="color:${PAISES.euro[1]}">●</span> Zona do Euro</div></div></div>`;
+  const linha = (pais, nome, valores, extra = {}) => ({ nome, valores, tipo: "line", cor: PAISES[pais][1], ...extra });
+  const tempo = (anos = 10) => ({ xTempo: true, inicioTempo: desde(anos), deslizante: true, eixoEsq: "pctPronto" });
+
+  if (secao === "inflacao") {
+    app.innerHTML = `${cab}
+      <div class="grade-cartoes">
+        ${cartao("IPCA 12m", pctPronto(u(S.ipca_12m).valor, 1), `meta 3% · ${mes(S.ipca_12m)}`)}
+        ${cartao("CPI EUA 12m", pctPronto(u(B.cpi_12m).valor, 1), `objetivo do Fed 2% (PCE) · ${mes(B.cpi_12m)}`)}
+        ${cartao("HICP 12m", pctPronto(u(Z.hicp_12m).valor, 1), `meta do BCE 2% · ${mes(Z.hicp_12m)}`)}
+        ${cartao("Núcleos Brasil 12m", pctPronto(u(S.nucleos_media_12m).valor, 1), "média dos 5 núcleos")}
+        ${cartao("Núcleo CPI 12m", pctPronto(u(B.cpi_nucleo_12m).valor, 1), "sem alimentos e energia")}
+        ${cartao("Núcleo HICP 12m", pctPronto(u(Z.hicp_nucleo_12m).valor, 1), "sem energia, alimentos, álcool e fumo")}
+      </div>
+      <div class="grade">
+        ${painelG("gc-inf", "Inflação em 12 meses: IPCA, CPI e HICP", "inflacao_mundo")}
+        ${painelG("gc-nuc", "Núcleos em 12 meses", "inflacao_mundo")}
+        ${painelG("gc-inf-meta", "Distância da meta (inflação 12m − meta)", "inflacao_mundo")}
+      </div>`;
+    grafico(document.getElementById("gc-inf"), { ...tempo(), series: [
+      linha("br", "IPCA (Brasil)", Pares(S.ipca_12m)), linha("eua", "CPI (EUA)", Pares(B.cpi_12m)), linha("euro", "HICP (Zona do Euro)", Pares(Z.hicp_12m))] });
+    grafico(document.getElementById("gc-nuc"), { ...tempo(), series: [
+      linha("br", "Média dos núcleos do IPCA", Pares(S.nucleos_media_12m)), linha("eua", "Núcleo do CPI", Pares(B.cpi_nucleo_12m)),
+      linha("euro", "Núcleo do HICP", Pares(Z.hicp_nucleo_12m))] });
+    const menos = (s, meta) => Pares(s).map(([d, v]) => [d, v - meta]);
+    grafico(document.getElementById("gc-inf-meta"), { ...tempo(), series: [
+      linha("br", "IPCA − 3%", menos(S.ipca_12m, 3)), linha("eua", "CPI − 2%", menos(B.cpi_12m, 2)), linha("euro", "HICP − 2%", menos(Z.hicp_12m, 2))] });
+    return;
+  }
+
+  if (secao === "atividade") {
+    app.innerHTML = `${cab}
+      <div class="grade-cartoes">
+        ${cartao("PIB Brasil 4 tri", pctPronto(u(S.pib_12m).valor, 1), "acumulado em 4 trimestres")}
+        ${cartao("PIB Zona do Euro", pctPronto(u(Z.pib_12m).valor, 1), "contra o mesmo tri do ano anterior")}
+        ${cartao("Desemprego EUA", pctPronto(u(B.desemprego).valor, 1), mes(B.desemprego))}
+        ${cartao("Desemprego Zona do Euro", pctPronto(u(Z.desemprego).valor, 1), mes(Z.desemprego))}
+      </div>
+      <div class="grade">
+        ${painelG("gc-pib", "PIB: crescimento contra um ano antes", "pib_mundo")}
+        ${painelG("gc-des", "Desemprego", "desemprego_mundo")}
+      </div>
+      <div class="nota secao">Em seguida: PIB dos EUA (precisa da chave gratuita do FRED) e desemprego do Brasil (PNAD Contínua, IBGE).</div>`;
+    grafico(document.getElementById("gc-pib"), { ...tempo(), series: [
+      linha("br", "Brasil (4 trimestres)", Pares(S.pib_12m)), linha("euro", "Zona do Euro (ano contra ano)", Pares(Z.pib_12m))] });
+    grafico(document.getElementById("gc-des"), { ...tempo(), series: [
+      linha("eua", "EUA", Pares(B.desemprego)), linha("euro", "Zona do Euro", Pares(Z.desemprego))] });
+    return;
+  }
+
+  // Juros
+  const fed = u(F.meta_max), bce = u(E.deposito);
+  app.innerHTML = `${cab}
+    <div class="grade-cartoes">
+      ${cartao("Selic meta", pctPronto(u(S.selic_meta).valor), dataBR(u(S.selic_meta).data))}
+      ${cartao("Fed Funds (teto)", pctPronto(fed.valor), `banda ${pctPronto(u(F.meta_min).valor)}–${pctPronto(fed.valor)}`)}
+      ${cartao("BCE (depósito)", pctPronto(bce.valor), "")}
+      ${cartao("Juro real Brasil", pctPronto(u(S.juro_real).valor, 1), "Selic ÷ IPCA 12m")}
+      ${cartao("Treasury 10 anos", pctPronto(u(T.historico && T.historico["10 anos"]).valor), dataBR(u(T.historico && T.historico["10 anos"]).data))}
+      ${cartao("Euro AAA 10 anos", pctPronto(u(E.aaa_10a).valor), dataBR(u(E.aaa_10a).data))}
+    </div>
+    <div class="grade">
+      ${painelG("gc-basicos", "Juros básicos: Selic, Fed Funds e BCE", "juros_mundo")}
+      ${painelG("gc-real", "Juro real ex-post: taxa básica ÷ inflação 12 meses", "juro_real_mundo")}
+      ${painelG("gc-curvas", "Curvas de juros hoje: DI x Pré, Treasuries e Zona do Euro AAA", "curvas_mundo")}
+      ${painelG("gc-dif", "Diferencial de juros: Selic − Fed Funds e Selic − BCE", "juros_mundo")}
+    </div>`;
+  grafico(document.getElementById("gc-basicos"), { ...tempo(), degrau: true, series: [
+    linha("br", "Selic meta", ateHoje(S.selic_meta)), linha("eua", "Fed Funds (teto da banda)", ateHoje(F.meta_max)), linha("euro", "BCE (depósito)", ateHoje(E.deposito))] });
+  grafico(document.getElementById("gc-real"), { ...tempo(), series: [
+    linha("br", "Brasil", Pares(S.juro_real)), linha("eua", "EUA (Fed Funds ÷ CPI)", B.cpi_12m ? juroReal(F.meta_max, B.cpi_12m) : []),
+    linha("euro", "Zona do Euro (depósito ÷ HICP)", Z.hicp_12m ? juroReal(E.deposito, Z.hicp_12m) : [])] });
+  const hoje = di && di.curvas && di.curvas.hoje;
+  grafico(document.getElementById("gc-curvas"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: [
+    linha("br", `DI x Pré (${hoje ? dataBR(hoje.data) : "—"})`, hoje ? hoje.pre.filter((p) => p.anos <= 10).map((p) => [p.anos, p.taxa]) : []),
+    linha("eua", `Treasuries (${T.nominal && T.nominal.hoje ? dataBR(T.nominal.hoje.data) : "—"})`, curvaPts(T.nominal && T.nominal.hoje)),
+    linha("euro", `Zona do Euro AAA (${E.curva && E.curva.hoje ? dataBR(E.curva.hoje.data) : "—"})`, curvaPts(E.curva && E.curva.hoje))] });
+  const datas = Pares(S.cdi).map((p) => p[0]).filter((d) => d >= desde(10));
+  const selic = vigente(S.selic_meta, datas), fedv = vigente(F.meta_max, datas), bcev = vigente(E.deposito, datas);
+  const passo = (arr) => datas.map((d, i) => [d, selic[i] != null && arr[i] != null ? selic[i] - arr[i] : null]).filter((p, i, a) => p[1] != null && (i === 0 || a[i - 1][1] !== p[1] || i === a.length - 1));
+  grafico(document.getElementById("gc-dif"), { ...tempo(), degrau: true, series: [
+    linha("eua", "Selic − Fed Funds", passo(fedv)), linha("euro", "Selic − BCE", passo(bcev))] });
 }
 
 /* ============ Status dos dados ============ */
