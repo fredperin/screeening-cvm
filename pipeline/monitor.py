@@ -96,6 +96,11 @@ def checar_b3_curva_di():
         r = requests.get(f"https://www.b3.com.br/pesquisapregao/download?filelist=TS{dia:%y%m%d}.ex_",
                          headers=CABECALHO, timeout=60)
         if r.status_code == 200 and r.content.startswith(b"PK"):
+            import io
+            import zipfile
+            with zipfile.ZipFile(io.BytesIO(r.content)) as z:
+                if not z.namelist():
+                    continue  # ZIP do dia ainda vazio
             return f"arquivo de swaps de {dia:%d/%m/%Y} disponível"
     raise AssertionError("nenhum arquivo de swaps (curva DI) nos últimos 8 dias")
 

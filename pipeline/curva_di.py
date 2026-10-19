@@ -34,6 +34,8 @@ def _baixar_dia(dia):
         return None
     try:
         with zipfile.ZipFile(io.BytesIO(r.content)) as externo:
+            if not externo.namelist():  # a B3 publica o ZIP do dia vazio antes de sair o arquivo: usa o pregão anterior
+                return None
             interno = externo.read(externo.namelist()[0])
         with zipfile.ZipFile(io.BytesIO(interno)) as z:
             texto = z.read("TaxaSwap.txt").decode("latin1")
