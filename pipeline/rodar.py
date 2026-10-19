@@ -50,7 +50,7 @@ def versao_do_codigo():
 
 
 def main(tudo=False):
-    from pipeline import agenda, curva_di, eventos, ficha, fre_textos, macro, mercado, noticias, planilhas, resumos, tesouro
+    from pipeline import agenda, curva_di, eventos, ficha, fre_textos, macro, mercado, noticias, offshore, planilhas, resumos, tesouro
     from pipeline.cvm_lote import atualizar_base_cvm
     from pipeline.gerar_empresas import DIR_EMPRESAS, gerar_indice
     from pipeline.gerar_empresas import main as gerar_empresas
@@ -63,6 +63,7 @@ def main(tudo=False):
     _etapa("curva_di", curva_di.gerar, status)
     _etapa("mercado", mercado.gerar, status)
     _etapa("noticias", noticias.gerar, status)
+    _etapa("offshore", offshore.gerar, status)
     _etapa("planilhas", planilhas.gerar, status)
     _etapa("eventos", eventos.gerar, status)
     _etapa("ficha", ficha.gerar, status)

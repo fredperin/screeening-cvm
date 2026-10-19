@@ -237,6 +237,27 @@ def checar_macro():
     return f"{len(SERIES_MACRO)} séries em dia, completas e sem buracos; comparadas com o site: {comparadas}"
 
 
+def checar_offshore():
+    """Dados do exterior: nenhuma fonte com falha e cada série dentro da defasagem esperada."""
+    off = json.loads((DIR_DADOS_SITE / "offshore.json").read_text(encoding="utf-8"))
+    problemas = list(off.get("falhas", []))
+    T, F, B, E, Z = (off.get(k, {}) for k in ("treasuries", "fed", "bls", "bce", "eurostat"))
+    limites = [("Treasury 10 anos", T.get("historico", {}).get("10 anos"), 6), ("EFFR", F.get("effr"), 6), ("SOFR", F.get("sofr"), 6),
+               ("€STR", E.get("estr"), 6), ("curva AAA do BCE", E.get("aaa_10a"), 6), ("CPI EUA", B.get("cpi_12m"), 75),
+               ("desemprego EUA", B.get("desemprego"), 75), ("HICP", Z.get("hicp_12m"), 75), ("desemprego Zona do Euro", Z.get("desemprego"), 100),
+               ("PIB Zona do Euro", Z.get("pib_tri"), 250)]
+    for nome, s, max_dias in limites:
+        if not s or not s.get("datas"):
+            problemas.append(f"{nome}: série ausente")
+        elif _dias(s["datas"][-1]) > max_dias:
+            problemas.append(f"{nome}: último dado em {s['datas'][-1]}")
+    agenda = DIR_DADOS_SITE / "agenda_offshore.json"
+    if agenda.exists():
+        problemas += json.loads(agenda.read_text(encoding="utf-8")).get("falhas", [])
+    assert not problemas, " | ".join(problemas)
+    return f"{len(limites)} séries em dia (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)"
+
+
 def checar_atualizacao():
     """Resultado da própria atualização (status.json gerado por pipeline.rodar)."""
     arq = DIR_DADOS_SITE / "status.json"
@@ -259,6 +280,7 @@ CHECAGENS = {
     "Banco Central — SGS": checar_bcb,
     "Banco Central — Focus": checar_focus,
     "Macro — séries completas e em dia": checar_macro,
+    "Offshore — Tesouro dos EUA, Fed, BLS, BCE, Eurostat": checar_offshore,
     "Tesouro Direto (oficial)": checar_tesouro,
     "Tesouro Direto — tempo real (não oficial)": checar_tesouro_tempo_real,
     "Yahoo Finance": checar_yahoo,

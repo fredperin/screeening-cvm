@@ -252,7 +252,7 @@ async function iniciarBusca() {
 const SECOES = [["", "Início"], ["noticias", "Notícias e agenda"], ["macro", "Macro"], ["juros", "Juros"], ["empresas", "Empresas"], ["downloads", "Downloads"]];
 const ROTAS = {
   on: { "": paginaInicio, noticias: paginaNoticias, macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
-  off: Object.fromEntries(SECOES.map(([k]) => [k, () => paginaOffshore(k)])),
+  off: Object.fromEntries(SECOES.map(([k]) => [k, (p) => paginaOffshore(k, p)])),
 };
 const ROTAS_ANTIGAS = { agenda: "noticias" };  // endereços de antes da divisão Onshore/Offshore
 
@@ -983,7 +983,7 @@ const CATEGORIAS_AGENDA = {
 const DIAS_SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 
 function linhaAgenda(e) {
-  const [nome, cor] = CATEGORIAS_AGENDA[e.categoria] || [e.categoria, COR.cinza];
+  const [nome, cor] = CATEGORIAS_AGENDA[e.categoria] || CATEGORIAS_OFF[e.categoria] || [e.categoria, COR.cinza];
   const d = new Date(`${e.data}T12:00:00`);
   return `<tr><td>${dataBR(e.data)} <span class="sub">${DIAS_SEMANA[d.getDay()]}</span></td>
     <td style="text-align:left"><span style="color:${cor}">●</span> ${esc(nome)}</td>
@@ -1080,39 +1080,176 @@ async function paginaDownloads() {
   document.getElementById("filtro").addEventListener("input", (ev) => desenhar(ev.target.value));
 }
 
-/* ============ Offshore (estrutura; dados ainda não ligados) ============ */
+/* ============ Offshore ============ */
 const PLANO_OFFSHORE = {
-  "": ["Offshore · painel", "Resumo do exterior: juros e inflação dos EUA e da Zona do Euro, curva de Treasuries, índices, commodities e dólar.", [
-    ["Juros e inflação lá fora", "Fed Funds, Treasury de 10 anos, CPI dos EUA, taxas do BCE.", "FRED, Tesouro dos EUA, BCE"],
-    ["Mercados", "S&P 500, Nasdaq, Stoxx, DXY, Brent, minério e ouro.", "FRED, EIA, Banco Mundial; Yahoo como reserva"],
-    ["Próximas divulgações", "FOMC, CPI, payroll e reuniões do BCE.", "calendários do Fed, BLS e BCE"]]],
-  noticias: ["Notícias e agenda", "Comunicados oficiais e o calendário de divulgações do exterior.", [
-    ["Notícias", "Comunicados do Federal Reserve e do Banco Central Europeu (manchete e link).", "RSS oficiais do Fed e do BCE"],
-    ["Agenda", "Reuniões do FOMC e do BCE; CPI, PCE, payroll e PIB dos EUA; inflação e PIB da Zona do Euro.", "Fed, BLS, BEA, BCE, Eurostat"]]],
-  macro: ["Macro", "Atividade, inflação e emprego das principais economias.", [
-    ["Estados Unidos", "Inflação (CPI, PCE e núcleos), emprego (payroll, desemprego), PIB e atividade.", "FRED, BLS, BEA (APIs oficiais, chave gratuita)"],
-    ["Zona do Euro", "Inflação (HICP), PIB e desemprego.", "Eurostat e BCE (APIs oficiais)"],
-    ["China", "PIB, inflação e produção industrial.", "DBnomics (dados do NBS)"],
-    ["Global", "PIB e projeções por país.", "FMI (World Economic Outlook), Banco Mundial, OCDE"],
-    ["Mercados", "Índices de ações, commodities e câmbio.", "FRED, EIA, Banco Mundial (Pink Sheet); Yahoo como reserva"]]],
-  juros: ["Juros", "Curvas e taxas de referência do exterior.", [
-    ["Treasuries", "Curva dos EUA, nominal e real (TIPS), em hoje, 1 semana, 1 mês, 6 meses e 1 ano.", "Tesouro dos EUA (arquivo diário oficial)"],
-    ["Fed Funds e SOFR", "Taxa básica americana e taxas de um dia.", "Fed de Nova York (API oficial)"],
-    ["Zona do Euro", "€STR, taxas do BCE e curva de juros.", "BCE (API oficial)"],
-    ["Spreads de crédito", "High yield e grau de investimento.", "FRED (índices ICE BofA)"]]],
   empresas: ["Empresas", "Empresas estrangeiras para comparação setorial.", [
     ["Comparáveis estrangeiras", "Receita, margens, endividamento e retorno de empresas listadas nos EUA.", "SEC EDGAR (balanços XBRL, API oficial)"]]],
-  downloads: ["Downloads", "Planilhas com as séries do exterior.", [
-    ["Macro e Juros do exterior", "Séries históricas completas em Excel, como as do Onshore.", "geradas a partir das fontes acima"]]],
+  china: ["China", "", [["China", "PIB, inflação e produção industrial.", "DBnomics (dados do NBS)"]]],
+  global: ["Global", "", [["Global", "PIB e projeções por país.", "FMI (World Economic Outlook), Banco Mundial, OCDE"]]],
+  mercados: ["Mercados", "", [["Mercados", "Índices de ações (S&P 500, Nasdaq, Stoxx), petróleo, minério, ouro e dólar global.",
+    "FRED e EIA (precisam de chave gratuita), Banco Mundial (Pink Sheet, mensal)"]]],
 };
+const CATEGORIAS_OFF = { fed: ["Fed", COR.verde], bce: ["BCE", COR.roxo] };
+const SUBS_MACRO_OFF = [["eua", "Estados Unidos"], ["euro", "Zona do Euro"], ["china", "China"], ["global", "Global"], ["mercados", "Mercados"]];
 
-function paginaOffshore(secao) {
-  const [titulo, sub, itens] = PLANO_OFFSHORE[secao] || PLANO_OFFSHORE[""];
-  app.innerHTML = `
-    <div class="cabecalho"><div><h1>${secao ? `Offshore · ${titulo}` : titulo}</h1><div class="sub">${sub}</div></div></div>
-    <div class="aviso">Em construção: a estrutura está pronta e os dados entram nas próximas etapas, fonte por fonte.</div>
+function emConstrucao(itens) {
+  return `<div class="aviso">Em construção: a estrutura está pronta e os dados entram nas próximas etapas.</div>
     <div class="grade">${itens.map(([nome, conteudo, fonte]) => `<div class="painel em-construcao"><h2>${nome}</h2>
       <p style="margin:0 0 8px;line-height:1.6">${conteudo}</p><div class="nota">Fonte prevista: ${fonte}</div></div>`).join("")}</div>`;
+}
+
+const Pares = (s) => (s ? s.datas.map((d, i) => [d, s.valores[i]]) : []);
+const curvaPts = (c) => (c ? c.pontos.map((p) => [p.anos, p.taxa]) : []);
+const ateHoje = (s) => { const p = Pares(s); if (p.length) p.push([new Date().toISOString().slice(0, 10), p[p.length - 1][1]]); return p; };
+const desde = (anos) => { const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
+
+function painelG(id, titulo, info, extra = "", classe = "") {
+  return `<div class="painel ${classe}" data-info="${info}"><h2>${titulo}</h2><div class="grafico${classe.includes("largo") ? " alto" : ""}" id="${id}"></div>${extra}</div>`;
+}
+
+function curvasPorData(curvas) {
+  return Object.keys(curvas || {}).map((r, i) => ({ nome: `${r} (${dataBR(curvas[r].data)})`, valores: curvaPts(curvas[r]), tipo: "line",
+    cor: PALETA_DATAS[i % PALETA_DATAS.length], tracejado: i > 0 }));
+}
+
+async function paginaOffshore(secao, parametro) {
+  const off = await dados("dados/offshore.json").catch(() => null);
+  if (secao === "empresas") {
+    const [t, sub, itens] = PLANO_OFFSHORE.empresas;
+    app.innerHTML = `<div class="cabecalho"><div><h1>Offshore · ${t}</h1><div class="sub">${sub}</div></div></div>${emConstrucao(itens)}`;
+    return;
+  }
+  if (!off) { app.innerHTML = `<p class="erro">Dados do exterior indisponíveis.</p>`; return; }
+  const cab = (titulo, sub, extra = "") => `<div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">${sub} · atualizado em ${dataHoraBR(off.gerado_em)}</div></div>${extra}</div>`;
+  const T = off.treasuries || {}, F = off.fed || {}, B = off.bls || {}, E = off.bce || {}, Z = off.eurostat || {};
+  const u = (s) => ultimo(s);
+  const mes = (s) => (u(s).data ? `${MESES[Number(u(s).data.slice(5, 7)) - 1]}/${u(s).data.slice(2, 4)}` : "");
+  const ust10 = T.historico ? u(T.historico["10 anos"]) : {};
+
+  if (secao === "noticias") {
+    const [noticias, agenda] = await Promise.all([dados("dados/noticias_offshore.json").catch(() => null), dados("dados/agenda_offshore.json").catch(() => null)]);
+    const itens = noticias ? noticias.itens : [];
+    let fonte = "todas", janela = 90;
+    app.innerHTML = `${cab("Offshore · Notícias e agenda", "Comunicados do Federal Reserve e do Banco Central Europeu e as próximas decisões de juros")}
+      <div class="grade grade-noticias">
+        <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
+          <div class="seletor" id="filtro-fonte"><button data-k="todas" class="ativo">Todas</button><button data-k="Federal Reserve">Federal Reserve</button><button data-k="BCE">BCE</button></div></div>
+          <div id="lista-noticias"></div>
+          <div class="nota">Só o título e o link para o comunicado original (RSS oficiais do Fed e do BCE). Últimos 60 dias.</div></div>
+        <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Agenda</h2>
+          <div class="seletor" id="janela-ag">${[[30, "1 mês"], [90, "3 meses"], [400, "Tudo"]].map(([d, r]) => `<button data-d="${d}" class="${d === janela ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
+          <div id="tab-agenda"></div>
+          <div class="nota">Datas das páginas oficiais do Fed e do BCE. A decisão do FOMC sai às 15h de Washington (16h de Brasília no horário de verão americano);
+            a do BCE às 14h15 de Frankfurt. As datas de divulgação de CPI, payroll e PIB dos EUA entram quando houver a chave gratuita do FRED.</div></div>
+      </div>`;
+    const desenharN = () => (document.getElementById("lista-noticias").innerHTML = listaNoticias(itens.filter((n) => fonte === "todas" || n.fonte === fonte)));
+    const desenharA = () => (document.getElementById("tab-agenda").innerHTML = tabelaAgenda(agenda, janela));
+    document.getElementById("filtro-fonte").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b) return;
+      document.querySelectorAll("#filtro-fonte button").forEach((x) => x.classList.toggle("ativo", x === b)); fonte = b.dataset.k; desenharN(); });
+    document.getElementById("janela-ag").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b) return;
+      document.querySelectorAll("#janela-ag button").forEach((x) => x.classList.toggle("ativo", x === b)); janela = Number(b.dataset.d); desenharA(); });
+    desenharN(); desenharA();
+    return;
+  }
+
+  if (secao === "macro") {
+    const sub = SUBS_MACRO_OFF.some(([k]) => k === parametro) ? parametro : "eua";
+    const abas = `<div class="abas">${SUBS_MACRO_OFF.map(([k, n]) => `<a href="#/off/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
+    if (PLANO_OFFSHORE[sub]) { app.innerHTML = `${cab("Offshore · Macro", "Atividade, inflação e emprego no exterior")}${abas}${emConstrucao(PLANO_OFFSHORE[sub][2])}`; return; }
+    if (sub === "eua") {
+      app.innerHTML = `${cab("Offshore · Macro", "Estados Unidos: BLS (API oficial)")}${abas}
+        <div class="grade-cartoes">
+          ${cartao("CPI 12 meses", pctPronto(u(B.cpi_12m).valor), mes(B.cpi_12m))}${cartao("Núcleo do CPI 12m", pctPronto(u(B.cpi_nucleo_12m).valor), mes(B.cpi_nucleo_12m))}
+          ${cartao("CPI no mês (dessaz.)", pctPronto(u(B.cpi_mensal).valor), mes(B.cpi_mensal))}${cartao("Desemprego", pctPronto(u(B.desemprego).valor, 1), mes(B.desemprego))}
+          ${cartao("Payroll (vagas no mês)", u(B.payroll_var).valor != null ? `${num(u(B.payroll_var).valor, 0)} mil` : "—", mes(B.payroll_var))}</div>
+        <div class="grade">${painelG("go-cpi", "Inflação ao consumidor (CPI)", "cpi_eua")}${painelG("go-cpin", "CPI — núcleo (sem alimentos e energia)", "cpi_eua")}
+          ${painelG("go-trab", "Mercado de trabalho: payroll e desemprego", "emprego_eua")}</div>`;
+      grafico(document.getElementById("go-cpi"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
+        { nome: "Mensal (dessaz.)", valores: Pares(B.cpi_mensal), cor: COR.azul }, { nome: "12 meses", valores: Pares(B.cpi_12m), tipo: "line", eixo: "dir", cor: COR.vermelho },
+        { nome: "Núcleo 12 meses", valores: Pares(B.cpi_nucleo_12m), tipo: "line", eixo: "dir", cor: COR.ambar, tracejado: true }] });
+      grafico(document.getElementById("go-cpin"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
+        { nome: "Núcleo mensal (dessaz.)", valores: Pares(B.cpi_nucleo_mensal), cor: COR.azul }, { nome: "Núcleo 12 meses", valores: Pares(B.cpi_nucleo_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] });
+      grafico(document.getElementById("go-trab"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "numero", eixoDir: "pctPronto", series: [
+        { nome: "Payroll (mil vagas no mês)", valores: Pares(B.payroll_var), cor: COR.verde }, { nome: "Desemprego", valores: Pares(B.desemprego), tipo: "line", eixo: "dir", cor: COR.vermelho }] });
+      return;
+    }
+    app.innerHTML = `${cab("Offshore · Macro", "Zona do Euro: Eurostat (API oficial)")}${abas}
+      <div class="grade-cartoes">
+        ${cartao("HICP 12 meses", pctPronto(u(Z.hicp_12m).valor, 1), mes(Z.hicp_12m))}${cartao("Núcleo 12m", pctPronto(u(Z.hicp_nucleo_12m).valor, 1), "sem energia, alimentos, álcool e fumo")}
+        ${cartao("Serviços 12m", pctPronto(u(Z.hicp_servicos_12m).valor, 1), mes(Z.hicp_servicos_12m))}${cartao("Desemprego", pctPronto(u(Z.desemprego).valor, 1), mes(Z.desemprego))}
+        ${cartao("PIB tri/tri", pctPronto(u(Z.pib_tri).valor, 1), u(Z.pib_tri).data ? `${Math.ceil(Number(u(Z.pib_tri).data.slice(5, 7)) / 3)}º tri/${u(Z.pib_tri).data.slice(0, 4)}` : "")}</div>
+      <div class="grade">${painelG("go-hicp", "Inflação (HICP) — 12 meses", "hicp")}${painelG("go-des", "Desemprego", "desemprego_euro")}${painelG("go-pib", "PIB", "pib_euro")}</div>`;
+    grafico(document.getElementById("go-hicp"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", series: [
+      { nome: "Cheio", valores: Pares(Z.hicp_12m), tipo: "line", cor: COR.vermelho }, { nome: "Núcleo", valores: Pares(Z.hicp_nucleo_12m), tipo: "line", cor: COR.ambar },
+      { nome: "Serviços", valores: Pares(Z.hicp_servicos_12m), tipo: "line", cor: COR.ciano, tracejado: true }] });
+    grafico(document.getElementById("go-des"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", series: [
+      { nome: "Desemprego (dessaz.)", valores: Pares(Z.desemprego), tipo: "line", cor: COR.vermelho }] });
+    grafico(document.getElementById("go-pib"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
+      { nome: "Tri/tri (dessaz.)", valores: Pares(Z.pib_tri), cor: COR.azul }, { nome: "Contra o mesmo tri do ano anterior", valores: Pares(Z.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] });
+    return;
+  }
+
+  if (secao === "juros") {
+    app.innerHTML = `${cab("Offshore · Juros", "Tesouro dos EUA, Fed de Nova York e BCE (fontes oficiais) · taxas em % a.a.",
+      `<a class="botao" href="downloads/offshore.xlsx" download>Baixar planilha Offshore</a>`)}
+      <div class="grade">
+        ${painelG("gq-ust", "Treasuries — curva nominal", "ust_curva")}${painelG("gq-tips", "Treasuries — curva real (TIPS)", "ust_real")}
+        ${painelG("gq-hist", "Treasuries de 2, 10 e 30 anos", "ust_hist")}${painelG("gq-incl", "Inclinação da curva: 10 anos − 2 anos", "ust_hist")}
+        ${painelG("gq-fed", "Fed Funds: meta, taxa efetiva e SOFR", "fed_funds")}${painelG("gq-bce", "BCE: taxa de depósito e €STR", "bce_juros")}
+        ${painelG("gq-eur", "Zona do Euro — curva de juros (títulos AAA)", "curva_euro")}${painelG("gq-eur10", "Juro de 10 anos: Treasury x Zona do Euro AAA", "curva_euro")}
+      </div>`;
+    grafico(document.getElementById("gq-ust"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(T.nominal) });
+    grafico(document.getElementById("gq-tips"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(T.real) });
+    const H = T.historico || {};
+    grafico(document.getElementById("gq-hist"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
+      { nome: "2 anos", valores: Pares(H["2 anos"]), tipo: "line", cor: COR.ciano }, { nome: "10 anos", valores: Pares(H["10 anos"]), tipo: "line", cor: COR.ambar },
+      { nome: "30 anos", valores: Pares(H["30 anos"]), tipo: "line", cor: COR.roxo }, { nome: "10 anos real (TIPS)", valores: Pares(H["10 anos real (TIPS)"]), tipo: "line", cor: COR.verde, tracejado: true }] });
+    grafico(document.getElementById("gq-incl"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
+      { nome: "10a − 2a (pontos percentuais)", valores: Pares(H["inclinação 10a − 2a"]), tipo: "line", cor: COR.ambar }] });
+    grafico(document.getElementById("gq-fed"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", degrau: true, series: [
+      { nome: "Meta — limite superior", valores: ateHoje(F.meta_max), tipo: "line", cor: COR.ambar }, { nome: "Meta — limite inferior", valores: ateHoje(F.meta_min), tipo: "line", cor: COR.ambar, tracejado: true },
+      { nome: "Efetiva (EFFR)", valores: Pares(F.effr), tipo: "line", cor: COR.ciano }, { nome: "SOFR", valores: Pares(F.sofr), tipo: "line", cor: COR.roxo }] });
+    grafico(document.getElementById("gq-bce"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", degrau: true, series: [
+      { nome: "Taxa de depósito", valores: ateHoje(E.deposito), tipo: "line", cor: COR.ambar }, { nome: "€STR", valores: Pares(E.estr), tipo: "line", cor: COR.ciano }] });
+    grafico(document.getElementById("gq-eur"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(E.curva) });
+    grafico(document.getElementById("gq-eur10"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
+      { nome: "Treasury 10 anos", valores: Pares(H["10 anos"]), tipo: "line", cor: COR.ambar }, { nome: "Zona do Euro AAA 10 anos", valores: Pares(E.aaa_10a), tipo: "line", cor: COR.roxo }] });
+    return;
+  }
+
+  if (secao === "downloads") {
+    app.innerHTML = `${cab("Offshore · Downloads", "Planilha com as séries do exterior, atualizada todo dia")}
+      <div class="grade"><div class="painel"><h2>Offshore</h2><p class="sub" style="line-height:1.6">Treasuries (curvas nas datas de comparação e histórico de 2, 10 e 30 anos),
+        Fed Funds, SOFR, BCE (depósito, €STR e curva AAA), inflação e emprego dos EUA (BLS) e inflação, desemprego e PIB da Zona do Euro (Eurostat).</p>
+        <a class="botao" href="downloads/offshore.xlsx" download>Baixar offshore.xlsx</a></div></div>
+      <div class="nota secao">Cada gráfico do site também tem o botão ⤓ para baixar a série daquele gráfico em CSV.</div>`;
+    return;
+  }
+
+  // Início do Offshore
+  const [agenda, noticias] = await Promise.all([dados("dados/agenda_offshore.json").catch(() => null), dados("dados/noticias_offshore.json").catch(() => null)]);
+  const mMin = u(F.meta_min), mMax = u(F.meta_max);
+  app.innerHTML = `${cab("Offshore · painel", "Juros, inflação e emprego nos EUA e na Zona do Euro")}
+    <div class="grade-cartoes">
+      ${cartao("Fed Funds (meta)", mMin.valor != null ? `${num(mMin.valor, 2)}–${num(mMax.valor, 2)}%` : "—", `efetiva ${pctPronto(u(F.effr).valor)}`)}
+      ${cartao("Treasury 10 anos", pctPronto(ust10.valor), dataBR(ust10.data))}
+      ${cartao("CPI EUA 12m", pctPronto(u(B.cpi_12m).valor, 1), `núcleo ${pctPronto(u(B.cpi_nucleo_12m).valor, 1)} · ${mes(B.cpi_12m)}`)}
+      ${cartao("Desemprego EUA", pctPronto(u(B.desemprego).valor, 1), mes(B.desemprego))}
+      ${cartao("BCE (depósito)", pctPronto(u(E.deposito).valor), `€STR ${pctPronto(u(E.estr).valor)}`)}
+      ${cartao("HICP 12m", pctPronto(u(Z.hicp_12m).valor, 1), `núcleo ${pctPronto(u(Z.hicp_nucleo_12m).valor, 1)} · ${mes(Z.hicp_12m)}`)}
+    </div>
+    <div class="grade">
+      ${painelG("gi-ust", "Curva de Treasuries — hoje vs. 1 ano", "ust_curva")}
+      ${painelG("gi-juros", "Juros básicos: Fed Funds x BCE (depósito)", "fed_funds")}
+      <div class="painel"><h2>Próximas decisões de juros</h2>${tabelaAgenda(agenda, 120)}<div class="nota"><a href="#/off/noticias">Ver agenda e notícias</a></div></div>
+      <div class="painel"><h2>Últimos comunicados (Fed e BCE)</h2>${listaNoticias((noticias && noticias.itens) || [], 25)}</div>
+    </div>
+    ${off.falhas && off.falhas.length ? `<div class="nota secao">Fontes com falha na última atualização (mostrando a versão anterior): ${esc(off.falhas.join("; "))}</div>` : ""}`;
+  const N = T.nominal || {};
+  grafico(document.getElementById("gi-ust"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(
+    Object.fromEntries(["hoje", "1 ano"].filter((k) => N[k]).map((k) => [k, N[k]]))) });
+  grafico(document.getElementById("gi-juros"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", degrau: true, series: [
+    { nome: "Fed Funds (limite superior)", valores: ateHoje(F.meta_max), tipo: "line", cor: COR.verde }, { nome: "BCE (depósito)", valores: ateHoje(E.deposito), tipo: "line", cor: COR.roxo }] });
 }
 
 /* ============ Status dos dados ============ */
@@ -1121,6 +1258,7 @@ const NOMES_ETAPAS = {
   mercado: "Cotações e proventos (B3)", noticias: "Notícias", planilhas: "Planilhas de Macro e Juros", eventos: "Eventos (CVM)",
   ficha: "Ficha da empresa (FRE/FCA)", fre_textos: "Trechos do Formulário de Referência", resumos: "Resumos aprofundados",
   cvm_base: "Base de demonstrações (CVM)", empresas: "Empresas (JSON e Excel)", indice: "Índice de empresas",
+  offshore: "Offshore (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)", tesouro_intradia: "Tesouro Direto — tempo real (3x ao dia)",
 };
 
 async function paginaStatus() {

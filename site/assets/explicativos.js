@@ -216,6 +216,78 @@ window.EXPLICATIVOS = {
       </ul>
       <p>PU = preço unitário. A variação semanal está em pontos-base (1 bp = 0,01 ponto percentual): taxa subindo = preço caindo.</p>`,
   },
+  ust_curva: {
+    titulo: "Curva de Treasuries (EUA)",
+    html: `<p>Rendimento dos títulos do Tesouro americano por prazo, de 1 mês a 30 anos (curva "par", calculada pelo próprio
+      <b>Tesouro dos EUA</b> no fechamento de cada dia útil). É a referência de juros livre de risco do mundo.</p>
+      <p>As linhas comparam hoje com 1 semana, 1 mês, 6 meses e 1 ano atrás. Curva invertida (curto acima do longo) costuma indicar
+        expectativa de cortes de juros e, historicamente, antecedeu recessões.</p>
+      <p class="sub">Fonte: U.S. Department of the Treasury — Daily Treasury Par Yield Curve Rates.</p>`,
+  },
+  ust_real: {
+    titulo: "Curva real (TIPS)",
+    html: `<p>Juro <b>acima da inflação</b> dos títulos americanos indexados ao CPI (TIPS), de 5 a 30 anos. A diferença entre a curva
+      nominal e a real no mesmo prazo é a inflação implícita americana (breakeven).</p>
+      <p class="sub">Fonte: U.S. Department of the Treasury — Daily Treasury Par Real Yield Curve Rates.</p>`,
+  },
+  ust_hist: {
+    titulo: "Treasuries ao longo do tempo",
+    html: `<p>Histórico diário dos prazos de 2, 10 e 30 anos e do 10 anos real (TIPS). A <b>inclinação 10a − 2a</b> é a diferença entre
+      o 10 e o 2 anos: negativa = curva invertida.</p><p class="sub">Fonte: Tesouro dos EUA.</p>`,
+  },
+  fed_funds: {
+    titulo: "Fed Funds e SOFR",
+    html: `<ul>
+        <li><b>Meta dos Fed Funds:</b> banda definida pelo FOMC (8 reuniões por ano) para os empréstimos de um dia entre bancos.</li>
+        <li><b>EFFR:</b> taxa efetiva desses empréstimos, calculada pelo Fed de Nova York; fica dentro da banda.</li>
+        <li><b>SOFR:</b> taxa de um dia com lastro em Treasuries (compromissadas); substituiu a Libor como referência em dólar.</li>
+      </ul><p class="sub">Fonte: Federal Reserve Bank of New York (API oficial de taxas de referência).</p>`,
+  },
+  bce_juros: {
+    titulo: "BCE: taxa de depósito e €STR",
+    html: `<ul>
+        <li><b>Taxa de depósito:</b> a taxa básica da Zona do Euro na prática — quanto os bancos recebem ao deixar recursos no BCE.</li>
+        <li><b>€STR:</b> taxa média dos empréstimos de um dia sem garantia entre bancos da Zona do Euro, calculada pelo BCE.</li>
+      </ul><p class="sub">Fonte: Banco Central Europeu (ECB Data Portal, API oficial).</p>`,
+  },
+  curva_euro: {
+    titulo: "Curva de juros da Zona do Euro (AAA)",
+    html: `<p>Curva estimada pelo <b>BCE</b> a partir dos títulos de governos da Zona do Euro com nota AAA (como Alemanha e Holanda):
+      taxas à vista por prazo. É a referência de juros longos em euro, comparável à curva de Treasuries.</p>
+      <p class="sub">Fonte: Banco Central Europeu (ECB Data Portal, yield curves).</p>`,
+  },
+  cpi_eua: {
+    titulo: "CPI — inflação ao consumidor dos EUA",
+    html: `<p>Índice de preços ao consumidor urbano (CPI-U), calculado pelo <b>BLS</b>. O <b>núcleo</b> exclui alimentos e energia.
+      O Fed persegue 2% ao ano, mas medido pelo PCE (deflator do consumo), que costuma ficar um pouco abaixo do CPI.</p>
+      <p>Barras: variação mensal com ajuste sazonal. Linhas: acumulado em 12 meses (sem ajuste).</p>
+      <p class="sub">Fonte: U.S. Bureau of Labor Statistics (API oficial), séries CUUR0000SA0, CUUR0000SA0L1E, CUSR0000SA0 e CUSR0000SA0L1E.</p>`,
+  },
+  emprego_eua: {
+    titulo: "Payroll e desemprego (EUA)",
+    html: `<ul>
+        <li><b>Payroll:</b> vagas formais criadas no mês fora do setor agrícola (pesquisa com empresas), em milhares. Sai na primeira
+          sexta-feira do mês, no relatório Employment Situation, e é revisado nos dois meses seguintes.</li>
+        <li><b>Desemprego:</b> taxa da pesquisa com domicílios, com ajuste sazonal.</li>
+      </ul><p class="sub">Fonte: U.S. Bureau of Labor Statistics (séries CES0000000001 e LNS14000000).</p>`,
+  },
+  hicp: {
+    titulo: "HICP — inflação da Zona do Euro",
+    html: `<p>Índice Harmonizado de Preços ao Consumidor, calculado pelo <b>Eurostat</b> com a mesma metodologia em todos os países.
+      É a medida da meta de 2% do BCE. O <b>núcleo</b> exclui energia, alimentos, álcool e fumo.</p>
+      <p>Desde 2026 o HICP usa a nova classificação de consumo (ECOICOP ver. 2); a série inclui o histórico recalculado.</p>
+      <p class="sub">Fonte: Eurostat (prc_hicp_minr).</p>`,
+  },
+  desemprego_euro: {
+    titulo: "Desemprego na Zona do Euro",
+    html: `<p>Taxa de desemprego com ajuste sazonal, padrão da OIT, para os 21 países da Zona do Euro (com a Bulgária, desde 2026).</p>
+      <p class="sub">Fonte: Eurostat (une_rt_m).</p>`,
+  },
+  pib_euro: {
+    titulo: "PIB da Zona do Euro",
+    html: `<p>Crescimento real do PIB: barras contra o trimestre anterior (com ajuste sazonal) e linha contra o mesmo trimestre do ano anterior.</p>
+      <p class="sub">Fonte: Eurostat (namq_10_gdp).</p>`,
+  },
   receita: {
     titulo: "Receita líquida",
     html: `<p>Vendas de produtos e serviços já descontados impostos sobre vendas, devoluções e abatimentos (linha 3.01 da DRE

@@ -1,6 +1,6 @@
 """
-Planilhas de download com a série histórica completa de cada gráfico de Macro e Juros:
-site/downloads/macro.xlsx e site/downloads/juros.xlsx (geradas a partir dos JSON do site).
+Planilhas de download com a série histórica completa de cada gráfico de Macro, Juros e Offshore:
+site/downloads/macro.xlsx, juros.xlsx e offshore.xlsx (geradas a partir dos JSON do site).
 
 Uso: py -m pipeline.planilhas
 """
@@ -118,9 +118,52 @@ def gerar_juros():
     return destino
 
 
+def _serie_pd(s):
+    return pd.Series(s["valores"], index=pd.to_datetime(s["datas"])) if s and s.get("datas") else pd.Series(dtype=float)
+
+
+def gerar_offshore():
+    arq = DIR_DADOS_SITE / "offshore.json"
+    if not arq.exists():
+        return None
+    off = json.loads(arq.read_text(encoding="utf-8"))
+    T, F, B, E, Z = (off.get(k, {}) for k in ("treasuries", "fed", "bls", "bce", "eurostat"))
+
+    def tabela(colunas):
+        df = pd.DataFrame({nome: _serie_pd(s) for nome, s in colunas.items() if s}).sort_index()
+        df.index.name = "Data"
+        return df
+
+    destino = DIR_DOWNLOADS_SITE / "offshore.xlsx"
+    with pd.ExcelWriter(destino, engine="openpyxl", datetime_format="DD/MM/YYYY", date_format="DD/MM/YYYY") as w:
+        _leia_me(w, [f"Offshore — atualizado em {off['gerado_em']}",
+                     "Fontes oficiais: Tesouro dos EUA (Treasuries), Fed de Nova York (EFFR, SOFR, meta dos Fed Funds), BLS (CPI, desemprego, payroll),",
+                     "BCE (taxa de depósito, €STR, curva AAA da Zona do Euro) e Eurostat (HICP, desemprego, PIB da Zona do Euro). Taxas em % a.a."])
+        H = T.get("historico", {})
+        tabela({f"Treasury {k} (%)": v for k, v in H.items()}).to_excel(w, sheet_name="Treasuries (diário)")
+        linhas = [{"Curva": nome, "Data": pd.Timestamp(c["data"]), "Prazo": p["prazo"], "Anos": p["anos"], "Taxa (% a.a.)": p["taxa"]}
+                  for nome, curvas in (("Treasuries nominal", T.get("nominal", {})), ("Treasuries real (TIPS)", T.get("real", {})),
+                                       ("Zona do Euro AAA", E.get("curva", {})))
+                  for rotulo, c in curvas.items() for p in c["pontos"]]
+        pd.DataFrame(linhas).to_excel(w, sheet_name="Curvas", index=False)
+        tabela({"EFFR (%)": F.get("effr"), "SOFR (%)": F.get("sofr"), "Meta Fed Funds — mínimo (%)": F.get("meta_min"),
+                "Meta Fed Funds — máximo (%)": F.get("meta_max")}).to_excel(w, sheet_name="Fed Funds e SOFR")
+        tabela({"Taxa de depósito do BCE (%)": E.get("deposito"), "€STR (%)": E.get("estr"), "Zona do Euro AAA 10 anos (%)": E.get("aaa_10a")}
+               ).to_excel(w, sheet_name="BCE")
+        tabela({"CPI 12 meses (%)": B.get("cpi_12m"), "CPI núcleo 12 meses (%)": B.get("cpi_nucleo_12m"), "CPI mensal dessaz. (%)": B.get("cpi_mensal"),
+                "CPI núcleo mensal dessaz. (%)": B.get("cpi_nucleo_mensal"), "Desemprego (%)": B.get("desemprego"),
+                "Payroll (mil vagas no mês)": B.get("payroll_var")}).to_excel(w, sheet_name="EUA (BLS)")
+        tabela({"HICP 12 meses (%)": Z.get("hicp_12m"), "HICP núcleo 12 meses (%)": Z.get("hicp_nucleo_12m"),
+                "HICP serviços 12 meses (%)": Z.get("hicp_servicos_12m"), "Desemprego (%)": Z.get("desemprego"),
+                "PIB tri/tri dessaz. (%)": Z.get("pib_tri"), "PIB contra mesmo tri do ano anterior (%)": Z.get("pib_12m")}
+               ).to_excel(w, sheet_name="Zona do Euro (Eurostat)")
+        _ajustar_colunas(w)
+    return destino
+
+
 def gerar():
     DIR_DOWNLOADS_SITE.mkdir(parents=True, exist_ok=True)
-    feitos = [gerar_macro(), gerar_juros()]
+    feitos = [f for f in (gerar_macro(), gerar_juros(), gerar_offshore()) if f]
     for f in feitos:
         print(f"✅ {f.name}: {f.stat().st_size // 1024} KB")
     return feitos
