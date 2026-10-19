@@ -5,7 +5,7 @@ Focus (API Olinda) para a seção Macro do site -> site/dados/macro.json
 
 import json
 import time
-from datetime import date
+from datetime import date, timedelta
 from urllib.parse import quote
 
 import pandas as pd
@@ -20,16 +20,26 @@ INICIO = 2000
 SERIES = {
     "ipca": (433, "IPCA (mensal)", "% a.m."),
     "igpm": (189, "IGP-M (mensal)", "% a.m."),
+    "incc": (192, "INCC-DI (mensal)", "% a.m."),
+    # Núcleos do IPCA calculados pelo Banco Central
+    "nucleo_ex0": (11427, "Núcleo EX0 (exclusão: alimentação no domicílio e monitorados)", "% a.m."),
+    "nucleo_ex2": (27838, "Núcleo EX2 (exclusão)", "% a.m."),
+    "nucleo_ex3": (27839, "Núcleo EX3 (exclusão)", "% a.m."),
+    "nucleo_ms": (4466, "Núcleo MS (médias aparadas com suavização)", "% a.m."),
+    "nucleo_dp": (16122, "Núcleo DP (dupla ponderação)", "% a.m."),
+    "nucleo_p55": (28750, "Núcleo P55 (percentil 55)", "% a.m."),
     "selic_meta": (432, "Selic meta", "% a.a."),
     "cdi": (4389, "CDI anualizado", "% a.a."),
     "usd": (1, "Dólar PTAX (venda)", "R$"),
     "eur": (21619, "Euro PTAX (venda)", "R$"),
     "pib_anual": (7326, "PIB, variação real anual", "%"),
+    "pib_nominal": (1207, "PIB anual em R$ correntes", "R$"),
     "pib_indice": (22109, "PIB trimestral, índice dessazonalizado", "índice"),
     "pib_indice_obs": (22099, "PIB trimestral, índice observado (sem ajuste)", "índice"),
     "ibcbr": (24363, "IBC-Br, índice observado (sem ajuste)", "índice"),
     "ibcbr_dessaz": (24364, "IBC-Br, índice dessazonalizado", "índice"),
 }
+SERIES_NUCLEOS = [k for k in SERIES if k.startswith("nucleo_")]
 FOCUS = {"ipca": "IPCA", "selic": "Selic", "cambio": "Câmbio", "pib": "PIB Total"}
 
 
@@ -52,7 +62,20 @@ def baixar_sgs(codigo):
     partes, hoje = [], date.today()
     for ano in range(INICIO, hoje.year + 1, 10):
         ini, fim = date(ano, 1, 1), min(date(ano + 9, 12, 31), hoje)
-        dados = _get(URL_SGS.format(codigo=codigo, ini=ini.strftime("%d/%m/%Y"), fim=fim.strftime("%d/%m/%Y")))
+        # A API às vezes devolve {"erro":{}} ou HTML para uma janela válida e guarda essa resposta em cache
+        # para a mesma URL: cada nova tentativa usa outra data final (datas futuras são aceitas)
+        finais = [date(ano + 9, 12, 31), fim, fim - timedelta(days=1), date(ano + 9, 12, 30), fim - timedelta(days=2)]
+        for tentativa, final in enumerate(finais):
+            try:
+                dados = _get(URL_SGS.format(codigo=codigo, ini=ini.strftime("%d/%m/%Y"), fim=final.strftime("%d/%m/%Y")),
+                             tentativas=2)
+            except (requests.RequestException, ValueError):
+                dados = None
+            if isinstance(dados, list):
+                break
+            time.sleep(2 * (tentativa + 1))
+        else:
+            raise RuntimeError(f"SGS {codigo}: sem resposta válida para {ini:%Y}–{fim:%Y}")
         partes.extend(dados)
     if not partes:
         return pd.Series(dtype=float)
@@ -65,6 +88,14 @@ def baixar_sgs(codigo):
 
 def acumulado_12m(mensal):
     return ((1 + mensal / 100).rolling(12).apply(lambda x: x.prod(), raw=True) - 1) * 100
+
+
+def mm3_anualizada(mensal):
+    """Variação acumulada nos últimos 3 meses levada ao equivalente anual (sem ajuste sazonal)."""
+    return (((1 + mensal / 100).rolling(3).apply(lambda x: x.prod(), raw=True)) ** 4 - 1) * 100
+
+
+NUCLEOS_MEDIA = ["nucleo_ex0", "nucleo_ex3", "nucleo_ms", "nucleo_dp", "nucleo_p55"]
 
 
 def _empacotar(serie, nome, unidade, casas=4):
@@ -96,7 +127,21 @@ def baixar_focus(indicador, todos_os_anos=False):
 
 
 def gerar():
-    brutas = {chave: baixar_sgs(codigo) for chave, (codigo, _, _) in SERIES.items()}
+    # Uma série que falhar fica com a versão publicada anteriormente (as outras seguem atualizadas)
+    anterior = DIR_DADOS_SITE / "macro.json"
+    anteriores = json.loads(anterior.read_text(encoding="utf-8"))["series"] if anterior.exists() else {}
+    brutas, falhas = {}, []
+    for chave, (codigo, _, _) in SERIES.items():
+        try:
+            brutas[chave] = baixar_sgs(codigo)
+        except Exception as e:
+            if chave not in anteriores:
+                raise
+            falhas.append(f"{chave}: {e}")
+            antiga = anteriores[chave]
+            brutas[chave] = pd.Series(antiga["valores"], index=pd.to_datetime(antiga["datas"]), dtype=float)
+    for f in falhas:
+        print("   ⚠️ mantida a versão anterior —", f)
     # A Selic meta só muda nas reuniões do Copom: guarda só os pontos de mudança (gráfico em degraus)
     selic = brutas["selic_meta"]
     brutas["selic_meta"] = pd.concat([selic[selic.diff() != 0], selic.iloc[[-1]]]).pipe(lambda s: s[~s.index.duplicated()])
@@ -104,6 +149,16 @@ def gerar():
 
     saida["ipca_12m"] = _empacotar(acumulado_12m(brutas["ipca"]).dropna(), "IPCA acumulado em 12 meses", "%")
     saida["igpm_12m"] = _empacotar(acumulado_12m(brutas["igpm"]).dropna(), "IGP-M acumulado em 12 meses", "%")
+    saida["incc_12m"] = _empacotar(acumulado_12m(brutas["incc"]).dropna(), "INCC-DI acumulado em 12 meses", "%")
+
+    # Média dos 5 núcleos acompanhados pelo Copom (calculada aqui, mês a mês)
+    nucleos = pd.concat([brutas[k] for k in NUCLEOS_MEDIA], axis=1).dropna()
+    brutas["nucleos_media"] = nucleos.mean(axis=1)
+    saida["nucleos_media"] = _empacotar(brutas["nucleos_media"], "Média dos 5 núcleos (EX0, EX3, MS, DP, P55)", "% a.m.")
+    for k in [*SERIES_NUCLEOS, "nucleos_media"]:
+        saida[f"{k}_12m"] = _empacotar(acumulado_12m(brutas[k]).dropna(), f"{saida[k]['nome']} — 12 meses", "%")
+    for k in ["ipca", "igpm", "incc", "nucleos_media", *SERIES_NUCLEOS]:
+        saida[f"{k}_mm3"] = _empacotar(mm3_anualizada(brutas[k]).dropna(), f"{saida[k]['nome']} — média de 3 meses anualizada", "% a.a.")
 
     pib = brutas["pib_indice"]
     saida["pib_tri"] = _empacotar(((pib / pib.shift(1) - 1) * 100).dropna(), "PIB, variação trimestral dessazonalizada", "%")
@@ -127,7 +182,7 @@ def gerar():
 
     focus = {chave: baixar_focus(nome, todos_os_anos=(chave == "selic")) for chave, nome in FOCUS.items()}
     arquivo = DIR_DADOS_SITE / "macro.json"
-    arquivo.write_text(json.dumps({"gerado_em": date.today().isoformat(), "series": saida, "focus": focus},
+    arquivo.write_text(json.dumps({"gerado_em": date.today().isoformat(), "series": saida, "focus": focus, "falhas": falhas},
                                   ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return arquivo
 

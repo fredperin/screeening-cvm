@@ -257,7 +257,7 @@ def gerar(pausa=0.2, filtro=None):
         }, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
 
         resumo.append({
-            "id": id_, "papel_referencia": principal, "cotacoes": cotacoes,
+            "id": id_, "papel_referencia": principal, "cotacoes": cotacoes, "nome_pregao": (b3 or {}).get("nome_pregao"),
             "acoes_on": (b3 or {}).get("acoes_on"), "acoes_pn": (b3 or {}).get("acoes_pn"),
             "segmento": (b3 or {}).get("segmento"), "market_cap": mcap,
             "proventos_12m_por_acao": round(prov_12m, 6) if prov_12m else 0.0,

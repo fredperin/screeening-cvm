@@ -151,6 +151,17 @@ def checar_agenda():
     return f"{len(agenda['eventos'])} eventos ({', '.join(sorted(fontes))})"
 
 
+def checar_noticias():
+    """Feeds de notícias (Banco Central, IBGE, CVM, Agência Brasil), gerados por pipeline.noticias."""
+    arq = DIR_DADOS_SITE / "noticias.json"
+    assert arq.exists(), "noticias.json não foi gerado"
+    d = json.loads(arq.read_text(encoding="utf-8"))
+    assert not d["falhas"], "fonte de notícias falhou — " + "; ".join(d["falhas"])
+    assert d["itens"], "nenhuma manchete"
+    assert _dias(d["itens"][0]["data"]) <= 4, f"manchete mais recente é de {d['itens'][0]['data'][:10]}"
+    return f"{len(d['itens'])} manchetes; mais recente {d['itens'][0]['data'][:10]}"
+
+
 def checar_atualizacao():
     """Resultado da própria atualização (status.json gerado por pipeline.rodar)."""
     arq = DIR_DADOS_SITE / "status.json"
@@ -175,6 +186,7 @@ CHECAGENS = {
     "Tesouro Direto": checar_tesouro,
     "Yahoo Finance": checar_yahoo,
     "Agenda (Banco Central, IBGE, FGV)": checar_agenda,
+    "Notícias (Banco Central, IBGE, CVM, Agência Brasil)": checar_noticias,
 }
 
 

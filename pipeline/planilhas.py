@@ -1,0 +1,124 @@
+"""
+Planilhas de download com a série histórica completa de cada gráfico de Macro e Juros:
+site/downloads/macro.xlsx e site/downloads/juros.xlsx (geradas a partir dos JSON do site).
+
+Uso: py -m pipeline.planilhas
+"""
+
+import json
+from datetime import date
+
+import pandas as pd
+
+from pipeline import DIR_DADOS_SITE, DIR_DOWNLOADS_SITE
+
+ABAS_MACRO = {
+    "Inflação": ["ipca", "ipca_12m", "ipca_mm3", "igpm", "igpm_12m", "igpm_mm3", "incc", "incc_12m", "incc_mm3"],
+    "Núcleos do IPCA": ["nucleos_media", "nucleos_media_12m", "nucleos_media_mm3",
+                        *[f"nucleo_{n}{s}" for n in ("ex0", "ex2", "ex3", "ms", "dp", "p55") for s in ("", "_12m", "_mm3")]],
+    "PIB trimestral": ["pib_tri", "pib_12m", "pib_indice", "pib_indice_obs"],
+    "PIB anual": ["pib_anual", "pib_nominal"],
+    "IBC-Br": ["ibcbr_mensal", "ibcbr_12m", "ibcbr", "ibcbr_dessaz"],
+    "Selic e juro real": ["selic_meta", "juro_real"],
+    "CDI e câmbio (diário)": ["cdi", "usd", "eur"],
+}
+NOMES_FOCUS = {"ipca": "IPCA (%)", "selic": "Selic fim de ano (% a.a.)", "cambio": "Câmbio fim de ano (R$/US$)", "pib": "PIB (%)"}
+
+
+def _tabela(series, chaves):
+    colunas = {}
+    for k in chaves:
+        s = series.get(k)
+        if s and s["datas"]:
+            colunas[f"{s['nome']} ({s['unidade']})"] = pd.Series(s["valores"], index=pd.to_datetime(s["datas"]))
+    df = pd.DataFrame(colunas).sort_index()
+    df.index.name = "Data"
+    return df
+
+
+def _leia_me(escritor, linhas):
+    pd.DataFrame({"Bloomberg de pobre": linhas}).to_excel(escritor, sheet_name="Leia-me", index=False)
+
+
+def _ajustar_colunas(escritor):
+    for aba in escritor.book.worksheets:
+        aba.freeze_panes = "B2"
+        for coluna in aba.columns:
+            largura = max(len(str(c.value or "")) for c in coluna[:200])
+            aba.column_dimensions[coluna[0].column_letter].width = min(max(12, largura + 2), 60)
+
+
+def gerar_macro():
+    macro = json.loads((DIR_DADOS_SITE / "macro.json").read_text(encoding="utf-8"))
+    S = macro["series"]
+    destino = DIR_DOWNLOADS_SITE / "macro.xlsx"
+    with pd.ExcelWriter(destino, engine="openpyxl", datetime_format="DD/MM/YYYY", date_format="DD/MM/YYYY") as w:
+        _leia_me(w, [f"Séries macroeconômicas — atualizado em {macro['gerado_em']}",
+                     "Fontes: Banco Central (SGS) e boletim Focus. IPCA, PIB e PNAD são do IBGE; IGP-M e INCC são da FGV (via SGS).",
+                     "Médias de 3 meses anualizadas: variação acumulada nos últimos 3 meses elevada à 4ª potência, sem ajuste sazonal.",
+                     "Média dos núcleos: média simples mensal de EX0, EX3, MS, DP e P55, calculada pelo site.",
+                     "Cada aba corresponde a um grupo de gráficos da seção Macro."])
+        for aba, chaves in ABAS_MACRO.items():
+            _tabela(S, chaves).to_excel(w, sheet_name=aba)
+        linhas = [{"Indicador": NOMES_FOCUS.get(k, k), "Ano de referência": ano, "Data": pd.Timestamp(d), "Mediana": v}
+                  for k, anos in macro["focus"].items() for ano, serie in anos.items()
+                  for d, v in zip(serie["datas"], serie["valores"])]
+        pd.DataFrame(linhas).to_excel(w, sheet_name="Focus", index=False)
+        _ajustar_colunas(w)
+    return destino
+
+
+def gerar_juros():
+    tes = json.loads((DIR_DADOS_SITE / "tesouro.json").read_text(encoding="utf-8"))
+    arq_di = DIR_DADOS_SITE / "curva_di.json"
+    di = json.loads(arq_di.read_text(encoding="utf-8")) if arq_di.exists() else None
+    destino = DIR_DOWNLOADS_SITE / "juros.xlsx"
+    with pd.ExcelWriter(destino, engine="openpyxl", datetime_format="DD/MM/YYYY", date_format="DD/MM/YYYY") as w:
+        _leia_me(w, [f"Juros — Tesouro Direto de {tes['data_base']}" + (f"; curva DI de {di['curvas']['hoje']['data']}" if di else ""),
+                     "Curva DI: arquivo 'Taxas de Mercado para Swaps' da B3 (DI x Pré e DI x IPCA), % a.a., base 252.",
+                     "Tesouro: taxas e preços do Tesouro Direto (Tesouro Transparente). Taxas em % a.a.",
+                     "Histórico: taxa e PU de compra de cada título desde o início da série, uma coluna por título."])
+        if di:
+            linhas = []
+            for rotulo, c in di["curvas"].items():
+                ipca = {p["dias_uteis"]: p["taxa"] for p in c.get("ipca", [])}
+                for p in c["pre"]:
+                    linhas.append({"Curva": rotulo, "Data": pd.Timestamp(c["data"]), "Dias úteis": p["dias_uteis"],
+                                   "Dias corridos": p["dias_corridos"], "Anos (DU/252)": p["anos"],
+                                   "DI x Pré (% a.a.)": p["taxa"], "DI x IPCA (% a.a.)": ipca.get(p["dias_uteis"])})
+            pd.DataFrame(linhas).to_excel(w, sheet_name="Curva DI (B3)", index=False)
+        nomes = {"prefixado": "Prefixado", "ipca": "IPCA+ (juro real)", "inflacao_implicita": "Inflação implícita"}
+        linhas = [{"Curva": rotulo, "Data": pd.Timestamp(c["data"]), "Tipo": nomes.get(tipo, tipo), "Título": p.get("titulo"),
+                   "Vencimento": pd.Timestamp(p["vencimento"]), "Anos até o vencimento": p["anos"], "Taxa (% a.a.)": p["taxa"]}
+                  for rotulo, c in tes["curvas"].items() for tipo in nomes for p in c.get(tipo, [])]
+        pd.DataFrame(linhas).to_excel(w, sheet_name="Curvas do Tesouro", index=False)
+        pd.DataFrame([{"Título": t["tipo"], "Vencimento": pd.Timestamp(t["vencimento"]), "Taxa compra (% a.a.)": t["taxa_compra"],
+                       "PU compra (R$)": t["pu_compra"]} for t in tes["titulos"]]).to_excel(w, sheet_name="Títulos à venda", index=False)
+        taxas, precos = {}, {}
+        for t in tes["titulos"]:
+            arq = DIR_DADOS_SITE / "tesouro" / f"{t['id']}.json"
+            if not arq.exists():
+                continue
+            h = json.loads(arq.read_text(encoding="utf-8"))
+            nome = f"{h['tipo']} {h['vencimento'][:4]}"
+            idx = pd.to_datetime(h["datas"])
+            taxas[nome] = pd.Series(h["taxa_compra"], index=idx)
+            precos[nome] = pd.Series(h["pu_compra"], index=idx)
+        for aba, dados in (("Histórico de taxas", taxas), ("Histórico de PU", precos)):
+            df = pd.DataFrame(dados).sort_index().replace(0, pd.NA)
+            df.index.name = "Data"
+            df.to_excel(w, sheet_name=aba)
+        _ajustar_colunas(w)
+    return destino
+
+
+def gerar():
+    DIR_DOWNLOADS_SITE.mkdir(parents=True, exist_ok=True)
+    feitos = [gerar_macro(), gerar_juros()]
+    for f in feitos:
+        print(f"✅ {f.name}: {f.stat().st_size // 1024} KB")
+    return feitos
+
+
+if __name__ == "__main__":
+    gerar()

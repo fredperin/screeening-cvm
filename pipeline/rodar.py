@@ -1,7 +1,8 @@
 """
 Orquestrador da atualização diária da R.V. Mapp (roda no GitHub Actions).
 
-- Todo dia: Banco Central/Focus, Tesouro, curva DI da B3, cotações e proventos.
+- Todo dia: Banco Central/Focus, agenda, Tesouro, curva DI da B3, cotações e proventos,
+  notícias e planilhas de Macro e Juros.
 - Empresas (JSON + Excel): só quando a CVM republicou algum ZIP, quando ainda não
   existem arquivos gerados, às segundas-feiras (para o Excel pegar os proventos
   novos) ou com --tudo.
@@ -49,7 +50,7 @@ def versao_do_codigo():
 
 
 def main(tudo=False):
-    from pipeline import agenda, curva_di, eventos, ficha, fre_textos, macro, mercado, resumos, tesouro
+    from pipeline import agenda, curva_di, eventos, ficha, fre_textos, macro, mercado, noticias, planilhas, resumos, tesouro
     from pipeline.cvm_lote import atualizar_base_cvm
     from pipeline.gerar_empresas import DIR_EMPRESAS, gerar_indice
     from pipeline.gerar_empresas import main as gerar_empresas
@@ -61,6 +62,8 @@ def main(tudo=False):
     _etapa("tesouro", tesouro.gerar, status)
     _etapa("curva_di", curva_di.gerar, status)
     _etapa("mercado", mercado.gerar, status)
+    _etapa("noticias", noticias.gerar, status)
+    _etapa("planilhas", planilhas.gerar, status)
     _etapa("eventos", eventos.gerar, status)
     _etapa("ficha", ficha.gerar, status)
     _etapa("fre_textos", fre_textos.gerar, status)

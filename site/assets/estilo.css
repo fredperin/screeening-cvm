@@ -32,6 +32,12 @@ button { font-family: var(--mono); }
 .marca img { display: block; }
 .marca-cursor { color: var(--texto-fraco); font-weight: 400; margin-left: -4px; }
 @media (max-width: 480px) { .marca-nome, .marca-cursor { display: none; } }
+.lados { display: inline-flex; border: 1px solid var(--borda); border-radius: 4px; overflow: hidden; }
+.lados a { padding: 4px 10px; color: var(--texto-fraco); font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; }
+.lados a + a { border-left: 1px solid var(--borda); }
+.lados a.ativo { background: var(--ambar); color: var(--fundo); text-decoration: none; }
+.lados a:hover { text-decoration: none; color: var(--ambar); }
+.lados a.ativo:hover { color: var(--fundo); }
 .nav { display: flex; gap: 6px; flex-wrap: wrap; }
 .nav a {
   padding: 4px 10px; border: 1px solid var(--borda); border-radius: 4px; color: var(--texto-fraco);
@@ -106,7 +112,48 @@ table.tabela tr.clicavel { cursor: pointer; }
 .resumo p, .resumo li { line-height: 1.65; }
 .resumo ul { margin: 4px 0 8px 18px; padding: 0; }
 
+/* ---- abas (subseções) ---- */
+.abas { display: flex; gap: 4px; flex-wrap: wrap; border-bottom: 1px solid var(--borda); margin: 4px 0 12px; }
+.abas a, .abas button {
+  padding: 6px 12px; color: var(--texto-fraco); background: transparent; border: 1px solid transparent; border-bottom: none;
+  border-radius: 4px 4px 0 0; margin-bottom: -1px; cursor: pointer; font-family: var(--mono); font-size: 12px;
+}
+.abas a:hover, .abas button:hover { color: var(--ambar); text-decoration: none; }
+.abas .ativo { color: var(--ambar); background: var(--painel); border-color: var(--borda); border-bottom: 1px solid var(--painel); }
+
+/* ---- ferramentas dos painéis: ⓘ, ⤓, ⛶ ---- */
+.ferramentas { float: right; display: inline-flex; gap: 4px; margin-left: 8px; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.ferramentas button {
+  background: transparent; border: 1px solid var(--borda); color: var(--texto-fraco); border-radius: 3px;
+  font-size: 11px; line-height: 1; padding: 3px 6px; cursor: pointer;
+}
+.ferramentas button:hover { color: var(--ambar); border-color: var(--ambar); }
+.cabecalho h2 .ferramentas { float: none; }
+.painel.tela-cheia { position: fixed; inset: 0; z-index: 50; border-radius: 0; overflow: auto; padding: 14px 18px; }
+.painel.tela-cheia .grafico { height: calc(100vh - 120px) !important; }
+body.sem-rolagem { overflow: hidden; }
+
+/* ---- janela do explicativo ---- */
+.modal {
+  position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, .65);
+  display: flex; align-items: flex-start; justify-content: center; padding: 6vh 16px; overflow: auto;
+}
+.modal[hidden] { display: none; }
+.modal-caixa { background: var(--painel); border: 1px solid var(--borda); border-radius: 6px; max-width: 720px; width: 100%; padding: 14px 18px; }
+.modal-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.modal-topo button { background: transparent; border: 1px solid var(--borda); color: var(--texto-fraco); border-radius: 3px; cursor: pointer; padding: 3px 8px; }
+.modal-topo button:hover { color: var(--ambar); border-color: var(--ambar); }
+.resumo code { background: var(--painel-2); padding: 1px 5px; border-radius: 3px; color: var(--texto-forte); }
+
+/* ---- notícias, offshore, avisos ---- */
+.grade-noticias { grid-template-columns: repeat(auto-fit, minmax(480px, 1fr)); }
+.grade-noticias .rolagem-y { max-height: 70vh; }
+.etiqueta { display: inline-block; font-size: 10px; border: 1px solid var(--borda); border-radius: 3px; padding: 0 4px; margin-left: 4px; }
+.painel.em-construcao { border-style: dashed; }
+.aviso { border: 1px dashed var(--ambar); color: var(--ambar); border-radius: 6px; padding: 8px 12px; margin-bottom: 12px; font-size: 12px; }
+
 @media (max-width: 720px) {
+  .grade-noticias { grid-template-columns: 1fr; }
   main { padding: 10px; }
   .grade { grid-template-columns: 1fr; }
   .comando { margin-left: 0; min-width: 0; flex: 1 1 100%; }
