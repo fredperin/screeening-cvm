@@ -362,7 +362,7 @@ async function paginaInicio() {
 
 /* ============ Empresas (lista) ============ */
 // Duas abas: notícias e eventos das empresas (padrão) e a tabela com todas as empresas
-const ABAS_EMPRESAS = [["noticias", "Notícias e fatos relevantes"], ["tabela", "Tabela de empresas"]];
+const ABAS_EMPRESAS = [["noticias", "Informações"], ["tabela", "Empresas"]];
 
 async function paginaEmpresas(aba) {
   if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "noticias";
