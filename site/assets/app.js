@@ -1410,7 +1410,8 @@ async function paginaNoticias(lado = "on") {
           ${Object.entries(categorias).map(([k, [n, c]]) => `<button data-k="${k}"><span style="color:${c}">●</span> ${n}</button>`).join("")}
         </div>
         <div id="tab-agenda"></div>
-        <div class="nota">Datas oficiais${quer("on") ? " do Banco Central, IBGE e FGV" : ""}${lado === "cons" ? " e" : ""}${quer("off") ? " das páginas do Fed e do BCE" : ""}; podem mudar.</div></div>`;
+        <div class="nota">Datas oficiais${quer("on") ? " do Banco Central, IBGE e FGV" : ""}${lado === "cons" ? " e" : ""}${quer("off") ? " do Fed, do BCE, do FRED (divulgações dos EUA) e do Eurostat" : ""}; podem mudar.
+          Horários convertidos para Brasília.</div></div>`;
   app.innerHTML = `
     <div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">Notícias de mercado (${jornais}) e oficiais (${oficiais}) · só a manchete, com link para a fonte</div></div></div>
     ${lado === "on" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
@@ -1472,7 +1473,7 @@ const PLANO_OFFSHORE = {
   mercados: ["Mercados", "", [["Mercados", "Índices de ações (S&P 500, Nasdaq, Stoxx), petróleo, minério, ouro e dólar global.",
     "FRED e EIA (precisam de chave gratuita), Banco Mundial (Pink Sheet, mensal)"]]],
 };
-const CATEGORIAS_OFF = { fed: ["Fed", COR.verde], bce: ["BCE", COR.roxo] };
+const CATEGORIAS_OFF = { fed: ["Fed", COR.verde], bce: ["BCE", COR.roxo], eua: ["EUA (dados)", COR.azul], europa: ["Europa (dados)", COR.ciano] };
 const SUBS_MACRO_OFF = [["eua", "Estados Unidos"], ["euro", "Europa (Zona do Euro)"], ["china", "China"], ["global", "Global"], ["mercados", "Mercados"]];
 // Abas internas de cada país (mesma organização da seção Brasil)
 const ABAS_PAIS_OFF = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["emprego", "Emprego"], ["monetaria", "Política monetária"]];

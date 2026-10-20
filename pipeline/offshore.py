@@ -342,21 +342,127 @@ def reunioes_bce():
     return eventos
 
 
+# ---------------- Agenda de divulgações (EUA pelo FRED, Zona do Euro pelo Eurostat) ----------------
+from zoneinfo import ZoneInfo  # noqa: E402
+
+FUSO_SP = ZoneInfo("America/Sao_Paulo")
+# FRED: nome da release -> (nome no site, horário de divulgação em Washington)
+RELEASES_EUA = {
+    "Consumer Price Index": ("CPI — inflação ao consumidor", "08:30"),
+    "Employment Situation": ("Payroll e desemprego (Employment Situation)", "08:30"),
+    "Gross Domestic Product": ("PIB", "08:30"),
+    "Personal Income and Outlays": ("PCE — renda e gastos pessoais (inflação do Fed)", "08:30"),
+    "Advance Monthly Sales for Retail and Food Services": ("Vendas no varejo", "08:30"),
+    "G.17 Industrial Production and Capacity Utilization": ("Produção industrial", "09:15"),
+    "Surveys of Consumers": ("Confiança do consumidor (Michigan)", "10:00"),
+    "Producer Price Index": ("PPI — preços ao produtor", "08:30"),
+    "Job Openings and Labor Turnover Survey": ("JOLTS — vagas abertas", "10:00"),
+}
+# Eurostat (euro indicators): título -> nome no site; divulgação às 11h de Luxemburgo
+RELEASES_EURO = {
+    "Flash estimate inflation euro area": "Inflação (HICP) — prévia",
+    "Inflation (HICP)": "Inflação (HICP) — final",
+    "Preliminary flash estimate GDP": "PIB — prévia preliminar",
+    "Flash estimate GDP and employment": "PIB e emprego — prévia",
+    "GDP main aggregates and employment": "PIB — resultado completo",
+    "Unemployment": "Desemprego",
+    "Industrial production": "Produção industrial",
+    "Retail trade": "Vendas no varejo",
+    "Economic Sentiment Indicator": "Sentimento econômico (empresas e consumidores)",
+    "General government deficit and debt": "Déficit e dívida do governo",
+}
+
+
+def _hora_brasilia(dia, hora, fuso):
+    """Data e hora locais (fuso da fonte) convertidas para Brasília (o horário de verão de cada lado muda a diferença)."""
+    h, m = map(int, hora.split(":"))
+    local = datetime(dia.year, dia.month, dia.day, h, m, tzinfo=ZoneInfo(fuso))
+    return local.astimezone(FUSO_SP)
+
+
+def agenda_eua():
+    chave = os.environ.get("FRED_API_KEY")
+    if not chave:
+        raise RuntimeError("FRED_API_KEY não configurada")
+    hoje = date.today()
+    try:
+        r = _get("https://api.stlouisfed.org/fred/releases/dates", params={
+            "api_key": chave, "file_type": "json", "realtime_start": hoje.isoformat(),
+            "realtime_end": (hoje + timedelta(days=120)).isoformat(), "include_release_dates_with_no_data": "true",
+            "order_by": "release_date", "sort_order": "asc", "limit": 1000}).json()
+    except requests.RequestException as e:  # a mensagem do requests traz a chave no endereço
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        raise RuntimeError("FRED (agenda): falha na consulta" + (f" (HTTP {status})" if status else "")) from None
+    eventos = []
+    for x in r.get("release_dates", []):
+        info = RELEASES_EUA.get(x.get("release_name", "").strip())
+        if not info:
+            continue
+        nome, hora = info
+        quando = _hora_brasilia(date.fromisoformat(x["date"]), hora, "America/New_York")
+        eventos.append({"data": quando.date().isoformat(), "evento": f"EUA — {nome}", "categoria": "eua", "fonte": "FRED (BLS, BEA, Census, Fed)",
+                        "detalhe": f"{quando:%Hh%M} de Brasília ({hora.replace(':', 'h')} em Washington)"})
+    if not eventos:
+        raise RuntimeError("FRED (agenda): nenhuma divulgação encontrada")
+    return eventos
+
+
+MESES_PT = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
+
+
+def _periodo_pt(texto):
+    """'October 2026' -> 'out/2026'; 'Q3/2026' -> '3º tri/2026'; o resto fica como veio."""
+    import re
+    t = texto.strip()
+    m = re.fullmatch(r"Q([1-4])/(\d{4})", t)
+    if m:
+        return f"{m.group(1)}º tri/{m.group(2)}"
+    m = re.fullmatch(r"([A-Za-z]+)\.? (\d{4})", t)
+    if m and m.group(1)[:3] in MESES_EN:
+        return f"{MESES_PT[MESES_EN[m.group(1)[:3]] - 1]}/{m.group(2)}"
+    return t
+
+
+def agenda_euro():
+    hoje = date.today()
+    params = {"start": f"{hoje.isoformat()}T00:00:00Z", "end": f"{(hoje + timedelta(days=120)).isoformat()}T00:00:00Z", "theme": "", "category": "",
+              "keywords": "", "isEuroindicator": "true", "authorInclude": "", "authorExclude": ""}
+    cab = {**NAVEGADOR, "Accept": "application/json", "X-Requested-With": "XMLHttpRequest",
+           "Referer": "https://ec.europa.eu/eurostat/news/release-calendar"}
+    lista = _get("https://ec.europa.eu/eurostat/o/calendars/eventsJson", headers=cab, params=params).json()
+    eventos = []
+    for x in lista:
+        titulo = x.get("title", "")
+        nome = next((n for k, n in RELEASES_EURO.items() if titulo.startswith(k)), None)
+        if not nome:
+            continue
+        # o calendário marca "11:00Z", mas a divulgação é às 11h de Luxemburgo (horário oficial dos euro indicators)
+        dia, hora = x["start"][:10], x["start"][11:16] or "11:00"
+        quando = _hora_brasilia(date.fromisoformat(dia), hora, "Europe/Luxembourg")
+        eventos.append({"data": quando.date().isoformat(), "evento": f"Zona do Euro — {nome}", "categoria": "europa", "fonte": "Eurostat",
+                        "detalhe": f"{quando:%Hh%M} de Brasília · referência {_periodo_pt(x.get('period', ''))}".strip(" ·")})
+    if not eventos:
+        raise RuntimeError("Eurostat (agenda): nenhuma divulgação encontrada")
+    return eventos
+
+
 def gerar_noticias_agenda():
     hoje = date.today().isoformat()
     itens, falhas = noticias()
     eventos = []
-    for nome, funcao in (("Federal Reserve (FOMC)", fomc), ("BCE (reuniões)", reunioes_bce)):
+    for nome, funcao in (("Federal Reserve (FOMC)", fomc), ("BCE (reuniões)", reunioes_bce), ("agenda EUA (FRED)", agenda_eua),
+                         ("agenda Zona do Euro (Eurostat)", agenda_euro)):
         try:
             eventos += funcao()
         except Exception as e:
             falhas.append(f"{nome}: {e!r}"[:200])
     eventos = sorted({(e["data"], e["evento"]): e for e in eventos if e["data"] >= hoje}.values(), key=lambda e: e["data"])
     agora = datetime.now(FUSO_BR).isoformat(timespec="minutes")
-    (DIR_DADOS_SITE / "noticias_offshore.json").write_text(json.dumps({"gerado_em": agora, "itens": itens, "falhas": [f for f in falhas if "FOMC" not in f and "reuniões" not in f]},
+    da_agenda = ("FOMC", "reuniões", "agenda")
+    (DIR_DADOS_SITE / "noticias_offshore.json").write_text(json.dumps({"gerado_em": agora, "itens": itens, "falhas": [f for f in falhas if not any(k in f for k in da_agenda)]},
                                                                      ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (DIR_DADOS_SITE / "agenda_offshore.json").write_text(json.dumps({"gerado_em": date.today().isoformat(), "eventos": eventos,
-                                                                     "falhas": [f for f in falhas if "FOMC" in f or "reuniões" in f]},
+                                                                     "falhas": [f for f in falhas if any(k in f for k in da_agenda)]},
                                                                     ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"✅ offshore notícias: {len(itens)}; agenda: {len(eventos)} eventos; falhas: {falhas or 'nenhuma'}")
     return falhas
