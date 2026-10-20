@@ -453,9 +453,9 @@ async function paginaEmpresas(aba) {
 let VISAO = "trimestral";
 let FC_SEL = "todos";
 let DIV_IFRS16 = false;
-let ABA_EMPRESA = "resultados";
+let ABA_EMPRESA = "negocio";
 let NOTICIAS_CACHE = null;
-const ABAS_EMPRESA = [["resultados", "Resultados"], ["indicadores", "Indicadores"], ["dividendos", "Dividendos"], ["negocio", "Negócio"], ["eventos", "Eventos e notícias"]];
+const ABAS_EMPRESA = [["negocio", "Negócio"], ["eventos", "Eventos e notícias"], ["resultados", "Resultados"], ["indicadores", "Indicadores"], ["dividendos", "Dividendos"]];
 const INFO_EMPRESA = {
   "Receita líquida": "receita", "Lucro bruto e margem bruta": "lucro_bruto", "EBITDA e margem EBITDA": "ebitda",
   "EBIT e margem EBIT": "ebit", "Lucro líquido e margem líquida": "lucro_liquido", "Resultado financeiro": "resultado_financeiro",
@@ -559,13 +559,14 @@ async function paginaEmpresa(id) {
     },
     eventos: () => {
       const doEmp = ((NOTICIAS_CACHE && NOTICIAS_CACHE.itens) || []).filter((n) => (n.empresas || []).includes(id));
-      document.getElementById("aba-empresa").innerHTML = `<div class="grade">
+      document.getElementById("aba-empresa").innerHTML = `<div class="grade grade-empilhada">
         <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Eventos (CVM)</h2>
           <div class="seletor" id="sel-ev">${OPCOES_EVENTOS.map(([k, r]) => `<button data-k="${k}" class="${k === "todos" ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
           <div class="rolagem rolagem-y" id="lista-eventos"></div>
           <div class="nota">Fatos relevantes, comunicados ao mercado e avisos aos acionistas dos últimos 3 anos, com link para o documento oficial na CVM.</div></div>
-        <div class="painel"><h2>Notícias que citam a empresa</h2>${listaNoticias(doEmp, 60)}
-          <div class="nota">Manchetes dos últimos 45 dias (Banco Central, IBGE, CVM e Agência Brasil) que citam o ticker ou o nome de pregão.</div></div></div>`;
+        <div class="painel"><h2>Notícias que citam a empresa</h2>${listaNoticias(doEmp, 150)}
+          <div class="nota">Manchetes que citam o ticker ou o nome de pregão, da mais recente para a mais antiga: jornais e sites de mercado
+            (últimos 7 dias) e fontes oficiais (últimas semanas).</div></div></div>`;
       desenharEventos(eventos, "todos");
       document.getElementById("sel-ev").addEventListener("click", (ev) => {
         const b = ev.target.closest("button"); if (!b) return;
@@ -576,7 +577,7 @@ async function paginaEmpresa(id) {
   };
   const mostrar = (k) => {
     limparGraficos();
-    ABA_EMPRESA = ABAS[k] ? k : "resultados";
+    ABA_EMPRESA = ABAS[k] ? k : ABAS_EMPRESA[0][0];
     document.querySelectorAll("#abas-empresa button").forEach((x) => x.classList.toggle("ativo", x.dataset.k === ABA_EMPRESA));
     ABAS[ABA_EMPRESA]();
   };
