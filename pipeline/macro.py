@@ -39,6 +39,28 @@ SERIES = {
     "ibcbr": (24363, "IBC-Br, índice observado (sem ajuste)", "índice"),
     "ibcbr_dessaz": (24364, "IBC-Br, índice dessazonalizado", "índice"),
 }
+# Contas públicas (Banco Central, Estatísticas Fiscais; nomes conferidos no catálogo de dados abertos do BC).
+# NFSP = necessidade de financiamento do setor público: positivo = déficit. No site o sinal é invertido para
+# "resultado" (superávit positivo). Falha numa série fiscal não derruba o resto do Macro.
+SERIES_FISCAIS = {
+    "nfsp_primario": (5793, "NFSP 12 meses, resultado primário — setor público consolidado", "% PIB"),
+    "nfsp_primario_central": (5783, "NFSP 12 meses, resultado primário — Governo Federal e Banco Central", "% PIB"),
+    "nfsp_primario_regionais": (5786, "NFSP 12 meses, resultado primário — governos estaduais e municipais", "% PIB"),
+    "nfsp_primario_estatais": (5789, "NFSP 12 meses, resultado primário — empresas estatais", "% PIB"),
+    "nfsp_juros": (5760, "NFSP 12 meses, juros nominais — setor público consolidado", "% PIB"),
+    "nfsp_nominal": (5727, "NFSP 12 meses, resultado nominal — setor público consolidado", "% PIB"),
+    "dlsp": (4513, "Dívida líquida do setor público — setor público consolidado", "% PIB"),
+    "dbgg": (13762, "Dívida bruta do governo geral (metodologia a partir de 2008)", "% PIB"),
+    "dmf_selic": (4177, "Dívida mobiliária federal — participação Over/Selic", "%"),
+    "dmf_pre": (4178, "Dívida mobiliária federal — participação prefixada", "%"),
+    "dmf_cambio": (4173, "Dívida mobiliária federal — participação câmbio", "%"),
+    "dmf_tr": (4174, "Dívida mobiliária federal — participação TR", "%"),
+    "dmf_igpm": (4175, "Dívida mobiliária federal — participação IGP-M", "%"),
+    "dmf_igpdi": (4176, "Dívida mobiliária federal — participação IGP-DI", "%"),
+    "dmf_tjlp": (4179, "Dívida mobiliária federal — participação TJLP", "%"),
+    "dmf_outros": (4180, "Dívida mobiliária federal — participação outros", "%"),
+    "dmf_prazo": (10618, "Dívida mobiliária federal — prazo médio dos títulos emitidos", "meses"),
+}
 SERIES_NUCLEOS = [k for k in SERIES if k.startswith("nucleo_")]
 FOCUS = {"ipca": "IPCA", "selic": "Selic", "cambio": "Câmbio", "pib": "PIB Total"}
 
@@ -231,6 +253,27 @@ def gerar():
     ibc_obs = brutas["ibcbr"]
     saida["ibcbr_12m"] = _empacotar(((ibc_obs.rolling(12).sum() / ibc_obs.rolling(12).sum().shift(12) - 1) * 100).dropna(),
                                     "IBC-Br acumulado em 12 meses", "%")
+
+    # Contas públicas: cada série que falhar fica com a versão anterior (ou some, se nunca foi baixada)
+    for chave, (codigo, nome, un) in SERIES_FISCAIS.items():
+        try:
+            nova = baixar_sgs(codigo)
+            problema = _regrediu(nova, anteriores.get(chave))
+            if problema:
+                raise RuntimeError(problema)
+            saida[chave] = _empacotar(nova, nome, un)
+        except Exception as e:
+            falhas.append(f"{chave}: {e}")
+            print("   ⚠️ contas públicas —", chave, e)
+            if chave in anteriores:
+                saida[chave] = anteriores[chave]
+    # IPCA e demais índices de preços (NTN-B): o BC não publica a participação numa série própria; vem por diferença
+    outras = ["dmf_selic", "dmf_pre", "dmf_cambio", "dmf_tr", "dmf_igpm", "dmf_igpdi", "dmf_tjlp", "dmf_outros"]
+    if all(k in saida for k in outras):
+        partes = pd.concat([pd.Series(saida[k]["valores"], index=pd.to_datetime(saida[k]["datas"]), dtype=float) for k in outras], axis=1).dropna()
+        ipca_dmf = (100 - partes.sum(axis=1)).clip(lower=0)
+        saida["dmf_ipca"] = _empacotar(ipca_dmf[partes.index >= "2003-01-01"].round(2),
+                                       "Dívida mobiliária federal — participação IPCA (por diferença: 100% − demais indexadores)", "%")
 
     focus = {chave: baixar_focus(nome, todos_os_anos=(chave == "selic")) for chave, nome in FOCUS.items()}
     arquivo = DIR_DADOS_SITE / "macro.json"

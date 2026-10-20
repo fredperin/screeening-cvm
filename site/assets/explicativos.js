@@ -108,6 +108,51 @@ window.EXPLICATIVOS = {
       </ul>
       <p class="sub">Fonte: IBGE, séries 7326 e 1207 do SGS do Banco Central.</p>`,
   },
+  fiscal_divida: {
+    titulo: "Dívida pública: bruta (DBGG) e líquida (DLSP)",
+    html: `<p><b>Dívida bruta do governo geral (DBGG):</b> tudo o que governo federal, INSS, estados e municípios devem
+      (títulos, dívida bancária e externa), sem descontar ativos — inclui as operações compromissadas do Banco Central.
+      É o conceito mais usado em comparações internacionais (metodologia do BC a partir de 2008).</p>
+      <p><b>Dívida líquida do setor público (DLSP):</b> dívida do setor público consolidado (governos, Banco Central e estatais,
+      exceto Petrobras, Eletrobras e bancos públicos) <b>menos os ativos</b>, como reservas internacionais e créditos
+      com bancos públicos. Por isso cai quando o real se desvaloriza (as reservas valem mais em reais).</p>
+      <p>Ambas em % do PIB acumulado em 12 meses, valores no fim de cada mês, publicadas cerca de 30 dias depois.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Estatísticas Fiscais (SGS 13762 e 4513).</p>`,
+  },
+  fiscal_resultado: {
+    titulo: "Resultado primário, juros e resultado nominal",
+    html: `<p><b>Resultado primário:</b> receitas menos despesas do governo <b>sem contar juros</b>. Positivo = superávit
+      (sobra para pagar juros); negativo = déficit. <b>Juros nominais:</b> custo dos juros da dívida no período.
+      <b>Resultado nominal</b> = primário − juros: é quanto a dívida precisou crescer para fechar as contas.</p>
+      <p>Setor público consolidado, acumulado em 12 meses, em % do PIB, pelo critério "abaixo da linha" do BC
+      (variação da dívida). O BC publica como NFSP (necessidade de financiamento: positivo = déficit); aqui o sinal está
+      invertido para ler como resultado.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Estatísticas Fiscais, NFSP sem desvalorização cambial (SGS 5793, 5760 e 5727).</p>`,
+  },
+  fiscal_esferas: {
+    titulo: "Resultado primário por esfera de governo",
+    html: `<p>Quanto cada parte do setor público contribui para o resultado primário em 12 meses (% do PIB):
+      <b>Governo Federal e Banco Central</b> (o "governo central", que inclui o INSS), <b>estados e municípios</b> e
+      <b>empresas estatais</b> (exceto Petrobras, Eletrobras e bancos). As barras somam o total (linha).
+      Positivo = superávit; negativo = déficit.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Estatísticas Fiscais (SGS 5783, 5786, 5789 e 5793).</p>`,
+  },
+  fiscal_dmf: {
+    titulo: "Composição da dívida mobiliária federal",
+    html: `<p>Participação de cada indexador no estoque de títulos públicos federais (posição em carteira):
+      <b>Selic</b> (LFT, pós-fixados — sobem e descem com a Selic), <b>prefixados</b> (LTN e NTN-F),
+      <b>IPCA</b> (NTN-B) e o restante (câmbio, IGP-M, TR e outros, hoje residuais).
+      Quanto mais pós-fixada a dívida, mais o custo dela reage aos juros do Copom.</p>
+      <p>O BC não publica a fatia do IPCA numa série própria: ela é calculada aqui por diferença (100% menos os demais
+      indexadores), a partir de 2003.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Dívida mobiliária, participação por indexador (SGS 4173 a 4180).</p>`,
+  },
+  fiscal_prazo: {
+    titulo: "Prazo médio da dívida mobiliária federal",
+    html: `<p>Prazo médio, em meses, dos títulos do Tesouro Nacional em circulação: quanto maior, menos dívida vence a cada ano
+      e menor o risco de refinanciamento.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Dívida mobiliária federal, prazo médio dos títulos emitidos (SGS 10618).</p>`,
+  },
   desemprego_br: {
     titulo: "Desemprego (PNAD Contínua)",
     html: `<p>Taxa de desocupação das pessoas de 14 anos ou mais, medida pelo <b>IBGE</b> na PNAD Contínua, pesquisa com domicílios

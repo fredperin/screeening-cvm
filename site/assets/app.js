@@ -334,7 +334,7 @@ async function paginaInicio() {
   const mercado = ((noticias && noticias.itens) || []).filter((n) => n.tipo === "mercado");
 
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Onshore · painel</h1><div class="sub">Agenda, indicadores e notícias do Brasil</div></div></div>
+    <div class="cabecalho"><div><h1>Brasil · painel</h1><div class="sub">Agenda, indicadores e notícias do Brasil</div></div></div>
     <div class="painel secao-topo"><h2>Agenda — próximos 14 dias</h2>${tabelaAgenda(agenda, 14)}
       <div class="nota"><a href="#/on/noticias">Ver agenda completa</a></div></div>
     <div class="grade-cartoes">
@@ -784,7 +784,7 @@ function redesenharDividendos(primeira = false) {
 
 /* ============ Macro ============ */
 let JANELA_MACRO = 10;
-const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["monetaria", "Política monetária"], ["expectativas", "Expectativas (Focus)"], ["cambio", "Câmbio"]];
+const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["monetaria", "Política monetária"], ["expectativas", "Expectativas (Focus)"], ["cambio", "Câmbio"], ["fiscal", "Contas públicas"]];
 const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
 const ESCOLHA_GRAFICO = {};  // opção escolhida em cada gráfico com botões (fica ao trocar de janela)
 const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinza], ["nucleo_ex3", "EX3", COR.roxo],
@@ -809,11 +809,18 @@ async function paginaMacro(sub) {
     monetaria: [cartao("Selic meta", pctPronto(u("selic_meta").valor), dataBR(u("selic_meta").data)), cartao("CDI", pctPronto(u("cdi").valor), dataBR(u("cdi").data)),
       cartao("Juro real ex-post", pctPronto(u("juro_real").valor), "Selic ÷ IPCA 12m")],
     cambio: [cartao("Dólar PTAX", `R$ ${num(u("usd").valor, 4)}`, dataBR(u("usd").data)), cartao("Euro PTAX", `R$ ${num(u("eur").valor, 4)}`, dataBR(u("eur").data))],
+    // NFSP: positivo = déficit; os cartões mostram o resultado (superávit positivo)
+    fiscal: [cartao("Dívida bruta (DBGG)", pctPronto(u("dbgg").valor, 1), `% do PIB · ${mes("dbgg")}`),
+      cartao("Dívida líquida (DLSP)", pctPronto(u("dlsp").valor, 1), `% do PIB · ${mes("dlsp")}`),
+      cartao("Resultado primário 12m", pctPronto(u("nfsp_primario").valor == null ? null : -u("nfsp_primario").valor, 2), `% do PIB · setor público consolidado`),
+      cartao("Juros nominais 12m", pctPronto(u("nfsp_juros").valor, 2), "% do PIB"),
+      cartao("Resultado nominal 12m", pctPronto(u("nfsp_nominal").valor == null ? null : -u("nfsp_nominal").valor, 2), "% do PIB"),
+      cartao("Dívida federal pós-fixada (Selic)", pctPronto(u("dmf_selic").valor, 1), `do estoque · ${mes("dmf_selic")}`)],
     expectativas: [cartao(`IPCA ${new Date().getFullYear()}`, pctPronto(focusAno("ipca")), "mediana Focus"), cartao(`Selic fim de ${new Date().getFullYear()}`, pctPronto(focusAno("selic")), "mediana Focus"),
       cartao(`Câmbio fim de ${new Date().getFullYear()}`, focusAno("cambio") ? `R$ ${num(focusAno("cambio"), 2)}` : "—", "mediana Focus"), cartao(`PIB ${new Date().getFullYear()}`, pctPronto(focusAno("pib")), "mediana Focus")],
   }[sub];
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS), IBGE, FGV e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
+    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS e Estatísticas Fiscais), IBGE, FGV e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${sub === "expectativas" ? "" : `<div class="seletor" id="janela">${[[1, "1A"], [5, "5A"], [10, "10A"], [99, "Máx"]].map(([a, r]) => `<button data-a="${a}" class="${a === JANELA_MACRO ? "ativo" : ""}">${r}</button>`).join("")}</div>`}
         <a class="botao" href="downloads/macro.xlsx" download>Baixar planilha de Macro</a></div></div>
@@ -852,6 +859,13 @@ function desenharMacro(S, F, sub) {
     { nome: "IPCA cheio", valores: P(S[`ipca_${suf}`]), tipo: "line", cor: COR.vermelho, tracejado: true }] }]));
   const anos = S.pib_anual ? S.pib_anual.datas.map((d) => d.slice(0, 4)) : [];
   const nominal = S.pib_nominal ? Object.fromEntries(S.pib_nominal.datas.map((d, i) => [d.slice(0, 4), S.pib_nominal.valores[i]])) : {};
+  // contas públicas: NFSP com sinal invertido (resultado: superávit positivo) e soma de indexadores pequenos
+  const neg = (s) => P(s).map(([d, v]) => [d, v == null ? null : -v]);
+  const soma = (ks) => {
+    const base = S[ks[0]]; if (!base) return [];
+    const mapas = ks.map((k) => Object.fromEntries(P(S[k])));
+    return base.datas.map((d) => [d, Math.round(mapas.reduce((a, m) => a + (m[d] || 0), 0) * 100) / 100]);
+  };
   // cada item: { t: título, info, op: opções do gráfico | alt: { rótulo do botão: opções }, largo, focus }
   const defs = {
     inflacao: [
@@ -873,6 +887,27 @@ function desenharMacro(S, F, sub) {
     monetaria: [
       { t: "Selic meta, CDI e IPCA 12 meses", info: "selic", largo: true, op: { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "CDI", valores: P(S.cdi), tipo: "line", cor: COR.ciano }, { nome: "IPCA 12m", valores: P(S.ipca_12m), tipo: "line", cor: COR.vermelho }, { nome: "Média dos núcleos 12m", valores: P(S.nucleos_media_12m), tipo: "line", cor: COR.roxo, tracejado: true }], eixoEsq: "pctPronto", degrau: true } },
       { t: "Juro real ex-post (Selic ÷ IPCA 12m)", info: "juro_real", largo: true, op: { series: [{ nome: "Juro real", valores: P(S.juro_real), tipo: "line", cor: COR.verde }], eixoEsq: "pctPronto" } },
+    ],
+    fiscal: [
+      { t: "Dívida pública (% do PIB): bruta e líquida", info: "fiscal_divida", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Dívida bruta do governo geral (DBGG)", valores: P(S.dbgg), tipo: "line", cor: COR.vermelho },
+        { nome: "Dívida líquida do setor público (DLSP)", valores: P(S.dlsp), tipo: "line", cor: COR.azul }] } },
+      { t: "Resultado do setor público em 12 meses (% do PIB)", info: "fiscal_resultado", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Resultado primário", valores: neg(S.nfsp_primario), cor: COR.verde },
+        { nome: "Juros nominais", valores: neg(S.nfsp_juros), tipo: "line", cor: COR.ambar },
+        { nome: "Resultado nominal", valores: neg(S.nfsp_nominal), tipo: "line", cor: COR.vermelho }] } },
+      { t: "Resultado primário por esfera em 12 meses (% do PIB)", info: "fiscal_esferas", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Governo Federal e Banco Central", valores: neg(S.nfsp_primario_central), cor: COR.azul, pilha: "esfera" },
+        { nome: "Estados e municípios", valores: neg(S.nfsp_primario_regionais), cor: COR.roxo, pilha: "esfera" },
+        { nome: "Empresas estatais", valores: neg(S.nfsp_primario_estatais), cor: COR.ciano, pilha: "esfera" },
+        { nome: "Total (setor público consolidado)", valores: neg(S.nfsp_primario), tipo: "line", cor: COR.ambar }] } },
+      { t: "Prazo médio da dívida mobiliária federal (meses)", info: "fiscal_prazo", op: { eixoEsq: "numero", series: [
+        { nome: "Prazo médio dos títulos emitidos", valores: P(S.dmf_prazo), tipo: "line", cor: COR.ambar }] } },
+      { t: "Composição da dívida mobiliária federal por indexador (% do estoque)", info: "fiscal_dmf", largo: true, op: { eixoEsq: "pctPronto", series: [
+        { nome: "Selic (LFT)", valores: P(S.dmf_selic), cor: COR.azul, pilha: "dmf" },
+        { nome: "Prefixado (LTN, NTN-F)", valores: P(S.dmf_pre), cor: COR.verde, pilha: "dmf" },
+        { nome: "IPCA (NTN-B)", valores: P(S.dmf_ipca), cor: COR.vermelho, pilha: "dmf" },
+        { nome: "Câmbio, IGP-M, TR e outros", valores: soma(["dmf_cambio", "dmf_igpm", "dmf_igpdi", "dmf_tr", "dmf_tjlp", "dmf_outros"]), cor: COR.cinza, pilha: "dmf" }] } },
     ],
     cambio: [
       { t: "Câmbio PTAX", info: "cambio", largo: true, op: { series: [{ nome: "Dólar", valores: P(S.usd), tipo: "line", cor: COR.verde }, { nome: "Euro", valores: P(S.eur), tipo: "line", cor: COR.roxo }], eixoEsq: "preco" } },
@@ -981,8 +1016,15 @@ async function paginaJuros() {
           <button data-k="agora" ${tes.tempo_real ? "" : "disabled title=\"Sem preço do momento mais novo que a data base\""}>Tempo real · não oficial${tes.tempo_real ? ` · ${tes.tempo_real.precificado_em.slice(11, 16)}` : ""}</button></div></div>
         <div class="grade" id="tab-tit"></div>
         <div class="nota" id="nota-tit"></div>
-        <div class="nota">Clique num título para ver o histórico oficial de taxa e preço.</div></div>
-      <div class="painel largo" id="painel-titulo" style="display:none"><h2 id="titulo-hist"></h2><div class="grafico alto" id="gj-hist"></div></div>
+        <div class="nota">Clique num título para ver o histórico oficial de taxa e preço no gráfico abaixo.</div></div>
+      <div data-info="titulos" class="painel largo" id="painel-titulo"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0" id="titulo-hist">Taxa × preço</h2>
+        <label class="sub">Título: <select id="sel-titulo" class="filtro" style="width:auto;display:inline-block">
+          ${GRUPOS_TESOURO.filter(([tipo]) => tes.titulos.some((t) => t.tipo === tipo)).map(([tipo, nome]) => `<optgroup label="${esc(nome)}">
+            ${tes.titulos.filter((t) => t.tipo === tipo).map((t) => `<option value="${esc(t.id)}">${esc(t.tipo)} ${dataBR(t.vencimento)}</option>`).join("")}</optgroup>`).join("")}
+        </select></label></div>
+        <div class="grafico alto" id="gj-hist"></div>
+        <div class="nota">Histórico oficial (Tesouro Transparente) da taxa de compra e do preço unitário (PU) de compra da manhã, desde o lançamento do título.
+          Taxa e preço andam em sentidos opostos: taxa sobe, preço cai (e vice-versa).</div></div>
     </div>
     <div class="nota secao">A curva DI vem do arquivo "Taxas de Mercado para Swaps" da B3 (fim de dia). As curvas do Tesouro usam a taxa de compra
       do Tesouro Direto: título sem cupom e, nos prazos onde ele não existe, o título com juros semestrais. A inflação implícita interpola a curva
@@ -1027,19 +1069,27 @@ async function paginaJuros() {
   });
   mostrarTitulos(REF_TITULOS);
 
+  // Gráfico taxa × preço sempre visível; o título vem do seletor ou de um clique na tabela
   let gHist = null;
-  document.getElementById("tab-tit").addEventListener("click", async (ev) => {
-    const tr = ev.target.closest("[data-id]"); if (!tr) return;
-    const t = await dados(`dados/tesouro/${tr.dataset.id}.json`);
-    const painel = document.getElementById("painel-titulo");
-    painel.style.display = "block";
-    document.getElementById("titulo-hist").textContent = `${t.tipo} ${dataBR(t.vencimento)} — taxa de compra e preço (PU)`;
+  const sel = document.getElementById("sel-titulo");
+  const desenharTitulo = async (id, rolar = false) => {
+    const t = await dados(`dados/tesouro/${id}.json`).catch(() => null);
+    if (!t) { document.getElementById("gj-hist").innerHTML = `<p class="sub">Histórico indisponível para este título.</p>`; return; }
+    sel.value = id;
+    document.getElementById("titulo-hist").textContent = `Taxa × preço · ${t.tipo} ${dataBR(t.vencimento)} — oficial`;
     if (gHist) { gHist.dispose(); graficos.splice(graficos.indexOf(gHist), 1); }
     gHist = grafico(document.getElementById("gj-hist"), { xTempo: true, eixoEsq: "preco", eixoDir: "pctPronto", series: [
-      { nome: "PU compra", valores: t.datas.map((d, i) => [d, t.pu_compra[i] || null]), tipo: "line", cor: COR.azul },
-      { nome: "Taxa compra", valores: t.datas.map((d, i) => [d, t.taxa_compra[i] || null]), tipo: "line", eixo: "dir", cor: COR.ambar }] });
-    painel.scrollIntoView({ behavior: "smooth", block: "center" });
+      { nome: "PU compra (R$)", valores: t.datas.map((d, i) => [d, t.pu_compra[i] || null]), tipo: "line", cor: COR.azul },
+      { nome: "Taxa compra (% a.a.)", valores: t.datas.map((d, i) => [d, t.taxa_compra[i] || null]), tipo: "line", eixo: "dir", cor: COR.ambar }] });
+    if (rolar) document.getElementById("painel-titulo").scrollIntoView({ behavior: "smooth", block: "center" });
+  };
+  sel.addEventListener("change", () => desenharTitulo(sel.value));
+  document.getElementById("tab-tit").addEventListener("click", (ev) => {
+    const tr = ev.target.closest("[data-id]"); if (tr) desenharTitulo(tr.dataset.id, true);
   });
+  // começa no IPCA+ mais longo sem cupom (ou no primeiro da lista)
+  const ipcaLongo = tes.titulos.filter((t) => t.tipo === "Tesouro IPCA+").slice(-1)[0];
+  if (sel.options.length) desenharTitulo(ipcaLongo ? ipcaLongo.id : sel.options[0].value);
 }
 
 /* ============ Agenda ============ */
@@ -1099,7 +1149,7 @@ async function paginaNoticias(lado = "on") {
   let filtro = "tipo:mercado", janela = 30, categoria = "todos", editoria = "todas";
   const EDITORIAS = [["todas", "Todas"], ["politica", "Política"], ["economia", "Economia e finanças"], ["empresas", "Empresas"]];
   const comEditoria = lado !== "off";
-  const titulo = { on: "Notícias e agenda", off: "Offshore · Notícias e agenda", cons: "Consolidado · Notícias e agenda" }[lado];
+  const titulo = { on: "Notícias e agenda", off: "Mundo · Notícias e agenda", cons: "Consolidado · Notícias e agenda" }[lado];
   const jornais = { on: "Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney", off: "WSJ, Financial Times, CNBC, MarketWatch, The Guardian e BBC",
     cons: "jornais do Brasil e do exterior" }[lado];
   const oficiais = { on: "Banco Central, IBGE, CVM e Agência Brasil", off: "Federal Reserve e BCE", cons: "Banco Central, IBGE, CVM, Agência Brasil, Fed e BCE" }[lado];
@@ -1224,7 +1274,7 @@ async function paginaOffshore(secao, parametro) {
   const off = await dados("dados/offshore.json").catch(() => null);
   if (secao === "empresas") {
     const [t, sub, itens] = PLANO_OFFSHORE.empresas;
-    app.innerHTML = `<div class="cabecalho"><div><h1>Offshore · ${t}</h1><div class="sub">${sub}</div></div></div>${emConstrucao(itens)}`;
+    app.innerHTML = `<div class="cabecalho"><div><h1>Mundo · ${t}</h1><div class="sub">${sub}</div></div></div>${emConstrucao(itens)}`;
     return;
   }
   if (!off) { app.innerHTML = `<p class="erro">Dados do exterior indisponíveis.</p>`; return; }
@@ -1237,9 +1287,9 @@ async function paginaOffshore(secao, parametro) {
   if (secao === "macro") {
     const sub = SUBS_MACRO_OFF.some(([k]) => k === parametro) ? parametro : "eua";
     const abas = `<div class="abas">${SUBS_MACRO_OFF.map(([k, n]) => `<a href="#/off/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
-    if (PLANO_OFFSHORE[sub]) { app.innerHTML = `${cab("Offshore · Macro", "Atividade, inflação e emprego no exterior")}${abas}${emConstrucao(PLANO_OFFSHORE[sub][2])}`; return; }
+    if (PLANO_OFFSHORE[sub]) { app.innerHTML = `${cab("Mundo · Macro", "Atividade, inflação e emprego no exterior")}${abas}${emConstrucao(PLANO_OFFSHORE[sub][2])}`; return; }
     if (sub === "eua") {
-      app.innerHTML = `${cab("Offshore · Macro", "Estados Unidos: BLS (API oficial)")}${abas}
+      app.innerHTML = `${cab("Mundo · Macro", "Estados Unidos: BLS (API oficial)")}${abas}
         <div class="grade-cartoes">
           ${cartao("CPI 12 meses", pctPronto(u(B.cpi_12m).valor), mes(B.cpi_12m))}${cartao("Núcleo do CPI 12m", pctPronto(u(B.cpi_nucleo_12m).valor), mes(B.cpi_nucleo_12m))}
           ${cartao("CPI no mês (dessaz.)", pctPronto(u(B.cpi_mensal).valor), mes(B.cpi_mensal))}${cartao("Desemprego", pctPronto(u(B.desemprego).valor, 1), mes(B.desemprego))}
@@ -1255,7 +1305,7 @@ async function paginaOffshore(secao, parametro) {
         { nome: "Payroll (mil vagas no mês)", valores: Pares(B.payroll_var), cor: COR.verde }, { nome: "Desemprego", valores: Pares(B.desemprego), tipo: "line", eixo: "dir", cor: COR.vermelho }] });
       return;
     }
-    app.innerHTML = `${cab("Offshore · Macro", "Zona do Euro: Eurostat (API oficial)")}${abas}
+    app.innerHTML = `${cab("Mundo · Macro", "Zona do Euro: Eurostat (API oficial)")}${abas}
       <div class="grade-cartoes">
         ${cartao("HICP 12 meses", pctPronto(u(Z.hicp_12m).valor, 1), mes(Z.hicp_12m))}${cartao("Núcleo 12m", pctPronto(u(Z.hicp_nucleo_12m).valor, 1), "sem energia, alimentos, álcool e fumo")}
         ${cartao("Serviços 12m", pctPronto(u(Z.hicp_servicos_12m).valor, 1), mes(Z.hicp_servicos_12m))}${cartao("Desemprego", pctPronto(u(Z.desemprego).valor, 1), mes(Z.desemprego))}
@@ -1272,8 +1322,8 @@ async function paginaOffshore(secao, parametro) {
   }
 
   if (secao === "juros") {
-    app.innerHTML = `${cab("Offshore · Juros", "Tesouro dos EUA, Fed de Nova York e BCE (fontes oficiais) · taxas em % a.a.",
-      `<a class="botao" href="downloads/offshore.xlsx" download>Baixar planilha Offshore</a>`)}
+    app.innerHTML = `${cab("Mundo · Juros", "Tesouro dos EUA, Fed de Nova York e BCE (fontes oficiais) · taxas em % a.a.",
+      `<a class="botao" href="downloads/offshore.xlsx" download>Baixar planilha do Mundo</a>`)}
       <div class="grade">
         ${painelG("gq-ust", "Treasuries — curva nominal", "ust_curva")}${painelG("gq-tips", "Treasuries — curva real (TIPS)", "ust_real")}
         ${painelG("gq-hist", "Treasuries de 2, 10 e 30 anos", "ust_hist")}${painelG("gq-incl", "Inclinação da curva: 10 anos − 2 anos", "ust_hist")}
@@ -1300,8 +1350,8 @@ async function paginaOffshore(secao, parametro) {
   }
 
   if (secao === "downloads") {
-    app.innerHTML = `${cab("Offshore · Downloads", "Planilha com as séries do exterior, atualizada todo dia")}
-      <div class="grade"><div class="painel"><h2>Offshore</h2><p class="sub" style="line-height:1.6">Treasuries (curvas nas datas de comparação e histórico de 2, 10 e 30 anos),
+    app.innerHTML = `${cab("Mundo · Downloads", "Planilha com as séries do exterior, atualizada todo dia")}
+      <div class="grade"><div class="painel"><h2>Mundo</h2><p class="sub" style="line-height:1.6">Treasuries (curvas nas datas de comparação e histórico de 2, 10 e 30 anos),
         Fed Funds, SOFR, BCE (depósito, €STR e curva AAA), inflação e emprego dos EUA (BLS) e inflação, desemprego e PIB da Zona do Euro (Eurostat).</p>
         <a class="botao" href="downloads/offshore.xlsx" download>Baixar offshore.xlsx</a></div></div>
       <div class="nota secao">Cada gráfico do site também tem o botão ⤓ para baixar a série daquele gráfico em CSV.</div>`;
@@ -1312,7 +1362,7 @@ async function paginaOffshore(secao, parametro) {
   const [agenda, noticias] = await Promise.all([dados("dados/agenda_offshore.json").catch(() => null), dados("dados/noticias_offshore.json").catch(() => null)]);
   const mMin = u(F.meta_min), mMax = u(F.meta_max);
   const mercadoOff = ((noticias && noticias.itens) || []).filter((n) => n.tipo === "mercado");
-  app.innerHTML = `${cab("Offshore · painel", "Agenda, indicadores e notícias dos EUA e da Zona do Euro")}
+  app.innerHTML = `${cab("Mundo · painel", "Agenda, indicadores e notícias dos EUA e da Zona do Euro")}
     <div class="painel secao-topo"><h2>Próximas decisões de juros</h2>${tabelaAgenda(agenda, 120)}<div class="nota"><a href="#/off/noticias">Ver agenda e notícias</a></div></div>
     <div class="grade-cartoes">
       ${cartao("Fed Funds (meta)", mMin.valor != null ? `${num(mMin.valor, 2)}–${num(mMax.valor, 2)}%` : "—", `efetiva ${pctPronto(u(F.effr).valor)}`)}
@@ -1360,7 +1410,7 @@ async function paginaConsolidado(secao) {
   const mes = (s) => (u(s).data ? `${MESES[Number(u(s).data.slice(5, 7)) - 1]}/${u(s).data.slice(2, 4)}` : "");
   const titulos = { "": "Juros", inflacao: "Inflação", atividade: "Atividade e emprego" };
   const cab = `<div class="cabecalho"><div><h1>Consolidado · ${titulos[secao] || "Juros"}</h1>
-    <div class="sub">Brasil, Estados Unidos e Zona do Euro nos mesmos gráficos · mesmas fontes oficiais das seções Onshore e Offshore
+    <div class="sub">Brasil, Estados Unidos e Zona do Euro nos mesmos gráficos · mesmas fontes oficiais das seções Brasil e Mundo
       <span style="color:${PAISES.br[1]}">●</span> Brasil <span style="color:${PAISES.eua[1]}">●</span> EUA <span style="color:${PAISES.euro[1]}">●</span> Zona do Euro</div></div></div>`;
   const linha = (pais, nome, valores, extra = {}) => ({ nome, valores, tipo: "line", cor: PAISES[pais][1], ...extra });
   const tempo = (anos = 10) => ({ xTempo: true, inicioTempo: desde(anos), deslizante: true, eixoEsq: "pctPronto" });
@@ -1825,7 +1875,7 @@ const NOMES_ETAPAS = {
   mercado: "Cotações e proventos (B3)", noticias: "Notícias", planilhas: "Planilhas de Macro e Juros", eventos: "Eventos (CVM)",
   ficha: "Ficha da empresa (FRE/FCA)", fre_textos: "Trechos do Formulário de Referência", resumos: "Resumos aprofundados",
   cvm_base: "Base de demonstrações (CVM)", empresas: "Empresas (JSON e Excel)", indice: "Índice de empresas",
-  offshore: "Offshore (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)", bancos: "Instituições financeiras (IF.data)", eleicoes: "Eleições 2026 (TSE)", calendario_resultados: "Calendário de resultados (CVM)", tesouro_intradia: "Tesouro Direto — tempo real (3x ao dia)",
+  offshore: "Mundo (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)", bancos: "Instituições financeiras (IF.data)", eleicoes: "Eleições 2026 (TSE)", calendario_resultados: "Calendário de resultados (CVM)", tesouro_intradia: "Tesouro Direto — tempo real (3x ao dia)",
 };
 
 async function paginaStatus() {

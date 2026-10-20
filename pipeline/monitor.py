@@ -189,6 +189,8 @@ SERIES_MACRO = {
     "pib_indice": ("T", 250, (50, 400)), "pib_indice_obs": ("T", 250, (50, 400)),
     "pib_anual": ("A", 800, (-10, 15)), "pib_nominal": ("A", 800, (1e11, 1e14)),
     "desemprego": ("M", 100, (2, 20)),
+    "nfsp_primario": ("M", 110, (-10, 15)), "nfsp_nominal": ("M", 110, (-5, 25)), "nfsp_juros": ("M", 110, (0, 20)),
+    "dlsp": ("M", 110, (10, 120)), "dbgg": ("M", 110, (30, 150)), "dmf_selic": ("M", 110, (0, 100)), "dmf_pre": ("M", 110, (0, 100)),
     "selic_meta": ("D", 6, (1, 30)), "cdi": ("D", 6, (1, 30)), "usd": ("D", 6, (1, 15)), "eur": ("D", 6, (1, 15)),
 }
 PASSO_MESES = {"M": 1, "T": 3, "A": 12}
