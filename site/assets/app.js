@@ -1086,7 +1086,7 @@ async function paginaNoticias(lado = "on") {
   const oficiais = { on: "Banco Central, IBGE, CVM e Agência Brasil", off: "Federal Reserve e BCE", cons: "Banco Central, IBGE, CVM, Agência Brasil, Fed e BCE" }[lado];
   app.innerHTML = `
     <div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">Notícias de mercado (${jornais}) e oficiais (${oficiais}) · só a manchete, com link para a fonte</div></div></div>
-    ${lado === "on" ? abasNoticiasOn("") : ""}
+    ${lado === "on" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
     <div class="grade grade-noticias">
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
         <div class="seletor" id="filtro-fonte">${filtros.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}
@@ -1421,13 +1421,26 @@ async function paginaConsolidado(secao) {
 }
 
 /* ============ Eleições 2026 (Onshore · Notícias e agenda) ============ */
-const ABAS_NOTICIAS_ON = [["", "Notícias e agenda"], ["eleicoes", "Eleições 2026"]];
-const abasNoticiasOn = (ativa) => `<div class="abas">${ABAS_NOTICIAS_ON.map(([k, n]) => `<a href="#/on/noticias${k ? `/${k}` : ""}" class="${k === ativa ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
+// A aba só existe em ano eleitoral (o pipeline marca "ativo" pelo calendário do TSE); depois das eleições some sozinha
+let ELEICOES_ATIVAS = null;
+async function eleicoesAtivas() {
+  if (ELEICOES_ATIVAS === null) ELEICOES_ATIVAS = await dados("dados/eleicoes.json").then((e) => (e.ativo ? e : false)).catch(() => false);
+  return ELEICOES_ATIVAS;
+}
+const abasNoticiasOn = (ativa, el) => (el ? `<div class="abas">${[["", "Notícias e agenda"], ["eleicoes", `Eleições ${el.ano}`]]
+  .map(([k, n]) => `<a href="#/on/noticias${k ? `/${k}` : ""}" class="${k === ativa ? "ativo" : ""}">${n}</a>`).join("")}</div>` : "");
 
 async function paginaEleicoes() {
-  const el = await dados("dados/eleicoes.json");
+  const el = await eleicoesAtivas();
+  if (!el) { location.replace("#/on/noticias"); return; }
   const [t1, t2] = el.turnos;
-  const t2apurado = t2 && t2.apurado_pct > 0;
+  if (!t1.candidatos.length) {  // ano eleitoral, antes da votação: só as datas
+    app.innerHTML = `<div class="cabecalho"><div><h1>Eleições ${el.ano} · Presidente</h1></div></div>${abasNoticiasOn("eleicoes", el)}
+      <div class="painel" data-info="eleicoes"><h2>Aguardando a votação</h2><p>1º turno em <b>${dataBR(t1.data)}</b>${t2 ? ` · 2º turno (se houver) em <b>${dataBR(t2.data)}</b>` : ""}.
+        Os resultados oficiais do TSE aparecem aqui assim que a apuração começar.</p><div class="nota">Fonte: TSE — Divulgação de Resultados.</div></div>`;
+    return;
+  }
+  const t2apurado = Boolean(t2 && t2.apurado_pct > 0 && t2.candidatos.length);
   const atual = t2apurado ? t2 : t1;
   const cores = [COR.azul, COR.vermelho, COR.verde, COR.roxo, COR.ciano, COR.ambar, COR.cinza];
   const corDe = {};
@@ -1438,15 +1451,15 @@ async function paginaEleicoes() {
       <td>${c.votos.toLocaleString("pt-BR")}</td><td><b>${num(c.pct, 2)}%</b></td><td class="sub">${esc(c.situacao)}</td></tr>`).join("")}</table>`;
   const ufs = Object.entries(atual.por_uf || {});
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Eleições 2026 · Presidente</h1><div class="sub">Resultado oficial do TSE · 1º turno em ${dataBR(t1.data)} · 2º turno em ${dataBR(t2.data)}
-      · atualizado pelo TSE em ${esc(atual.atualizado_tse)}</div></div></div>
-    ${abasNoticiasOn("eleicoes")}
+    <div class="cabecalho"><div><h1>Eleições ${el.ano} · Presidente</h1><div class="sub">Resultado oficial do TSE · 1º turno em ${dataBR(t1.data)}${t2 ? ` · 2º turno em ${dataBR(t2.data)}` : ""}
+      · atualizado pelo TSE em ${esc(atual.atualizado_tse || "—")} · esta aba fica até ${dataBR(el.ate)}</div></div></div>
+    ${abasNoticiasOn("eleicoes", el)}
     <div class="grade-cartoes">
       ${cartao(t2apurado ? "2º turno apurado" : "1º turno apurado", `${num(atual.apurado_pct, 2)}%`, `${atual.turno}º turno · ${dataBR(atual.data)}`)}
       ${cartao("Comparecimento", `${num(atual.comparecimento_pct, 2)}%`, `${atual.eleitores.toLocaleString("pt-BR")} eleitores`)}
       ${cartao("Abstenção", `${num(atual.abstencao_pct, 2)}%`, "")}
       ${cartao("Brancos / nulos", `${num(atual.brancos_pct, 2)}% / ${num(atual.nulos_pct, 2)}%`, "do total de votos")}
-      ${t2apurado ? "" : cartao("2º turno", dataBR(t2.data), t2.candidatos.map((c) => c.nome).join(" x "))}
+      ${t2 && !t2apurado ? cartao("2º turno", dataBR(t2.data), t2.candidatos.map((c) => c.nome).join(" x ")) : ""}
     </div>
     <div class="grade">
       ${t2apurado ? `<div class="painel" data-info="eleicoes"><h2>2º turno — votos válidos</h2><div class="grafico" id="ge-t2"></div></div>` : ""}

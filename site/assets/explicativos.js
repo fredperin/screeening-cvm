@@ -349,7 +349,7 @@ window.EXPLICATIVOS = {
       <p class="sub">Fonte: U.S. Bureau of Labor Statistics (LNS14000000), Eurostat (une_rt_m) e IBGE (PNAD Contínua, tabela 6381).</p>`,
   },
   eleicoes: {
-    titulo: "Eleições 2026 — Presidente",
+    titulo: "Eleições — Presidente",
     html: `<p>Resultado oficial da eleição presidencial, nos arquivos públicos de divulgação do <b>Tribunal Superior Eleitoral</b>.
       Durante a apuração o TSE atualiza os arquivos; o cartão "apurado" mostra o % de seções já totalizadas.</p>
       <ul>
@@ -358,6 +358,8 @@ window.EXPLICATIVOS = {
         <li><b>Por estado:</b> o mais votado e o segundo colocado em cada UF.</li>
       </ul>
       <p>Pesquisas eleitorais não entram: o TSE registra as pesquisas, mas os números são divulgados pelos institutos.</p>
+      <p><b>Quando aparece:</b> a aba entra sozinha em ano de eleição federal (pelo calendário do TSE) e sai 15 dias depois
+        da última votação.</p>
       <p class="sub">Fonte: TSE — Divulgação de Resultados (resultados.tse.jus.br).</p>`,
   },
   calendario_resultados: {
