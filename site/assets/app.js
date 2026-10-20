@@ -1734,7 +1734,7 @@ async function abaFinanceiras(cab, abas) {
 }
 
 // ---------- página de um banco ----------
-const ABAS_BANCO = [["perfil", "Perfil"], ["dfs", "DFs"], ["carteira_resumo", "Carteira — resumo"], ["carteira_total", "Carteira — total"]];
+const ABAS_BANCO = [["perfil", "Perfil"], ["capital", "Capital"], ["dfs", "DFs"], ["carteira_resumo", "Carteira — resumo"], ["carteira_total", "Carteira — total"]];
 let ABA_BANCO = "perfil";
 let PERIODO_DF = { tipo: "trimestre", fim: null };
 
@@ -1850,7 +1850,6 @@ async function paginaBanco(id) {
           bk.capital.map((l) => [l.r, l.v, l.indice]), mil)}</div></div>`}
         ${painelG("gb-ativo", soCvm ? "Ativo total" : "Ativo total e carteira de crédito (desde 2015)", "historico_banco")}
         ${painelG("gb-lucro", soCvm ? "Lucro trimestral e patrimônio líquido" : "Lucro trimestral e patrimônio líquido (desde 2015)", "historico_banco")}
-        ${soCvm ? "" : painelG("gb-basileia", "Índice de Basileia (desde 2015)", "capital_banco", "", "largo")}
       </div>`;
       if (tk) { desenharFicha(ficha); desenharNegocio(negocio, resumoAp); }
       grafico(document.getElementById("gb-ativo"), { xTempo: true, eixoEsq: "reais", series: [
@@ -1859,9 +1858,57 @@ async function paginaBanco(id) {
         ...(H.captacoes ? [{ nome: "Captações", valores: P(H.captacoes, H.datas), tipo: "line", cor: COR.cinza, tracejado: true }] : [])] });
       grafico(document.getElementById("gb-lucro"), { xTempo: true, eixoEsq: "reais", eixoDir: "reais", series: [
         { nome: "Lucro trimestral", valores: P(H.lucro_tri, H.datas), cor: COR.verde }, { nome: "Patrimônio líquido", valores: P(H.pl, H.datas), tipo: "line", eixo: "dir", cor: COR.ambar }] });
-      if (!soCvm) grafico(document.getElementById("gb-basileia"), { xTempo: true, eixoEsq: "pct", series: [
+    },
+    capital: () => {
+      if (soCvm) { area().innerHTML = `<div class="painel"><h2>Capital</h2><p class="sub">Sem dados de capital (Basileia) para esta instituição: ela não está no IF.data.</p></div>`; return; }
+      const rot = T.map(triIF);
+      const C = (k) => (bk.capital.find((l) => l.k === k) || { v: [] }).v;
+      const H = bk.historico;
+      // mínimos regulatórios (Res. CMN 4.958/2021): capital principal 4,5%, nível I 6%, PR 8%, mais o adicional de conservação de 2,5%
+      const linhaMin = (nome, v, datas) => ({ nome, valores: datas.map((d) => [d, v]), tipo: "line", cor: COR.vermelho, tracejado: true });
+      area().innerHTML = `<div class="grade-cartoes">
+          ${cartao("Índice de Basileia", pct(C("n")[n]), triIF(T[n]))}
+          ${cartao("Índice de Nível I", pct(C("m")[n]), "")}
+          ${cartao("Índice de Capital Principal", pct(C("l")[n]), "")}
+          ${cartao("Razão de alavancagem", pct(C("o")[n]), "Nível I ÷ exposição total")}
+          ${cartao("Patrimônio de Referência", reais(C("e")[n]), "PR")}
+          ${cartao("RWA", reais(C("j")[n]), "ativos ponderados pelo risco")}
+        </div>
+        <div class="grade">
+          ${painelG("gk-pr", "Composição do Patrimônio de Referência (R$)", "capital_banco")}
+          ${painelG("gk-ind", "Índices de capital", "capital_banco")}
+          ${painelG("gk-rwa", "RWA por tipo de risco (R$)", "capital_banco")}
+          ${painelG("gk-alav", "Razão de alavancagem", "capital_banco")}
+          ${painelG("gk-hist", "Índice de Basileia e Patrimônio de Referência (desde 2015)", "capital_banco", "", "largo")}
+        </div>
+        <div class="nota secao">Trimestres desde 1T25 (layout novo do IF.data); o gráfico de baixo usa o histórico do resumo do IF.data desde 2015.
+          Linhas tracejadas: mínimos regulatórios com o adicional de conservação de capital (2,5%) — capital principal 7%, nível I 8,5% e PR 10,5%
+          (sem os adicionais contracíclico e sistêmico, que variam por banco). Alavancagem mínima de 3% (S1 e S2).</div>`;
+      grafico(document.getElementById("gk-pr"), { rotulos: rot, eixoEsq: "reais", series: [
+        { nome: "Capital principal", valores: C("a"), cor: COR.azul, pilha: "pr" },
+        { nome: "Capital complementar", valores: C("b"), cor: COR.ciano, pilha: "pr" },
+        { nome: "Nível II", valores: C("d"), cor: COR.roxo, pilha: "pr" },
+        { nome: "Patrimônio de Referência", valores: C("e"), tipo: "line", cor: COR.ambar }] });
+      const minimo = (v) => rot.map(() => v);
+      grafico(document.getElementById("gk-ind"), { rotulos: rot, eixoEsq: "pct", series: [
+        { nome: "Basileia", valores: C("n"), tipo: "line", cor: COR.ambar },
+        { nome: "Nível I", valores: C("m"), tipo: "line", cor: COR.azul },
+        { nome: "Capital principal", valores: C("l"), tipo: "line", cor: COR.verde },
+        { nome: "Mín. PR (10,5%)", valores: minimo(0.105), tipo: "line", cor: COR.ambar, tracejado: true },
+        { nome: "Mín. nível I (8,5%)", valores: minimo(0.085), tipo: "line", cor: COR.azul, tracejado: true },
+        { nome: "Mín. capital principal (7%)", valores: minimo(0.07), tipo: "line", cor: COR.verde, tracejado: true }] });
+      grafico(document.getElementById("gk-rwa"), { rotulos: rot, eixoEsq: "reais", series: [
+        { nome: "Risco de crédito", valores: C("f"), cor: COR.azul, pilha: "rwa" },
+        { nome: "Risco de mercado", valores: C("g"), cor: COR.ambar, pilha: "rwa" },
+        { nome: "Risco operacional", valores: C("h"), cor: COR.roxo, pilha: "rwa" },
+        ...(C("i").some((x) => x) ? [{ nome: "RWAsp (serviços de pagamento)", valores: C("i"), cor: COR.ciano, pilha: "rwa" }] : [])] });
+      grafico(document.getElementById("gk-alav"), { rotulos: rot, eixoEsq: "pct", series: [
+        { nome: "Razão de alavancagem", valores: C("o"), tipo: "line", cor: COR.ambar },
+        { nome: "Mínimo (3%)", valores: minimo(0.03), tipo: "line", cor: COR.vermelho, tracejado: true }] });
+      grafico(document.getElementById("gk-hist"), { xTempo: true, eixoEsq: "pct", eixoDir: "reais", series: [
         { nome: "Índice de Basileia", valores: P(H.basileia, H.datas), tipo: "line", cor: COR.ambar },
-        { nome: "Mínimo regulatório (11%)", valores: H.datas.map((d) => [d, 0.105]), tipo: "line", cor: COR.vermelho, tracejado: true }] });
+        linhaMin("Mínimo com adicional de conservação (10,5%)", 0.105, H.datas),
+        ...(H.pr ? [{ nome: "Patrimônio de Referência", valores: P(H.pr, H.datas), cor: COR.azul, eixo: "dir" }] : [])] });
     },
     dfs: () => {
       const tipos = [["trimestre", "Trimestre"], ["semestre", "Semestre"], ["anual", "Anual"], ["ltm", "LTM"]];
@@ -1961,15 +2008,15 @@ async function paginaBanco(id) {
       area().innerHTML = `<div class="grade">
         ${painelG("gt-pf", "Carteira PF por modalidade (R$)", "carteira_banco")}
         ${painelG("gt-pj", "Carteira PJ por modalidade (R$)", "carteira_banco")}
-        ${painelG("gt-pf-prazo", `Carteira PF por modalidade e prazo — ${triIF(T[n])}`, "carteira_banco")}
-        ${painelG("gt-pj-prazo", `Carteira PJ por modalidade e prazo — ${triIF(T[n])}`, "carteira_banco")}
+        ${painelG("gt-pf-prazo", `Carteira PF por modalidade e prazo — ${triIF(T[n])}`, "carteira_banco", "", "largo")}
+        ${painelG("gt-pj-prazo", `Carteira PJ por modalidade e prazo — ${triIF(T[n])}`, "carteira_banco", "", "largo")}
         ${painelG("gt-pfpj", "Carteira PF x PJ (R$)", "carteira_banco", "", "largo")}
       </div>`;
       grafico(document.getElementById("gt-pf"), { rotulos: rot, eixoEsq: "reais", series: pfM.map((m, i) => ({ nome: m, valores: serieM(bk.pf, m), cor: PALETA_GRAF[i % PALETA_GRAF.length], pilha: "a" })) });
       grafico(document.getElementById("gt-pj"), { rotulos: rot, eixoEsq: "reais", series: pjM.map((m, i) => ({ nome: m.slice(0, 40), valores: serieM(bk.pj, m), cor: PALETA_GRAF[i % PALETA_GRAF.length], pilha: "a" })) });
       const porPrazo = (g, ms) => PRAZOS_IF.map((f, i) => ({ nome: f.replace("A Vencer ", "").replace("Entre ", ""), valores: ms.map((m) => faixasUlt(g, m)[i]), cor: PALETA_GRAF[i], pilha: "a" }));
-      grafico(document.getElementById("gt-pf-prazo"), { rotulos: pfM.map((m) => m.slice(0, 18)), eixoEsq: "reais", series: porPrazo(bk.pf, pfM) });
-      grafico(document.getElementById("gt-pj-prazo"), { rotulos: pjM.map((m) => m.slice(0, 18)), eixoEsq: "reais", series: porPrazo(bk.pj, pjM) });
+      grafico(document.getElementById("gt-pf-prazo"), { rotulos: pfM.map((m) => m.slice(0, 28)), eixoEsq: "reais", series: porPrazo(bk.pf, pfM) });
+      grafico(document.getElementById("gt-pj-prazo"), { rotulos: pjM.map((m) => m.slice(0, 28)), eixoEsq: "reais", series: porPrazo(bk.pj, pjM) });
       grafico(document.getElementById("gt-pfpj"), { rotulos: rot, eixoEsq: "reais", series: [
         { nome: "Pessoa física", valores: totPF, cor: COR.verde, pilha: "a" }, { nome: "Pessoa jurídica", valores: totPJ, cor: COR.azul, pilha: "a" }] });
     },

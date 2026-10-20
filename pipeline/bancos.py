@@ -503,6 +503,8 @@ def gerar():
             "pl": [campo_hist(resumo_hist[am][cod], ["Patrimônio Líquido"]) for am in datas_hist],
             "lucro_tri": _trimestral(lucro_hist, datas_hist),
             "basileia": [campo_hist(resumo_hist[am][cod], ["Índice de Basileia"]) for am in datas_hist],
+            "pr": [campo_hist(resumo_hist[am][cod], ["Patrimônio de Referência"]) for am in datas_hist],
+            "imobilizacao": [campo_hist(resumo_hist[am][cod], ["Índice de Imobilização"]) for am in datas_hist],
         }
         resumo = {k: serie("resumo", k) for k in ("Ativo Total", "Carteira de Crédito", "Títulos e Valores Mobiliários", "Passivo Exigível",
                                                   "Captações", "Patrimônio Líquido", "Lucro Líquido")}
