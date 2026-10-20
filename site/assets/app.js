@@ -1352,7 +1352,7 @@ function juroReal(taxa, inflacao12m) {
 }
 
 async function paginaConsolidado(secao) {
-  const [macro, off, di] = await Promise.all([dados("dados/macro.json"), dados("dados/offshore.json").catch(() => null), dados("dados/curva_di.json").catch(() => null)]);
+  const [macro, off] = await Promise.all([dados("dados/macro.json"), dados("dados/offshore.json").catch(() => null)]);
   const S = macro.series, T = (off && off.treasuries) || {}, F = (off && off.fed) || {}, B = (off && off.bls) || {}, E = (off && off.bce) || {}, Z = (off && off.eurostat) || {};
   const u = (s) => ultimo(s);
   const mes = (s) => (u(s).data ? `${MESES[Number(u(s).data.slice(5, 7)) - 1]}/${u(s).data.slice(2, 4)}` : "");
@@ -1423,24 +1423,16 @@ async function paginaConsolidado(secao) {
     <div class="grade">
       ${painelG("gc-basicos", "Juros básicos: Selic, Fed Funds e BCE", "juros_mundo")}
       ${painelG("gc-real", "Juro real ex-post: taxa básica ÷ inflação 12 meses", "juro_real_mundo")}
-      ${painelG("gc-curvas", "Curvas de juros hoje: DI x Pré, Treasuries e Zona do Euro AAA", "curvas_mundo")}
-      ${painelG("gc-dif", "Diferencial de juros: Selic − Fed Funds e Selic − BCE", "juros_mundo")}
+      ${painelG("gc-inf-j", "Inflação em 12 meses: IPCA, CPI e HICP", "inflacao_mundo", "", "largo")}
     </div>`;
   grafico(document.getElementById("gc-basicos"), { ...tempo(), degrau: true, series: [
     linha("br", "Selic meta", ateHoje(S.selic_meta)), linha("eua", "Fed Funds (teto da banda)", ateHoje(F.meta_max)), linha("euro", "BCE (depósito)", ateHoje(E.deposito))] });
   grafico(document.getElementById("gc-real"), { ...tempo(), series: [
     linha("br", "Brasil", Pares(S.juro_real)), linha("eua", "EUA (Fed Funds ÷ CPI)", B.cpi_12m ? juroReal(F.meta_max, B.cpi_12m) : []),
     linha("euro", "Zona do Euro (depósito ÷ HICP)", Z.hicp_12m ? juroReal(E.deposito, Z.hicp_12m) : [])] });
-  const hoje = di && di.curvas && di.curvas.hoje;
-  grafico(document.getElementById("gc-curvas"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: [
-    linha("br", `DI x Pré (${hoje ? dataBR(hoje.data) : "—"})`, hoje ? hoje.pre.filter((p) => p.anos <= 10).map((p) => [p.anos, p.taxa]) : []),
-    linha("eua", `Treasuries (${T.nominal && T.nominal.hoje ? dataBR(T.nominal.hoje.data) : "—"})`, curvaPts(T.nominal && T.nominal.hoje)),
-    linha("euro", `Zona do Euro AAA (${E.curva && E.curva.hoje ? dataBR(E.curva.hoje.data) : "—"})`, curvaPts(E.curva && E.curva.hoje))] });
-  const datas = Pares(S.cdi).map((p) => p[0]).filter((d) => d >= desde(10));
-  const selic = vigente(S.selic_meta, datas), fedv = vigente(F.meta_max, datas), bcev = vigente(E.deposito, datas);
-  const passo = (arr) => datas.map((d, i) => [d, selic[i] != null && arr[i] != null ? selic[i] - arr[i] : null]).filter((p, i, a) => p[1] != null && (i === 0 || a[i - 1][1] !== p[1] || i === a.length - 1));
-  grafico(document.getElementById("gc-dif"), { ...tempo(), degrau: true, series: [
-    linha("eua", "Selic − Fed Funds", passo(fedv)), linha("euro", "Selic − BCE", passo(bcev))] });
+  // Inflação dos três logo abaixo dos juros, na última linha inteira
+  grafico(document.getElementById("gc-inf-j"), { ...tempo(), series: [
+    linha("br", "IPCA (Brasil)", Pares(S.ipca_12m)), linha("eua", "CPI (EUA)", Pares(B.cpi_12m)), linha("euro", "HICP (Zona do Euro)", Pares(Z.hicp_12m))] });
 }
 
 /* ============ Eleições 2026 (Onshore · Notícias e agenda) ============ */
