@@ -1379,13 +1379,14 @@ async function paginaNoticias(lado = "on") {
     quer("off") ? dados("dados/noticias_offshore.json").catch(() => null) : null, quer("off") ? dados("dados/agenda_offshore.json").catch(() => null) : null,
   ]);
   const marcar = (n, origem) => ((n && n.itens) || []).map((i) => ({ ...i, origem, tipo: i.tipo || "oficial" }));
-  const itens = [...marcar(nOn, "Brasil"), ...marcar(nOff, "Exterior")].sort((a, b) => b.data.localeCompare(a.data));
+  const itens = [...marcar(nOn, "Brasil"), ...marcar(nOff, "Mundo")].sort((a, b) => b.data.localeCompare(a.data));
   const agenda = { eventos: [...((aOn && aOn.eventos) || []), ...((aOff && aOff.eventos) || [])].sort((a, b) => a.data.localeCompare(b.data)) };
   const categorias = { ...(quer("on") ? CATEGORIAS_AGENDA : {}), ...(quer("off") ? CATEGORIAS_OFF : {}) };
   const fontes = (tipo) => [...new Set(itens.filter((n) => n.tipo === tipo).map((n) => n.fonte))].sort();
-  const filtros = [["todas", "Todas"], ...(lado === "cons" ? [["origem:Brasil", "Brasil"], ["origem:Exterior", "Exterior"]] : []),
-    ["tipo:mercado", "Mercado"], ["tipo:oficial", "Oficiais"]];
-  let filtro = "tipo:mercado", janela = 30, categoria = "todos", editoria = "todas";
+  const filtros = [["todas", "Todas"], ["tipo:mercado", "Mercado"], ["tipo:oficial", "Oficiais"]];
+  let filtro = "tipo:mercado", janela = 30, categoria = "todos", editoria = "todas", origem = "tudo";
+  // Consolidado: botões para separar as notícias do Brasil e do Mundo
+  const ORIGENS = [["tudo", "Tudo"], ["Brasil", "Brasil"], ["Mundo", "Mundo"]];
   const EDITORIAS = [["todas", "Todas"], ["politica", "Política"], ["economia", "Economia e finanças"], ["empresas", "Empresas"]];
   const comEditoria = lado !== "off";
   const titulo = { on: "Notícias e agenda", off: "Mundo · Notícias e agenda", cons: "Consolidado · Notícias e agenda" }[lado];
@@ -1395,7 +1396,9 @@ async function paginaNoticias(lado = "on") {
   // Agenda em cima e notícias embaixo, cada uma na largura toda e mais alta (Brasil, Mundo e Consolidado)
   const painelNoticias = `
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
-        ${comEditoria ? `<div class="seletor seletor-editoria" id="filtro-editoria">${EDITORIAS.map(([k, r]) => `<button data-k="${k}" class="${k === editoria ? "ativo" : ""}">${r}</button>`).join("")}</div>` : ""}</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        ${lado === "cons" ? `<div class="seletor seletor-editoria" id="filtro-origem">${ORIGENS.map(([k, r]) => `<button data-k="${k}" class="${k === origem ? "ativo" : ""}">${r}</button>`).join("")}</div>` : ""}
+        ${comEditoria ? `<div class="seletor seletor-editoria" id="filtro-editoria">${EDITORIAS.map(([k, r]) => `<button data-k="${k}" class="${k === editoria ? "ativo" : ""}">${r}</button>`).join("")}</div>` : ""}</div></div>
         <div class="seletor" id="filtro-fonte" style="margin-bottom:8px">${filtros.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}
           ${[...fontes("mercado"), ...fontes("oficial")].map((f) => `<button data-k="fonte:${esc(f)}">${esc(f)}</button>`).join("")}</div>
         <div id="lista-noticias"></div>
@@ -1417,6 +1420,7 @@ async function paginaNoticias(lado = "on") {
     ${lado === "on" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
     <div class="grade grade-empilhada">${painelAgenda}${painelNoticias}</div>`;
   const passa = (n) => {
+    if (lado === "cons" && origem !== "tudo" && n.origem !== origem) return false;
     if (comEditoria && editoria !== "todas" && (n.categoria || "economia") !== editoria) return false;
     if (filtro === "todas") return true;
     const [campo, valor] = filtro.split(":");
@@ -1431,6 +1435,7 @@ async function paginaNoticias(lado = "on") {
   });
   seletor("filtro-fonte", (b) => { filtro = b.dataset.k; desenharNoticias(); });
   if (comEditoria) seletor("filtro-editoria", (b) => { editoria = b.dataset.k; desenharNoticias(); });
+  if (lado === "cons") seletor("filtro-origem", (b) => { origem = b.dataset.k; desenharNoticias(); });
   seletor("filtro-ag", (b) => { categoria = b.dataset.k; desenharAgenda(); });
   seletor("janela-ag", (b) => { janela = Number(b.dataset.d); desenharAgenda(); });
   desenharNoticias();
