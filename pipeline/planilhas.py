@@ -42,7 +42,7 @@ def _tabela(series, chaves):
 
 
 def _leia_me(escritor, linhas):
-    pd.DataFrame({"Bloomberg de pobre": linhas}).to_excel(escritor, sheet_name="Leia-me", index=False)
+    pd.DataFrame({"Bloomberg de Pobre": linhas}).to_excel(escritor, sheet_name="Leia-me", index=False)
 
 
 def _ajustar_colunas(escritor):

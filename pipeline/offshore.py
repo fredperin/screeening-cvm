@@ -24,7 +24,7 @@ import requests
 
 from pipeline import DIR_DADOS_SITE
 
-CABECALHO = {"User-Agent": "Mozilla/5.0 (Bloomberg de pobre; uso pessoal)"}
+CABECALHO = {"User-Agent": "Mozilla/5.0 (Bloomberg de Pobre; uso pessoal)"}
 FUSO_BR = timezone(timedelta(hours=-3))
 ANOS_HISTORICO = 10
 DATAS_REFERENCIA = {"hoje": 0, "1 semana": 7, "1 mês": 30, "6 meses": 182, "1 ano": 365}
