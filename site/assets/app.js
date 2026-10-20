@@ -455,7 +455,8 @@ let FC_SEL = "todos";
 let DIV_IFRS16 = false;
 let ABA_EMPRESA = "negocio";
 let NOTICIAS_CACHE = null;
-const ABAS_EMPRESA = [["negocio", "Negócio"], ["eventos", "Eventos e notícias"], ["resultados", "Resultados"], ["indicadores", "Indicadores"], ["dividendos", "Dividendos"]];
+const ABAS_EMPRESA = [["negocio", "Negócio"], ["eventos", "Eventos e notícias"], ["cotacao", "Cotação"], ["resultados", "Resultados"], ["graficos", "Gráficos"], ["dividendos", "Dividendos"]];
+let JANELA_COTACAO = 5;
 const INFO_EMPRESA = {
   "Receita líquida": "receita", "Lucro bruto e margem bruta": "lucro_bruto", "EBITDA e margem EBITDA": "ebitda",
   "EBIT e margem EBIT": "ebit", "Lucro líquido e margem líquida": "lucro_liquido", "Resultado financeiro": "resultado_financeiro",
@@ -500,7 +501,8 @@ async function paginaEmpresa(id) {
   app.innerHTML = `
     <div class="cabecalho">
       <div><h1>${esc(emp.tickers.join(" / "))} · ${esc(emp.nome)}</h1>
-        <div class="sub">${esc(emp.setor || "")} · CNPJ ${esc(emp.cnpj)}${m.segmento ? ` · ${esc(m.segmento)}` : ""} · último período ${dataBR(emp.trimestral.periodos.slice(-1)[0])}</div></div>
+        <div class="sub">${esc(emp.setor || "")} · CNPJ ${esc(emp.cnpj)}${m.segmento ? ` · ${esc(m.segmento)}` : ""} · último período ${dataBR(emp.trimestral.periodos.slice(-1)[0])}
+          ${seloResultado(proxResultado)}</div></div>
       <a class="botao" href="downloads/${encodeURIComponent(id)}.xlsx" download>Baixar Excel</a>
     </div>
     <div class="grade-cartoes">
@@ -510,21 +512,18 @@ async function paginaEmpresa(id) {
       ${cartao("P/L", vezes(mc && pos(L("lucro_liquido")) ? mc / L("lucro_liquido") : null), "LTM")}
       ${cartao("P/VP", vezes(mc && pos(L("pl")) ? mc / L("pl") : null), "")}
       ${cartao("EV/EBITDA", vezes(ev && pos(L("ebitda")) ? ev / L("ebitda") : null), "LTM")}
-      ${cartao("EV/EBIT", vezes(ev && pos(L("ebit")) ? ev / L("ebit") : null), "LTM")}
       ${cartao("FCF yield", pct(mc && L("fcf") != null ? L("fcf") / mc : null), "FCF LTM ÷ market cap")}
       ${cartao("DY 12m", pct(m.dy_12m, 2), "proventos B3 (data-com 12m) ÷ preço atual")}
       ${cartao("ROE / ROIC", `${pct(L("roe"))} / ${pct(L("roic"))}`, "LTM")}
-      ${proxResultado ? cartao("Próximo resultado", proxResultado.atrasado ? "atrasado" : proxResultado.data_estimada ? dataBR(proxResultado.data_estimada) : `até ${dataBR(proxResultado.prazo_legal)}`,
-        `${proxResultado.documento} · ${proxResultado.data_estimada ? "estimado pelo ano anterior" : "prazo legal"}`) : ""}
     </div>
     <div class="abas" id="abas-empresa">${ABAS_EMPRESA.map(([k, r]) => `<button data-k="${k}" class="${k === ABA_EMPRESA ? "ativo" : ""}">${r}</button>`).join("")}</div>
     <div id="aba-empresa"></div>`;
 
   const nt = emp.notas || {};
   const ABAS = {
-    resultados: () => {
+    graficos: () => {
       document.getElementById("aba-empresa").innerHTML = `
-        <div class="cabecalho"><h2 style="margin:0">Resultados</h2>
+        <div class="cabecalho"><h2 style="margin:0">Gráficos</h2>
           <div class="seletor" id="visao">${["trimestral", "semestral", "anual"].map((v) => `<button data-v="${v}" class="${v === VISAO ? "ativo" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</div></div>
         <div class="grade" id="graficos-empresa"></div>
         <div class="secao painel nota" id="notas">
@@ -543,9 +542,20 @@ async function paginaEmpresa(id) {
       });
       desenharGraficosEmpresa(emp);
     },
-    indicadores: () => {
-      document.getElementById("aba-empresa").innerHTML = `<div class="painel"><h2>Indicadores — anuais e último LTM</h2><div class="rolagem" id="tab-ind"></div></div>`;
+    resultados: () => {
+      // Espaço do painel de indicadores (em montagem) em cima; DRE e balanço resumidos com análise vertical embaixo
+      document.getElementById("aba-empresa").innerHTML = `<div class="grade grade-empilhada">
+        <div class="painel" id="painel-indicadores"><h2>Painel de indicadores</h2>
+          <p class="sub">Espaço reservado para o painel de indicadores (em montagem).</p>
+          <details><summary class="sub" style="cursor:pointer">Tabela de indicadores atual (anos fechados e LTM)</summary><div class="rolagem" id="tab-ind"></div></details></div>
+        <div class="painel" data-info="dre_resumida"><h2>DRE resumida · R$ milhões e análise vertical (% da receita)</h2><div class="rolagem" id="tab-dre"></div></div>
+        <div class="painel" data-info="balanco_resumido"><h2>Balanço resumido · R$ milhões e análise vertical (% do ativo total)</h2><div class="rolagem" id="tab-bp"></div></div></div>`;
       desenharIndicadores(emp);
+      desenharDreBalanco(emp);
+    },
+    cotacao: () => {
+      document.getElementById("aba-empresa").innerHTML = `<div id="cotacao-empresa"></div>`;
+      desenharCotacao(prov, m);
     },
     dividendos: () => {
       document.getElementById("aba-empresa").innerHTML = `<div class="grade" id="dividendos"></div>`;
@@ -761,14 +771,12 @@ function redesenharDividendos(primeira = false) {
           ? "Proventos anunciados (dividendos + JCP) por ação, somados pelo ano da data-com — fonte B3. DY do ano = soma, provento a provento, de valor ÷ preço de fechamento na data-com (também da B3)."
           : "Proventos por ação somados pelo ano da data ex — fonte Yahoo Finance (não oficial). DY do ano = proventos ÷ preço médio semanal do ano (Yahoo)."}
           Não é o valor pago na DFC: esse está no gráfico ao lado, pelo caixa efetivamente pago no ano.</div></div>
-      <div class="painel"><h2>Proventos anunciados (B3) — últimos 3 anos</h2><div class="rolagem rolagem-y"><table class="tabela">
+      <div class="painel largo"><h2>Proventos anunciados (B3) — últimos 3 anos</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Tipo</th><th>Classe</th><th>Data-com</th><th>Pagamento</th><th>R$/ação</th><th>Preço data-com</th><th>Aprovado</th></tr>
         ${b3.length ? b3.map((p) => `<tr><td>${esc(p.tipo)}</td><td>${esc(p.classe)}</td><td>${dataBR(p.data_com)}</td><td>${dataBR(p.pagamento)}</td><td>${num(p.valor, 6)}</td><td>${p.preco_data_com ? num(p.preco_data_com, 2) : "—"}</td><td class="sub">${dataBR(p.aprovado)}</td></tr>`).join("")
           : `<tr><td colspan="7" class="sub">A B3 não informou proventos.</td></tr>`}
       </table></div><div class="nota">Proventos 12m (${esc(prov && prov.classe_referencia || "classe de referência")}): R$ ${num(m.proventos_12m_por_acao, 4)} por ação, data-com nos últimos 12 meses.
-        A data de pagamento só é informada pela B3 para cerca dos últimos 12 meses.</div></div>
-      <div class="painel" data-info="cotacao"><h2>Cotação semanal ${esc(prov && prov.papel_referencia ? "· " + prov.papel_referencia : "")}</h2><div class="grafico" id="gd-cot"></div>
-        <div class="nota">Fechamento semanal dos últimos 10 anos, sem ajuste por proventos — fonte Yahoo Finance (não oficial).</div></div>`;
+        A data de pagamento só é informada pela B3 para cerca dos últimos 12 meses.</div></div>`;
   }
   grafico(document.getElementById("gd-dfc"), { rotulos: rot, eixoDir: "pct", series: [
     { nome: "Dividendos + JCP pagos", valores: A.div_pagos, cor: COR.verde },
@@ -777,9 +785,120 @@ function redesenharDividendos(primeira = false) {
   grafico(document.getElementById("gd-acao"), { rotulos: anos, eixoEsq: "preco", eixoDir: "pct", janela: 12, series: [
     { nome: "R$ por ação", valores: anos.map((a) => porAno[a]), cor: COR.verde },
     { nome: "DY", valores: anos.map((a) => { if (dyAno[a] != null) return dyAno[a]; const p = precoMedio(a); return p ? porAno[a] / p : null; }), tipo: "line", eixo: "dir", cor: COR.ambar }] });
-  if (cot) grafico(document.getElementById("gd-cot"), { xTempo: true, eixoEsq: "preco", series: [
-    { nome: "Fechamento", valores: cot.datas.map((d, i) => [d, cot.fechamento[i]]), tipo: "line", cor: COR.ambar }] });
-  else document.getElementById("gd-cot").innerHTML = `<p class="sub">Cotação histórica indisponível.</p>`;
+}
+
+// Selo ao lado de "último período": resultados em dia ou atrasados (calendário de resultados da CVM)
+function seloResultado(p) {
+  if (!p) return "";
+  const periodo = p.proximo_periodo ? rotuloTrimestre(p.proximo_periodo) : "";
+  if (p.atrasado) return `<span class="selo-resultado atraso" title="${esc(p.documento)} ${periodo}: prazo legal ${dataBR(p.prazo_legal)} já passou e a CVM ainda não recebeu">
+    Resultado atrasado · ${esc(p.documento)} ${periodo} (prazo ${dataBR(p.prazo_legal)})</span>`;
+  const quando = p.data_estimada ? `previsto ${dataBR(p.data_estimada)}` : `até ${dataBR(p.prazo_legal)}`;
+  return `<span class="selo-resultado ok" title="Próxima divulgação: ${esc(p.documento)} ${periodo} — ${p.data_estimada ? "data estimada pela divulgação do ano anterior" : "prazo legal"}; prazo legal ${dataBR(p.prazo_legal)}">
+    Em dia · próximo ${esc(p.documento)} ${periodo} ${quando}</span>`;
+}
+const rotuloTrimestre = (iso) => `${Math.ceil(Number(iso.slice(5, 7)) / 3)}T${iso.slice(2, 4)}`;
+
+// Aba Cotação: cotação semanal (Yahoo, não oficial) com janela escolhida e variações no período
+function desenharCotacao(prov, m) {
+  const area = document.getElementById("cotacao-empresa");
+  const cot = prov && prov.cotacao_semanal && prov.cotacao_semanal.datas && prov.cotacao_semanal.datas.length ? prov.cotacao_semanal : null;
+  const ref = prov && prov.papel_referencia;
+  const atual = ref && m.cotacoes ? m.cotacoes[ref] : null;
+  if (!cot) { area.innerHTML = `<div class="painel"><h2>Cotação</h2><p class="sub">Cotação histórica indisponível.</p></div>`; return; }
+  const pares = cot.datas.map((d, i) => [d, cot.fechamento[i]]).filter((p) => p[1] != null);
+  const ultimo = atual && atual.preco ? { d: atual.data, v: atual.preco } : { d: pares[pares.length - 1][0], v: pares[pares.length - 1][1] };
+  const antes = (dias) => { const lim = new Date(`${ultimo.d}T12:00:00`); lim.setDate(lim.getDate() - dias); const iso = lim.toISOString().slice(0, 10);
+    const p = [...pares].reverse().find(([d]) => d <= iso); return p ? p[1] : null; };
+  const inicioAno = (() => { const p = [...pares].reverse().find(([d]) => d < `${ultimo.d.slice(0, 4)}-01-01`); return p ? p[1] : null; })();
+  const varia = (base) => (base ? ultimo.v / base - 1 : null);
+  const ult52 = pares.filter(([d]) => d >= new Date(new Date(`${ultimo.d}T12:00:00`).getTime() - 365 * 864e5).toISOString().slice(0, 10)).map((p) => p[1]);
+  const vcart = (rot, v, sub) => cartao(rot, v == null ? "—" : `<span class="${classeSinal(v)}">${num(v * 100, 1)}%</span>`, sub);
+  area.innerHTML = `
+    <div class="grade-cartoes">
+      ${cartao(`Preço ${esc(ref || "")}`, `R$ ${num(ultimo.v, 2)}`, atual ? `B3 · ${dataBR(atual.data)}` : `fechamento semanal · ${dataBR(ultimo.d)}`)}
+      ${vcart("1 mês", varia(antes(30)), "variação")}
+      ${vcart("No ano", varia(inicioAno), `desde o fechamento de ${Number(ultimo.d.slice(0, 4)) - 1}`)}
+      ${vcart("12 meses", varia(antes(365)), "variação")}
+      ${vcart("5 anos", varia(antes(5 * 365)), "variação")}
+      ${cartao("Mín. / máx. 52 semanas", ult52.length ? `R$ ${num(Math.min(...ult52), 2)} / ${num(Math.max(...ult52), 2)}` : "—", "fechamentos semanais")}
+    </div>
+    <div class="grade"><div class="painel largo" data-info="cotacao"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Cotação semanal${ref ? ` · ${esc(ref)}` : ""}</h2>
+      <div class="seletor" id="janela-cot">${[[1, "1A"], [3, "3A"], [5, "5A"], [10, "10A"]].map(([a, r]) => `<button data-a="${a}" class="${a === JANELA_COTACAO ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
+      <div class="grafico alto" id="gc-cotacao"></div>
+      <div class="nota">Fechamento semanal dos últimos 10 anos, sem ajuste por proventos — fonte Yahoo Finance (não oficial). Preço atual e variação do dia: B3.
+        Variações calculadas sobre os fechamentos semanais, sem somar proventos.</div></div></div>`;
+  const desenhar = () => {
+    limparGraficos();
+    grafico(document.getElementById("gc-cotacao"), { xTempo: true, eixoEsq: "preco", inicioTempo: desde(JANELA_COTACAO), deslizante: true, series: [
+      { nome: "Fechamento (R$)", valores: pares, tipo: "line", cor: COR.ambar }] });
+  };
+  document.getElementById("janela-cot").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    JANELA_COTACAO = Number(b.dataset.a);
+    document.querySelectorAll("#janela-cot button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenhar();
+  });
+  desenhar();
+}
+
+// Aba Resultados: DRE e balanço resumidos — últimos 4 anos fechados + LTM, cada valor com a análise vertical ao lado
+function desenharDreBalanco(emp) {
+  const anual = emp.anual, ltm = emp.ltm, mesFim = emp.mes_fim_exercicio || 12;
+  const cols = anual.periodos.map((p, i) => ({ v: anual, i, titulo: rotuloPeriodo(p, "anual", mesFim) })).slice(-4);
+  const nl = ltm.periodos.length - 1;
+  if (nl >= 0 && ltm.periodos[nl] !== anual.periodos[anual.periodos.length - 1]) cols.push({ v: ltm, i: nl, titulo: `LTM ${rotuloPeriodo(ltm.periodos[nl], "trimestral")}`, ltm: true });
+  const g = (c, k) => { const x = (c.v.series[k] || [])[c.i]; return x == null || !isFinite(x) ? null : x; };
+  const soma = (...xs) => (xs.some((x) => x == null) ? null : xs.reduce((a, b) => a + b, 0));
+  const mi = (x) => (x == null ? "—" : num(x / 1e6, 0));
+  const av = (x, base) => (x == null || !base ? "—" : `${num((x / base) * 100, 1)}%`);
+  const tabela = (linhas, base, rotuloBase) => `<table class="tabela tabela-av">
+    <tr><th style="text-align:left">R$ milhões</th>${cols.map((c) => `<th>${c.titulo}</th><th class="sub">AV</th>`).join("")}</tr>
+    ${linhas.map(([nome, f, estilo]) => `<tr class="${estilo || ""}"><td style="text-align:left">${nome}</td>${cols.map((c) => { const x = f(c); return `<td>${mi(x)}</td><td class="sub">${av(x, base(c))}</td>`; }).join("")}</tr>`).join("")}
+  </table>`;
+  if (!cols.length) { ["tab-dre", "tab-bp"].forEach((id) => (document.getElementById(id).innerHTML = `<p class="sub">Sem anos fechados nem LTM disponíveis.</p>`)); return; }
+
+  const receita = (c) => g(c, "receita"), lb = (c) => g(c, "lucro_bruto"), ebit = (c) => g(c, "ebit"), da = (c) => g(c, "da");
+  const ebitda = (c) => (g(c, "ebitda") != null ? g(c, "ebitda") : soma(ebit(c), da(c)));
+  document.getElementById("tab-dre").innerHTML = tabela([
+    ["Receita líquida", receita, "total"],
+    ["(−) Custos", (c) => soma(lb(c), receita(c) == null ? null : -receita(c))],
+    ["Lucro bruto", lb, "subtotal"],
+    ["(−) Despesas operacionais, sem D&amp;A", (c) => soma(ebitda(c), lb(c) == null ? null : -lb(c))],
+    ["EBITDA", ebitda, "subtotal"],
+    ["(−) Depreciação e amortização", (c) => (da(c) == null ? null : -Math.abs(da(c)))],
+    ["EBIT", ebit, "subtotal"],
+    ["(+/−) Resultado financeiro", (c) => g(c, "res_fin")],
+    ["Lucro antes do IR (LAIR)", (c) => g(c, "lair"), "subtotal"],
+    ["(−) IR e CSLL", (c) => g(c, "ir")],
+    ["Lucro líquido", (c) => g(c, "lucro_liquido"), "total"],
+  ], receita) + `<div class="nota">Anos fechados (DFP) e últimos 12 meses (LTM). AV = análise vertical, em % da receita líquida do período.
+    A CVM não separa a D&amp;A entre custos e despesas: as despesas aparecem sem a D&amp;A (EBITDA − lucro bruto) e a D&amp;A total, na linha própria
+    (vem da DFC). Despesas operacionais incluem equivalência patrimonial e outras receitas/despesas operacionais.
+    Lucro líquido consolidado, inclusive a parte dos minoritários.</div>`;
+
+  const at = (c) => g(c, "ativo_total"), ac = (c) => g(c, "ativo_circ"), pc = (c) => g(c, "passivo_circ"), pl = (c) => g(c, "pl");
+  const caixa = (c) => (g(c, "caixa") == null && g(c, "aplicacoes") == null ? null : (g(c, "caixa") || 0) + (g(c, "aplicacoes") || 0));
+  const pnc = (c) => soma(at(c), pc(c) == null ? null : -pc(c), pl(c) == null ? null : -pl(c));
+  document.getElementById("tab-bp").innerHTML = tabela([
+    ["Caixa e aplicações financeiras", caixa],
+    ["Outros ativos circulantes", (c) => soma(ac(c), caixa(c) == null ? null : -caixa(c))],
+    ["Ativo circulante", ac, "subtotal"],
+    ["Ativo não circulante", (c) => soma(at(c), ac(c) == null ? null : -ac(c)), "subtotal"],
+    ["Ativo total", at, "total"],
+    ["Empréstimos e financiamentos (CP)", (c) => g(c, "emprest_cp")],
+    ["Outros passivos circulantes", (c) => soma(pc(c), g(c, "emprest_cp") == null ? null : -g(c, "emprest_cp"))],
+    ["Passivo circulante", pc, "subtotal"],
+    ["Empréstimos e financiamentos (LP)", (c) => g(c, "emprest_lp")],
+    ["Outros passivos não circulantes", (c) => soma(pnc(c), g(c, "emprest_lp") == null ? null : -g(c, "emprest_lp"))],
+    ["Passivo não circulante", pnc, "subtotal"],
+    ["Patrimônio líquido", pl, "subtotal"],
+    ["Passivo total + PL", at, "total"],
+    ["Memória: arrendamentos (IFRS 16, CP + LP)", (c) => g(c, "arrendamentos"), "memoria"],
+    ["Memória: dívida líquida (sem IFRS 16)", (c) => g(c, "divida_liquida"), "memoria"],
+  ], at) + `<div class="nota">Posição no fim de cada exercício; na coluna LTM, o balanço do último trimestre. AV em % do ativo total.
+    Empréstimos incluem debêntures. Os arrendamentos (IFRS 16) estão dentro dos "outros passivos" e aparecem também como memória.
+    Passivo não circulante = ativo total − passivo circulante − PL (PL consolidado, com minoritários).</div>`;
 }
 
 /* ============ Macro ============ */

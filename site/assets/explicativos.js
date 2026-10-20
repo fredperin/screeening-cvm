@@ -108,6 +108,22 @@ window.EXPLICATIVOS = {
       </ul>
       <p class="sub">Fonte: IBGE, séries 7326 e 1207 do SGS do Banco Central.</p>`,
   },
+  dre_resumida: {
+    titulo: "DRE resumida com análise vertical",
+    html: `<p>Demonstração do resultado dos últimos 4 exercícios fechados e dos últimos 12 meses (LTM), em R$ milhões.
+      Ao lado de cada valor, a <b>análise vertical (AV)</b>: quanto a linha representa da receita líquida do período
+      (ex.: AV do lucro bruto = margem bruta).</p>
+      <p>EBITDA = EBIT + depreciação e amortização (D&amp;A da demonstração do fluxo de caixa). Como a CVM não separa a D&amp;A
+      entre custos e despesas, a linha de despesas aparece sem a D&amp;A, para a conta fechar até o EBITDA.</p>
+      <p class="sub">Fonte: CVM — demonstrações financeiras padronizadas (DFP e ITR), consolidado.</p>`,
+  },
+  balanco_resumido: {
+    titulo: "Balanço resumido com análise vertical",
+    html: `<p>Principais grupos do balanço no fim de cada exercício (e do último trimestre, na coluna LTM), em R$ milhões, com a
+      <b>análise vertical</b> em % do ativo total. Empréstimos e financiamentos incluem debêntures; "outros" são calculados por
+      diferença entre o grupo e as linhas destacadas.</p>
+      <p class="sub">Fonte: CVM — demonstrações financeiras padronizadas (DFP e ITR), consolidado.</p>`,
+  },
   fiscal_divida: {
     titulo: "Dívida pública: bruta (DBGG) e líquida (DLSP)",
     html: `<p><b>Dívida bruta do governo geral (DBGG):</b> tudo o que governo federal, INSS, estados e municípios devem
