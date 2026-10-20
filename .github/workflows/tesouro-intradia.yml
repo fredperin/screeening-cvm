@@ -1,6 +1,6 @@
 name: R.V. Mapp - Tesouro Direto ao longo do dia
 
-# Três atualizações por dia útil só dos títulos públicos (preços do momento do Tesouro Direto)
+# Três atualizações por dia útil dos títulos públicos (preços do momento do Tesouro Direto) e das manchetes
 on:
   schedule:
     - cron: "15 13,16,20 * * 1-5"   # 10:15, 13:15 e 17:15 (horário de Brasília), segunda a sexta
@@ -58,7 +58,7 @@ jobs:
           key: rvmapp-dados-${{ github.run_id }}
           restore-keys: rvmapp-dados-
 
-      - name: Atualizar Tesouro Direto
+      - name: Atualizar Tesouro Direto e manchetes
         if: steps.diaria.outputs.seguir == 'sim'
         run: python -m pipeline.intradia
         env:

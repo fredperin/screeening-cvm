@@ -553,20 +553,21 @@ async function paginaEmpresa(id) {
     },
     negocio: () => {
       document.getElementById("aba-empresa").innerHTML = `<div id="resumo-aprofundado"></div>
-        <div class="grade"><div class="painel" id="ficha"></div><div class="painel" id="negocio"></div></div>`;
+        <div class="grade grade-empilhada"><div class="painel" id="ficha"></div><div class="painel" id="negocio"></div></div>`;
       desenharFicha(ficha);
       desenharNegocio(negocio, resumo);
     },
     eventos: () => {
       const doEmp = ((NOTICIAS_CACHE && NOTICIAS_CACHE.itens) || []).filter((n) => (n.empresas || []).includes(id));
+      const diasHist = (NOTICIAS_CACHE && NOTICIAS_CACHE.dias) || 7;
       document.getElementById("aba-empresa").innerHTML = `<div class="grade grade-empilhada">
         <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Eventos (CVM)</h2>
           <div class="seletor" id="sel-ev">${OPCOES_EVENTOS.map(([k, r]) => `<button data-k="${k}" class="${k === "todos" ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
           <div class="rolagem rolagem-y" id="lista-eventos"></div>
           <div class="nota">Fatos relevantes, comunicados ao mercado e avisos aos acionistas dos últimos 3 anos, com link para o documento oficial na CVM.</div></div>
-        <div class="painel"><h2>Notícias que citam a empresa</h2>${listaNoticias(doEmp, 150)}
-          <div class="nota">Manchetes que citam o ticker ou o nome de pregão, da mais recente para a mais antiga: jornais e sites de mercado
-            (últimos 7 dias) e fontes oficiais (últimas semanas).</div></div></div>`;
+        <div class="painel"><h2>Notícias que citam a empresa</h2>${listaNoticias(doEmp, 300)}
+          <div class="nota">Manchetes que citam o ticker ou o nome de pregão, da mais recente para a mais antiga, nas mesmas fontes da seção
+            Notícias e agenda (jornais, sites de mercado e fontes oficiais), guardadas por até ${diasHist} dias. Só a manchete, com link para a matéria.</div></div></div>`;
       desenharEventos(eventos, "todos");
       document.getElementById("sel-ev").addEventListener("click", (ev) => {
         const b = ev.target.closest("button"); if (!b) return;
@@ -584,7 +585,7 @@ async function paginaEmpresa(id) {
   document.getElementById("abas-empresa").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (b) mostrar(b.dataset.k);
   });
-  NOTICIAS_CACHE = await dados("dados/noticias.json").catch(() => null);
+  NOTICIAS_CACHE = await dados("dados/noticias_empresas.json").catch(() => dados("dados/noticias.json").catch(() => null));
   mostrar(ABA_EMPRESA);
 }
 

@@ -11,7 +11,12 @@ de origem (o feed da seção ou a seção no endereço da matéria); manchete de
 empresa da lista vai para empresas. As que citam uma empresa do universo (pelo ticker ou pelo nome
 de pregão da B3) ficam ligadas a ela.
 
-Saída: site/dados/noticias.json. Uso: py -m pipeline.noticias
+Os feeds só trazem as últimas matérias de cada fonte; por isso a coleta roda na atualização diária
+e mais 3x ao dia (junto com o Tesouro) e cada rodada soma as manchetes novas às já guardadas
+(o arquivo local e o publicado no site). As manchetes ligadas a empresas ficam guardadas por
+DIAS_EMPRESAS dias em noticias_empresas.json, usado na aba "Eventos e notícias" de cada empresa.
+
+Saída: site/dados/noticias.json e site/dados/noticias_empresas.json. Uso: py -m pipeline.noticias
 """
 
 import html
@@ -27,7 +32,9 @@ from pipeline import DIR_DADOS_SITE
 CABECALHO = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128 Safari/537.36"}
 DIAS = 45          # oficiais
 DIAS_MERCADO = 7   # jornais: volume alto, só a última semana
-MAXIMO = 1500
+MAXIMO = 3000
+DIAS_EMPRESAS = 180  # histórico das manchetes ligadas a empresas
+MAXIMO_EMPRESAS = 12000
 FUSO_BR = timezone(timedelta(hours=-3))
 
 # (fonte, endereço, categoria): "url" = categoria pela seção no endereço de cada matéria
@@ -181,6 +188,27 @@ def _cita(titulo, regras):
     return False
 
 
+def _anteriores(nome):
+    """Manchetes já guardadas: arquivo local e o publicado no site (a rodada anterior pode ter sido a do meio do dia)."""
+    import os
+    itens = []
+    arq = DIR_DADOS_SITE / nome
+    if arq.exists():
+        try:
+            itens += json.loads(arq.read_text(encoding="utf-8")).get("itens", [])
+        except ValueError:
+            pass
+    dono, _, repo = os.environ.get("GITHUB_REPOSITORY", "fredperin/screeening-cvm").partition("/")
+    try:
+        r = requests.get(f"https://{dono}.github.io/{repo}/dados/{nome}", headers=CABECALHO, timeout=30)
+        if r.ok:
+            itens += r.json().get("itens", [])
+    except (requests.RequestException, ValueError):
+        pass
+    # só manchetes no formato atual (com editoria)
+    return [i for i in itens if i.get("categoria") and i.get("link") and i.get("data")]
+
+
 def gerar():
     hoje = date.today()
     itens, falhas = [], []
@@ -195,23 +223,43 @@ def gerar():
     except Exception as e:
         falhas.append(f"IBGE: {e!r}"[:200])
 
-    limites = {"oficial": (hoje - timedelta(days=DIAS)).isoformat(), "mercado": (hoje - timedelta(days=DIAS_MERCADO)).isoformat()}
-    unicos = {i["link"]: i for i in itens if i["data"][:10] >= limites[i["tipo"]]}
-    itens = sorted(unicos.values(), key=lambda i: i["data"], reverse=True)[:MAXIMO]
+    novas = len(itens)
+    antigas = _anteriores("noticias.json") + _anteriores("noticias_empresas.json")
     apelidos = _apelidos()
-    for i in itens:
+
+    def marcar(i):
         # nomes só valem com inicial maiúscula (evita "vale a pena"); os ambíguos, também não no começo da manchete
         i["empresas"] = [id_ for id_, regras in apelidos if _cita(i["titulo"], regras)]
-        if i["empresas"] and i["categoria"] == "economia":  # manchete de economia sobre uma empresa da lista
+        # manchete de economia sobre uma empresa da lista vai para empresas; a editoria de origem fica guardada
+        if i["empresas"] and i["categoria_origem"] == "economia":
             i["categoria"] = "empresas"
+        else:
+            i["categoria"] = i["categoria_origem"]
+        return i
+
+    # a coleta nova vem por último: vale a versão mais recente de cada link
+    unicos = {}
+    for i in antigas + itens:
+        i = dict(i)
+        i.setdefault("categoria_origem", i["categoria"])
+        unicos[i["link"]] = marcar(i)
+    todos = sorted(unicos.values(), key=lambda i: i["data"], reverse=True)
+
+    limites = {"oficial": (hoje - timedelta(days=DIAS)).isoformat(), "mercado": (hoje - timedelta(days=DIAS_MERCADO)).isoformat()}
+    itens = [i for i in todos if i["data"][:10] >= limites[i["tipo"]]][:MAXIMO]
+    limite_emp = (hoje - timedelta(days=DIAS_EMPRESAS)).isoformat()
+    das_empresas = [i for i in todos if i["empresas"] and i["data"][:10] >= limite_emp][:MAXIMO_EMPRESAS]
+    agora = datetime.now(FUSO_BR).isoformat(timespec="minutes")
     (DIR_DADOS_SITE / "noticias.json").write_text(json.dumps(
-        {"gerado_em": datetime.now(FUSO_BR).isoformat(timespec="minutes"), "itens": itens, "falhas": falhas},
-        ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+        {"gerado_em": agora, "itens": itens, "falhas": falhas}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    (DIR_DADOS_SITE / "noticias_empresas.json").write_text(json.dumps(
+        {"gerado_em": agora, "dias": DIAS_EMPRESAS, "itens": das_empresas}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     por_fonte, por_cat = {}, {}
     for i in itens:
         por_fonte[i["fonte"]] = por_fonte.get(i["fonte"], 0) + 1
         por_cat[i["categoria"]] = por_cat.get(i["categoria"], 0) + 1
-    print(f"✅ notícias: {len(itens)} manchetes {por_cat} {por_fonte}; falhas: {falhas or 'nenhuma'}")
+    print(f"✅ notícias: {novas} coletadas agora; {len(itens)} no ar {por_cat} {por_fonte}; "
+          f"{len(das_empresas)} ligadas a empresas ({DIAS_EMPRESAS} dias); falhas: {falhas or 'nenhuma'}")
     if len(falhas) == len(FEEDS) + len(FEEDS_MERCADO) + 1:
         raise RuntimeError("nenhuma fonte de notícias respondeu")
     return len(itens)
