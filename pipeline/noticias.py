@@ -43,9 +43,30 @@ FEEDS_MERCADO = {
 }
 URL_IBGE = "https://servicodados.ibge.gov.br/api/v3/noticias/?qtd=60&tipo=noticia,release"
 
-# nomes de pregão que são palavras comuns e gerariam ligações erradas
-NOMES_IGNORADOS = {"BRASIL", "BANCO", "ENERGIA", "SANEAMENTO", "GAS", "ALIANCA", "CIA", "MELHOR", "UNIAO", "OURO",
-                   "SANTOS", "FUTURO", "CENTRAL", "NORTE", "SUL", "VALOR"}
+# Ligação manchete -> empresa: ticker, nome de pregão da B3 sem sufixos e nomes pelos quais a imprensa chama a empresa
+SUFIXOS = {"S/A", "S.A.", "S.A", "SA", "ON", "PN", "PART", "PARTICIPACOES"}
+GENERICOS = {"BRASIL", "BANCO", "ENERGIA", "SANEAMENTO", "GAS", "CIA", "GRUPO", "REDE", "SAO", "LOG", "MELHOR", "UNIAO",
+             "OURO", "SANTOS", "FUTURO", "CENTRAL", "NORTE", "SUL", "VALOR", "ACO", "PAR", "TEC", "MULTI"}
+# nomes que também são palavras comuns: só valem com inicial maiúscula fora do começo da manchete (ou em maiúsculas)
+AMBIGUOS = {"VALE", "RUMO", "VAMOS", "TIM", "AZUL", "TENDA", "VESTE", "VIVER", "EVEN", "VALID", "MOVIDA", "CRISTAL", "ESTRELA",
+            "MUNDIAL", "RENOVA", "NATURA", "DIRECIONAL", "COMPASS", "HERCULES", "CEDRO", "MILLS", "ROMI", "BRAVA", "VIVO", "PRIO",
+            "DESKTOP", "ALLIED", "DOTZ", "MITRE", "MATER DEI", "SER EDUCA", "VITTIA", "DIMED", "SCHULZ", "UNICASA", "IRANI"}
+APELIDOS_EXTRAS = {
+    "MAGAZ LUIZA": ["MAGAZINE LUIZA", "MAGALU"], "P.ACUCAR-CBD": ["PAO DE ACUCAR", "GPA"], "RAIADROGASIL": ["RAIA DROGASIL", "RD SAUDE"],
+    "SID NACIONAL": ["CSN", "SIDERURGICA NACIONAL"], "CSNMINERACAO": ["CSN MINERACAO"], "TELEF BRASIL": ["TELEFONICA"],  # "Vivo" fica de fora: confunde com "ao vivo"
+    "M.DIASBRANCO": ["M. DIAS BRANCO", "M.DIAS BRANCO"], "IOCHP-MAXION": ["IOCHPE"], "REDE D OR": ["REDE D'OR", "REDE DOR"],
+    "LOJAS RENNER": ["RENNER"], "RANDON PART": ["RANDON", "RANDONCORP"], "ISA ENERGIA": ["ISA CTEEP"], "MOTIVA SA": ["MOTIVA", "CCR"],
+    "AXIA ENERGIA": ["AXIA", "ELETROBRAS"], "ENGIE BRASIL": ["ENGIE"], "CPFL ENERGIA": ["CPFL"], "CVC BRASIL": ["CVC"],
+    "AMBEV S/A": ["AMBEV"], "KLABIN S/A": ["KLABIN"], "SUZANO S.A.": ["SUZANO"], "CYRELA REALT": ["CYRELA"], "JHSF PART": ["JHSF"],
+    "YDUQS PART": ["YDUQS"], "COGNA ON": ["COGNA"], "IGUATEMI S.A": ["IGUATEMI"], "VIVARA S.A.": ["VIVARA"], "RUMO S.A.": ["RUMO"],
+    "GERDAU MET": ["METALURGICA GERDAU"], "SMART FIT": ["SMARTFIT"], "OUROFINO S/A": ["OUROFINO", "OURO FINO"],
+    "CURY S/A": ["CURY"], "DOTZ SA": ["DOTZ"], "PETRORECSA": ["PETRORECONCAVO"], "SLC AGRICOLA": ["SLC"],
+}
+
+
+def _sem_acento(t):
+    import unicodedata
+    return "".join(c for c in unicodedata.normalize("NFKD", t) if not unicodedata.combining(c))
 
 
 def _texto(s):
@@ -94,20 +115,36 @@ def ler_ibge():
 
 
 def _apelidos():
-    """Ticker e nome de pregão (B3) de cada empresa do universo, para ligar manchetes às empresas."""
+    """(id, [(padrão, ambíguo)]) de cada empresa do universo, para ligar manchetes às empresas."""
     arq = DIR_DADOS_SITE / "mercado.json"
     if not arq.exists():
         return []
     saida = []
     for e in json.loads(arq.read_text(encoding="utf-8"))["empresas"]:
-        termos = {t for t in (e.get("cotacoes") or {})} | {e["id"]}
-        nome = (e.get("nome_pregao") or "").upper().strip()
-        sem_acento = nome.translate(str.maketrans("ÁÀÂÃÉÊÍÓÔÕÚÇ", "AAAAEEIOOOUC"))
-        if len(nome) >= 3 and sem_acento not in NOMES_IGNORADOS:
-            termos.add(nome)
-        padrao = r"\b(" + "|".join(re.escape(t) for t in sorted(termos, key=len, reverse=True)) + r")\b"
-        saida.append((e["id"], re.compile(padrao, re.I)))
+        nome = _sem_acento((e.get("nome_pregao") or "").upper().strip())
+        limpo = " ".join(t for t in nome.split() if t not in SUFIXOS)
+        termos = {limpo, *APELIDOS_EXTRAS.get(nome, [])}
+        primeiro = limpo.split()[0] if limpo else ""
+        if len(primeiro) >= 4 and primeiro not in GENERICOS and not primeiro.isdigit():
+            termos.add(primeiro)
+        termos = {t for t in termos if len(t) >= 3 and t not in GENERICOS}
+        regras = [(re.compile(r"(?<![\w])" + re.escape(t) + r"(?![\w])", re.I), t in AMBIGUOS) for t in termos]
+        # ticker: sempre vale (ex.: PETR4, VALE3)
+        regras += [(re.compile(r"" + re.escape(t) + r""), False) for t in {*(e.get("cotacoes") or {}), e["id"]}]
+        saida.append((e["id"], regras))
     return saida
+
+
+def _cita(titulo, regras):
+    t = _sem_acento(titulo)
+    for rx, ambiguo in regras:
+        for m in rx.finditer(t):
+            achado = m.group(0)
+            if achado.isupper() and len(achado) > 1:
+                return True
+            if achado[0].isupper() and not (ambiguo and m.start() == 0):
+                return True
+    return False
 
 
 def gerar():
@@ -133,9 +170,8 @@ def gerar():
     itens = sorted(unicos.values(), key=lambda i: i["data"], reverse=True)[:MAXIMO]
     apelidos = _apelidos()
     for i in itens:
-        # nomes de pregão só valem em maiúsculas ou com inicial maiúscula (evita "vale a pena")
-        i["empresas"] = [id_ for id_, rx in apelidos
-                         if any(m.group(0).isupper() or m.group(0)[0].isupper() for m in rx.finditer(i["titulo"]))]
+        # nomes só valem com inicial maiúscula (evita "vale a pena"); os ambíguos, também não no começo da manchete
+        i["empresas"] = [id_ for id_, regras in apelidos if _cita(i["titulo"], regras)]
     (DIR_DADOS_SITE / "noticias.json").write_text(json.dumps(
         {"gerado_em": datetime.now(FUSO_BR).isoformat(timespec="minutes"), "itens": itens, "falhas": falhas},
         ensure_ascii=False, separators=(",", ":")), encoding="utf-8")

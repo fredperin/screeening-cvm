@@ -361,8 +361,14 @@ async function paginaInicio() {
 }
 
 /* ============ Empresas (lista) ============ */
-async function paginaEmpresas() {
-  const [mercado, fatos] = await Promise.all([dados("dados/mercado.json").catch(() => ({ empresas: [] })), dados("dados/eventos_recentes.json").catch(() => null)]);
+// Duas abas: notícias e eventos das empresas (padrão) e a tabela com todas as empresas
+const ABAS_EMPRESAS = [["noticias", "Notícias e fatos relevantes"], ["tabela", "Tabela de empresas"]];
+
+async function paginaEmpresas(aba) {
+  if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "noticias";
+  const [mercado, fatos, noticias] = await Promise.all([dados("dados/mercado.json").catch(() => ({ empresas: [] })),
+    dados("dados/eventos_recentes.json").catch(() => null), dados("dados/noticias.json").catch(() => null)]);
+  const citadas = ((noticias && noticias.itens) || []).filter((n) => (n.empresas || []).length);
   const recentes = [...INDICE].filter((e) => e.ultimo_periodo).sort((a, b) => b.ultimo_periodo.localeCompare(a.ultimo_periodo) || a.nome.localeCompare(b.nome)).slice(0, 15);
   const proximos = mercado.empresas.flatMap((e) => (e.proximos_proventos || []).map((p) => ({ ...p, id: e.id })));
   const hojeIso = new Date().toISOString().slice(0, 10);
@@ -374,31 +380,38 @@ async function paginaEmpresas() {
     const mc = m.market_cap;
     return { ...e, mc, pl: mc && e.lucro_ltm > 0 ? mc / e.lucro_ltm : null, dy: m.dy_12m };
   });
-  app.innerHTML = `
-    <div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas · clique para abrir</div></div>
-    </div>
-    <div class="grade grade-3" style="margin-bottom:14px">
-      <div class="painel"><h2>Últimas divulgações</h2><div class="rolagem rolagem-y"><table class="tabela">
+  const abas = `<div class="abas">${ABAS_EMPRESAS.map(([k, n]) => `<a href="#/on/empresas/${k}" class="${k === aba ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
+  const cab = `<div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas da lista · clique numa empresa para abrir a página dela</div></div></div>`;
+  if (aba === "noticias") {
+    app.innerHTML = `${cab}${abas}
+    <div class="grade">
+      <div class="painel"><h2>Notícias das empresas</h2>${listaNoticias(citadas, 80)}
+        <div class="nota">Manchetes de jornais e fontes oficiais que citam o ticker ou o nome de pregão de uma empresa da lista (etiqueta = empresa).
+          Fontes: Valor Econômico, Folha, Estadão, Brazil Journal, InfoMoney, Banco Central, IBGE, CVM e Agência Brasil.</div></div>
+      <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
+        <tr><th>Data</th><th>Papel</th><th style="text-align:left">Assunto</th></tr>
+        ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 60).map((e) => `<tr><td>${dataBR(e.data)}</td>
+          <td><a href="#/on/empresa/${esc(e.id)}">${esc(e.id)}</a></td>
+          <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")
+          : `<tr><td colspan="3" class="sub">Sem fatos relevantes recentes.</td></tr>`}
+      </table></div><div class="nota">Fonte: CVM (documentos IPE), com link para o documento oficial.</div></div>
+      <div class="painel"><h2>Últimas divulgações de resultado</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Empresa</th><th>Período</th><th>Receita</th><th>Var. a/a</th><th>Lucro</th><th>Var. a/a</th></tr>
         ${recentes.map((e) => `<tr class="clicavel" onclick="location.hash='#/on/empresa/${esc(e.id)}'">
           <td>${esc(e.tickers[0])} <span class="sub">${esc(e.nome.slice(0, 22))}</span></td><td>${dataBR(e.ultimo_periodo)}</td>
           <td>${reais(e.receita_tri)}</td><td class="${classeSinal(e.cresc_receita_tri)}">${pct(e.cresc_receita_tri)}</td>
           <td>${reais(e.lucro_tri)}</td><td class="${classeSinal(e.cresc_lucro_tri)}">${pct(e.cresc_lucro_tri)}</td></tr>`).join("")}
-      </table></div></div>
-      <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
-        <tr><th>Data</th><th>Papel</th><th style="text-align:left">Assunto</th></tr>
-        ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 40).map((e) => `<tr><td>${dataBR(e.data)}</td>
-          <td><a href="#/on/empresa/${esc(e.id)}">${esc(e.id)}</a></td>
-          <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")
-          : `<tr><td colspan="3" class="sub">Sem fatos relevantes recentes.</td></tr>`}
-      </table></div></div>
+      </table></div><div class="nota">Último trimestre entregue à CVM (ITR/DFP); variação contra o mesmo trimestre do ano anterior.</div></div>
       <div class="painel"><h2>Próximos proventos (data-com ou pagamento futuros)</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Papel</th><th>Tipo</th><th>Data-com</th><th>Pagamento</th><th>R$/ação</th></tr>
         ${proximos.length ? proximos.slice(0, 40).map((p) => `<tr class="clicavel" onclick="location.hash='#/on/empresa/${esc(p.id)}'">
           <td>${esc(p.id)} <span class="sub">${esc(p.classe)}</span></td><td>${esc(p.tipo)}</td><td>${dataBR(p.data_com)}</td>
           <td>${dataBR(p.pagamento)}</td><td>${num(p.valor, 4)}</td></tr>`).join("") : `<tr><td colspan="5" class="sub">Nenhum provento com data-com ou pagamento futuro anunciado.</td></tr>`}
-      </table></div></div>
-    </div>
+      </table></div><div class="nota">Fonte: B3 (proventos em dinheiro anunciados).</div></div>
+    </div>`;
+    return;
+  }
+  app.innerHTML = `${cab}${abas}
     <div class="cabecalho"><h2 style="margin:0">Todas as empresas</h2><input class="filtro" id="filtro" placeholder="filtrar por nome, ticker ou setor"></div>
     <div class="painel"><div class="rolagem"><table class="tabela" id="tab">
       <thead><tr><th>Papel</th><th>Empresa</th><th>Setor</th><th>Market cap</th><th>Receita LTM</th><th>Lucro LTM</th>
