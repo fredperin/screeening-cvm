@@ -378,9 +378,11 @@ window.EXPLICATIVOS = {
       </ul><p class="sub">Fonte: Federal Reserve Bank of New York (API oficial de taxas de referência).</p>`,
   },
   bce_juros: {
-    titulo: "BCE: taxa de depósito e €STR",
+    titulo: "BCE: taxas de depósito e de refinanciamento e €STR",
     html: `<ul>
         <li><b>Taxa de depósito:</b> a taxa básica da Zona do Euro na prática — quanto os bancos recebem ao deixar recursos no BCE.</li>
+        <li><b>Refinanciamento (MRO):</b> taxa das operações principais em que o BCE empresta aos bancos por uma semana; desde 2024 fica
+          0,15 ponto acima da taxa de depósito.</li>
         <li><b>€STR:</b> taxa média dos empréstimos de um dia sem garantia entre bancos da Zona do Euro, calculada pelo BCE.</li>
       </ul><p class="sub">Fonte: Banco Central Europeu (ECB Data Portal, API oficial).</p>`,
   },
@@ -389,6 +391,62 @@ window.EXPLICATIVOS = {
     html: `<p>Curva estimada pelo <b>BCE</b> a partir dos títulos de governos da Zona do Euro com nota AAA (como Alemanha e Holanda):
       taxas à vista por prazo. É a referência de juros longos em euro, comparável à curva de Treasuries.</p>
       <p class="sub">Fonte: Banco Central Europeu (ECB Data Portal, yield curves).</p>`,
+  },
+  pib_eua: {
+    titulo: "PIB dos EUA",
+    html: `<p>Produto interno bruto real (descontada a inflação) calculado pelo <b>BEA</b>. Os EUA divulgam a variação do trimestre contra o
+      anterior <b>anualizada</b> (o ritmo do trimestre projetado para um ano inteiro) — por isso os números parecem maiores que os do
+      Brasil e da Europa, que mostram a variação tri/tri simples. A linha mostra o crescimento contra o mesmo trimestre do ano anterior.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), séries A191RL1Q225SBEA e GDPC1 do BEA.</p>`,
+  },
+  producao_eua: {
+    titulo: "Produção industrial dos EUA",
+    html: `<p>Índice de produção da indústria (transformação, mineração e energia elétrica e gás), calculado pelo <b>Federal Reserve</b>,
+      com ajuste sazonal. Barras: variação no mês; linha: variação em 12 meses.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), série INDPRO do Federal Reserve.</p>`,
+  },
+  varejo_eua: {
+    titulo: "Vendas no varejo dos EUA",
+    html: `<p>Vendas do varejo e de serviços de alimentação, em dólares correntes (<b>nominal</b>, sem descontar a inflação), com ajuste
+      sazonal, apuradas pelo <b>Census Bureau</b>. Barras: variação no mês; linha: variação em 12 meses.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), série RSAFS do Census Bureau.</p>`,
+  },
+  confianca_eua: {
+    titulo: "Confiança do consumidor (Michigan)",
+    html: `<p>Índice de sentimento do consumidor da <b>Universidade de Michigan</b> (base 100 = 1º tri de 1966), a partir de entrevistas
+      mensais sobre finanças pessoais e expectativas para a economia. Abaixo de 80 costuma indicar pessimismo.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), série UMCSENT da Universidade de Michigan.</p>`,
+  },
+  pce_eua: {
+    titulo: "Inflação do PCE",
+    html: `<p>Índice de preços dos gastos de consumo pessoal (<b>PCE</b>), calculado pelo <b>BEA</b>. É a medida que o <b>Fed usa na meta de
+      2%</b>. Difere do CPI porque cobre mais gastos (inclusive os pagos por terceiros, como planos de saúde), tem pesos que mudam com o
+      consumo e dá menos peso a aluguel — por isso costuma ficar abaixo do CPI. O núcleo exclui alimentos e energia.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), séries PCEPI e PCEPILFE do BEA.</p>`,
+  },
+  juro_real_eua: {
+    titulo: "Juro real ex-post nos EUA",
+    html: `<p>Teto da banda do Fed Funds vigente no fim de cada mês descontado da inflação dos 12 meses anteriores:
+      <code>(1 + juro) ÷ (1 + inflação) − 1</code>, pelo CPI e pelo núcleo do PCE (a medida preferida do Fed).</p>
+      <p class="sub">Fonte: cálculo do site com dados do Fed de Nova York, BLS e FRED.</p>`,
+  },
+  producao_euro: {
+    titulo: "Produção industrial da Zona do Euro",
+    html: `<p>Volume de produção da indústria (extrativa, transformação e energia; sem construção). Barras: variação no mês com ajuste sazonal;
+      linha: 12 meses, ajustada por dias úteis.</p>
+      <p class="sub">Fonte: Eurostat, tabela sts_inpr_m (EA21).</p>`,
+  },
+  varejo_euro: {
+    titulo: "Vendas no varejo da Zona do Euro",
+    html: `<p>Volume (descontada a inflação) das vendas do comércio varejista, exceto veículos. Barras: variação no mês com ajuste sazonal;
+      linha: 12 meses, ajustada por dias úteis.</p>
+      <p class="sub">Fonte: Eurostat, tabela sts_trtu_m (EA21).</p>`,
+  },
+  juro_real_euro: {
+    titulo: "Juro real ex-post na Zona do Euro",
+    html: `<p>Taxa de depósito do BCE (a taxa de referência da política monetária desde 2019) vigente no fim de cada mês descontada da
+      inflação (HICP) dos 12 meses anteriores: <code>(1 + juro) ÷ (1 + inflação) − 1</code>.</p>
+      <p class="sub">Fonte: cálculo do site com dados do BCE e do Eurostat.</p>`,
   },
   cpi_eua: {
     titulo: "CPI — inflação ao consumidor dos EUA",

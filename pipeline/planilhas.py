@@ -147,7 +147,7 @@ def gerar_offshore():
     if not arq.exists():
         return None
     off = json.loads(arq.read_text(encoding="utf-8"))
-    T, F, B, E, Z = (off.get(k, {}) for k in ("treasuries", "fed", "bls", "bce", "eurostat"))
+    T, F, B, E, Z, R = (off.get(k, {}) for k in ("treasuries", "fed", "bls", "bce", "eurostat", "fred"))
 
     def tabela(colunas):
         df = pd.DataFrame({nome: _serie_pd(s) for nome, s in colunas.items() if s}).sort_index()
@@ -158,7 +158,9 @@ def gerar_offshore():
     with pd.ExcelWriter(destino, engine="openpyxl", datetime_format="DD/MM/YYYY", date_format="DD/MM/YYYY") as w:
         _leia_me(w, [f"Mundo (exterior) — atualizado em {off['gerado_em']}",
                      "Fontes oficiais: Tesouro dos EUA (Treasuries), Fed de Nova York (EFFR, SOFR, meta dos Fed Funds), BLS (CPI, desemprego, payroll),",
-                     "BCE (taxa de depósito, €STR, curva AAA da Zona do Euro) e Eurostat (HICP, desemprego, PIB da Zona do Euro). Taxas em % a.a."])
+                     "FRED do Fed de St. Louis (PIB, PCE, produção industrial, varejo e confiança do consumidor dos EUA),",
+                     "BCE (taxas de depósito e de refinanciamento, €STR, curva AAA da Zona do Euro) e Eurostat (HICP, desemprego, PIB,",
+                     "produção industrial e varejo da Zona do Euro). Taxas em % a.a."])
         H = T.get("historico", {})
         tabela({f"Treasury {k} (%)": v for k, v in H.items()}).to_excel(w, sheet_name="Treasuries (diário)")
         linhas = [{"Curva": nome, "Data": pd.Timestamp(c["data"]), "Prazo": p["prazo"], "Anos": p["anos"], "Taxa (% a.a.)": p["taxa"]}
@@ -168,14 +170,24 @@ def gerar_offshore():
         pd.DataFrame(linhas).to_excel(w, sheet_name="Curvas", index=False)
         tabela({"EFFR (%)": F.get("effr"), "SOFR (%)": F.get("sofr"), "Meta Fed Funds — mínimo (%)": F.get("meta_min"),
                 "Meta Fed Funds — máximo (%)": F.get("meta_max")}).to_excel(w, sheet_name="Fed Funds e SOFR")
-        tabela({"Taxa de depósito do BCE (%)": E.get("deposito"), "€STR (%)": E.get("estr"), "Zona do Euro AAA 10 anos (%)": E.get("aaa_10a")}
+        tabela({"Taxa de depósito do BCE (%)": E.get("deposito"), "Refinanciamento (MRO) (%)": E.get("refinanciamento"), "€STR (%)": E.get("estr"),
+                "Zona do Euro AAA 10 anos (%)": E.get("aaa_10a")}
                ).to_excel(w, sheet_name="BCE")
         tabela({"CPI 12 meses (%)": B.get("cpi_12m"), "CPI núcleo 12 meses (%)": B.get("cpi_nucleo_12m"), "CPI mensal dessaz. (%)": B.get("cpi_mensal"),
                 "CPI núcleo mensal dessaz. (%)": B.get("cpi_nucleo_mensal"), "Desemprego (%)": B.get("desemprego"),
                 "Payroll (mil vagas no mês)": B.get("payroll_var")}).to_excel(w, sheet_name="EUA (BLS)")
+        if R:
+            tabela({"PIB real tri/tri anualizado (%)": R.get("pib_tri_anual"), "PIB real contra 1 ano antes (%)": R.get("pib_12m"),
+                    "PCE 12 meses (%)": R.get("pce_12m"), "PCE núcleo 12 meses (%)": R.get("pce_nucleo_12m"), "PCE mensal (%)": R.get("pce_mensal"),
+                    "PCE núcleo mensal (%)": R.get("pce_nucleo_mensal"), "Produção industrial 12 meses (%)": R.get("producao_12m"),
+                    "Produção industrial mensal (%)": R.get("producao_mensal"), "Varejo 12 meses (%)": R.get("varejo_12m"),
+                    "Varejo mensal (%)": R.get("varejo_mensal"), "Confiança do consumidor — Michigan (índice)": R.get("confianca")}
+                   ).to_excel(w, sheet_name="EUA (FRED)")
         tabela({"HICP 12 meses (%)": Z.get("hicp_12m"), "HICP núcleo 12 meses (%)": Z.get("hicp_nucleo_12m"),
                 "HICP serviços 12 meses (%)": Z.get("hicp_servicos_12m"), "Desemprego (%)": Z.get("desemprego"),
-                "PIB tri/tri dessaz. (%)": Z.get("pib_tri"), "PIB contra mesmo tri do ano anterior (%)": Z.get("pib_12m")}
+                "PIB tri/tri dessaz. (%)": Z.get("pib_tri"), "PIB contra mesmo tri do ano anterior (%)": Z.get("pib_12m"),
+                "Produção industrial 12 meses (%)": Z.get("producao_12m"), "Produção industrial mensal (%)": Z.get("producao_mensal"),
+                "Varejo (volume) 12 meses (%)": Z.get("varejo_12m"), "Varejo (volume) mensal (%)": Z.get("varejo_mensal")}
                ).to_excel(w, sheet_name="Zona do Euro (Eurostat)")
         _ajustar_colunas(w)
     return destino

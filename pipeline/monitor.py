@@ -255,7 +255,9 @@ def checar_offshore():
     limites = [("Treasury 10 anos", T.get("historico", {}).get("10 anos"), 6), ("EFFR", F.get("effr"), 6), ("SOFR", F.get("sofr"), 6),
                ("€STR", E.get("estr"), 6), ("curva AAA do BCE", E.get("aaa_10a"), 6), ("CPI EUA", B.get("cpi_12m"), 75),
                ("desemprego EUA", B.get("desemprego"), 75), ("HICP", Z.get("hicp_12m"), 75), ("desemprego Zona do Euro", Z.get("desemprego"), 100),
-               ("PIB Zona do Euro", Z.get("pib_tri"), 250)]
+               ("PIB Zona do Euro", Z.get("pib_tri"), 250), ("produção industrial Zona do Euro", Z.get("producao_12m"), 100),
+               ("PCE EUA (FRED)", off.get("fred", {}).get("pce_12m"), 75), ("PIB EUA (FRED)", off.get("fred", {}).get("pib_tri_anual"), 200),
+               ("confiança do consumidor EUA (FRED)", off.get("fred", {}).get("confianca"), 75)]
     for nome, s, max_dias in limites:
         if not s or not s.get("datas"):
             problemas.append(f"{nome}: série ausente")
@@ -265,7 +267,7 @@ def checar_offshore():
     if agenda.exists():
         problemas += json.loads(agenda.read_text(encoding="utf-8")).get("falhas", [])
     assert not problemas, " | ".join(problemas)
-    return f"{len(limites)} séries em dia (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)"
+    return f"{len(limites)} séries em dia (Tesouro dos EUA, Fed, BLS, FRED, BCE, Eurostat)"
 
 
 def checar_credito():

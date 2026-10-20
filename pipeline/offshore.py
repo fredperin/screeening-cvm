@@ -5,8 +5,10 @@ Dados do exterior (Offshore), só de fontes oficiais e sem cadastro:
 - Fed de Nova York: Fed Funds efetivo (com a banda da meta) e SOFR (API oficial);
 - BLS (EUA): inflação ao consumidor (CPI e núcleo), desemprego e payroll (API oficial; usa a chave
   BLS_API_KEY se existir, senão a versão sem cadastro, limitada a 25 consultas por dia);
-- BCE: €STR, taxa de depósito e curva de juros AAA da Zona do Euro (API oficial);
-- Eurostat: inflação (HICP, núcleo e serviços), desemprego e PIB da Zona do Euro (API oficial).
+- FRED (Fed de St. Louis, API oficial com a chave gratuita FRED_API_KEY): PIB, PCE e núcleo do PCE,
+  produção industrial, vendas no varejo e confiança do consumidor (Michigan) dos EUA;
+- BCE: €STR, taxas de depósito e de refinanciamento e curva de juros AAA da Zona do Euro (API oficial);
+- Eurostat: inflação (HICP, núcleo e serviços), desemprego, PIB, produção industrial e varejo da Zona do Euro (API oficial).
 
 Cada fonte que falhar fica com a versão anterior (registrada em "falhas"). Saída: site/dados/offshore.json.
 Uso: py -m pipeline.offshore
@@ -152,6 +154,49 @@ def bls():
     }
 
 
+# ---------------- FRED (EUA) ----------------
+URL_FRED = "https://api.stlouisfed.org/fred/series/observations"
+SERIES_FRED = {
+    "pib_real": "GDPC1",                 # PIB real (US$ bi encadeados, trimestral, dessaz. anualizado)
+    "pib_tri_anual": "A191RL1Q225SBEA",  # PIB real, variação tri/tri anualizada (dessaz.) — número oficial do BEA
+    "pce": "PCEPI", "pce_nucleo": "PCEPILFE",  # índices de preços do PCE (cheio e sem alimentos e energia)
+    "producao": "INDPRO",                # produção industrial (índice, dessaz.)
+    "varejo": "RSAFS",                   # vendas no varejo e alimentação (US$ mi, dessaz.)
+    "confianca": "UMCSENT",              # confiança do consumidor — Universidade de Michigan
+}
+
+
+def _fred(serie, chave, ini="2000-01-01"):
+    # a mensagem de erro do requests traz o endereço com a chave: nunca deixar chegar ao offshore.json (público)
+    try:
+        r = _get(URL_FRED, params={"series_id": serie, "api_key": chave, "file_type": "json", "observation_start": ini}).json()
+    except requests.RequestException as e:
+        status = getattr(getattr(e, "response", None), "status_code", None)
+        raise RuntimeError(f"FRED {serie}: falha na consulta" + (f" (HTTP {status})" if status else f" ({type(e).__name__})")) from None
+    except ValueError:
+        raise RuntimeError(f"FRED {serie}: resposta inválida") from None
+    pontos = {pd.Timestamp(o["date"]): float(o["value"]) for o in r.get("observations", []) if o["value"] not in (".", "")}
+    if not pontos:
+        raise ValueError(f"FRED {serie}: vazio")
+    return pd.Series(pontos).sort_index()
+
+
+def fred():
+    chave = os.environ.get("FRED_API_KEY")
+    if not chave:
+        raise RuntimeError("FRED_API_KEY não configurada")
+    s = {k: _fred(cod, chave) for k, cod in SERIES_FRED.items()}
+    var = lambda x, n: (x / x.shift(n) - 1) * 100  # noqa: E731
+    return {
+        "pib_tri_anual": _serie(s["pib_tri_anual"]), "pib_12m": _serie(var(s["pib_real"], 4)),
+        "pce_12m": _serie(var(s["pce"], 12)), "pce_nucleo_12m": _serie(var(s["pce_nucleo"], 12)),
+        "pce_mensal": _serie(var(s["pce"], 1)), "pce_nucleo_mensal": _serie(var(s["pce_nucleo"], 1)),
+        "producao_12m": _serie(var(s["producao"], 12)), "producao_mensal": _serie(var(s["producao"], 1)),
+        "varejo_12m": _serie(var(s["varejo"], 12)), "varejo_mensal": _serie(var(s["varejo"], 1)),
+        "confianca": _serie(s["confianca"], 1),
+    }
+
+
 # ---------------- BCE e Eurostat ----------------
 URL_BCE = "https://data-api.ecb.europa.eu/service/data/{chave}?startPeriod={ini}&format=csvdata"
 
@@ -183,8 +228,10 @@ def bce():
     tabela = pd.DataFrame([{"data": pd.Timestamp(l["TIME_PERIOD"]), "prazo": l["KEY"].split(".")[-1], "taxa": float(l["OBS_VALUE"])}
                            for l in linhas]).pivot_table(index="data", columns="prazo", values="taxa")
     curva10 = _bce_serie("YC/B.U2.EUR.4F.G_N_A.SV_C_YM.SR_10Y")
+    mro = _bce_serie("FM/B.U2.EUR.4F.KR.MRR_FR.LEV", ini="1999-01-01")
+    mro = pd.concat([mro[mro.ne(mro.shift())], mro.iloc[[-1]]]).pipe(lambda s: s[~s.index.duplicated()])
     return {
-        "estr": _serie(_bce_serie("EST/B.EU000A2X2A25.WT")), "deposito": _serie(deposito),
+        "estr": _serie(_bce_serie("EST/B.EU000A2X2A25.WT")), "deposito": _serie(deposito), "refinanciamento": _serie(mro),
         "curva": _curvas_por_data(tabela, PRAZOS_BCE), "aaa_10a": _serie(curva10),
     }
 
@@ -221,6 +268,11 @@ def eurostat():
         "desemprego": _serie(_eurostat("une_rt_m", f"geo={ZONA_EURO}&s_adj=SA&age=TOTAL&sex=T&unit=PC_ACT", "2000-01")),
         "pib_tri": _serie(_eurostat("namq_10_gdp", f"geo={ZONA_EURO}&unit=CLV_PCH_PRE&s_adj=SCA&na_item=B1GQ", "2000-Q1")),
         "pib_12m": _serie(_eurostat("namq_10_gdp", f"geo={ZONA_EURO}&unit=CLV_PCH_SM&s_adj=SCA&na_item=B1GQ", "2000-Q1")),
+        # produção industrial (indústria sem construção) e varejo (volume de vendas)
+        "producao_12m": _serie(_eurostat("sts_inpr_m", f"geo={ZONA_EURO}&unit=PCH_SM&s_adj=CA&nace_r2=B-D&indic_bt=PRD", "2000-01")),
+        "producao_mensal": _serie(_eurostat("sts_inpr_m", f"geo={ZONA_EURO}&unit=PCH_PRE&s_adj=SCA&nace_r2=B-D&indic_bt=PRD", "2000-01")),
+        "varejo_12m": _serie(_eurostat("sts_trtu_m", f"geo={ZONA_EURO}&unit=PCH_SM&s_adj=CA&nace_r2=G47&indic_bt=VOL_SLS", "2000-01")),
+        "varejo_mensal": _serie(_eurostat("sts_trtu_m", f"geo={ZONA_EURO}&unit=PCH_PRE&s_adj=SCA&nace_r2=G47&indic_bt=VOL_SLS", "2000-01")),
     }
 
 
@@ -311,7 +363,7 @@ def gerar_noticias_agenda():
 
 
 FONTES = {"treasuries": ("Tesouro dos EUA", treasuries), "fed": ("Fed de Nova York", fed), "bls": ("BLS (EUA)", bls),
-          "bce": ("BCE", bce), "eurostat": ("Eurostat", eurostat)}
+          "fred": ("FRED (Fed de St. Louis)", fred), "bce": ("BCE", bce), "eurostat": ("Eurostat", eurostat)}
 
 
 def gerar():

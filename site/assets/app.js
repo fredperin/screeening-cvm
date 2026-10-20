@@ -1473,7 +1473,121 @@ const PLANO_OFFSHORE = {
     "FRED e EIA (precisam de chave gratuita), Banco Mundial (Pink Sheet, mensal)"]]],
 };
 const CATEGORIAS_OFF = { fed: ["Fed", COR.verde], bce: ["BCE", COR.roxo] };
-const SUBS_MACRO_OFF = [["eua", "Estados Unidos"], ["euro", "Zona do Euro"], ["china", "China"], ["global", "Global"], ["mercados", "Mercados"]];
+const SUBS_MACRO_OFF = [["eua", "Estados Unidos"], ["euro", "Europa (Zona do Euro)"], ["china", "China"], ["global", "Global"], ["mercados", "Mercados"]];
+// Abas internas de cada país (mesma organização da seção Brasil)
+const ABAS_PAIS_OFF = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["emprego", "Emprego"], ["monetaria", "Política monetária"]];
+let ABA_PAIS_OFF = "atividade";
+
+function desenharPaisOff(pais, off, cab, abas) {
+  const B = off.bls || {}, R = off.fred || {}, F = off.fed || {}, E = off.bce || {}, Z = off.eurostat || {};
+  const u = (x) => ultimo(x);
+  const mes = (x) => (u(x).data ? `${MESES[Number(u(x).data.slice(5, 7)) - 1]}/${u(x).data.slice(2, 4)}` : "");
+  const tri = (x) => (u(x).data ? `${Math.ceil(Number(u(x).data.slice(5, 7)) / 3)}º tri/${u(x).data.slice(0, 4)}` : "");
+  const t = (anos = 10, extra = {}) => ({ xTempo: true, inicioTempo: desde(anos), deslizante: true, eixoEsq: "pctPronto", ...extra });
+  const meta = (x, v, nome) => ({ nome, valores: x && x.datas ? x.datas.map((d) => [d, v]) : [], tipo: "line", cor: COR.cinza, tracejado: true });
+  const semFred = pais === "eua" && !off.fred;
+  // cada aba: { fonte, cartoes, graficos: [{ id, t, info, largo, op }] }
+  const D = pais === "eua" ? {
+    atividade: { fonte: "FRED (BEA, Fed, Census, Universidade de Michigan)",
+      cartoes: [cartao("PIB tri/tri anualizado", pctPronto(u(R.pib_tri_anual).valor, 1), tri(R.pib_tri_anual)),
+        cartao("PIB contra um ano antes", pctPronto(u(R.pib_12m).valor, 1), tri(R.pib_12m)),
+        cartao("Produção industrial 12m", pctPronto(u(R.producao_12m).valor, 1), mes(R.producao_12m)),
+        cartao("Varejo 12m", pctPronto(u(R.varejo_12m).valor, 1), mes(R.varejo_12m)),
+        cartao("Confiança do consumidor", u(R.confianca).valor != null ? num(u(R.confianca).valor, 1) : "—", `Michigan · ${mes(R.confianca)}`)],
+      graficos: [
+        { t: "PIB real", info: "pib_eua", op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Tri/tri anualizado (dessaz.)", valores: Pares(R.pib_tri_anual), cor: COR.azul },
+          { nome: "Contra o mesmo tri do ano anterior", valores: Pares(R.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] }) },
+        { t: "Produção industrial", info: "producao_eua", op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Mensal (dessaz.)", valores: Pares(R.producao_mensal), cor: COR.azul },
+          { nome: "12 meses", valores: Pares(R.producao_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] }) },
+        { t: "Vendas no varejo (nominal)", info: "varejo_eua", op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Mensal (dessaz.)", valores: Pares(R.varejo_mensal), cor: COR.azul },
+          { nome: "12 meses", valores: Pares(R.varejo_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] }) },
+        { t: "Confiança do consumidor (Universidade de Michigan)", info: "confianca_eua", op: t(10, { eixoEsq: "numero", series: [
+          { nome: "Índice de sentimento do consumidor", valores: Pares(R.confianca), tipo: "line", cor: COR.verde }] }) }] },
+    inflacao: { fonte: "BLS (CPI) e FRED (PCE, do BEA)",
+      cartoes: [cartao("CPI 12 meses", pctPronto(u(B.cpi_12m).valor), mes(B.cpi_12m)), cartao("Núcleo do CPI 12m", pctPronto(u(B.cpi_nucleo_12m).valor), mes(B.cpi_nucleo_12m)),
+        cartao("PCE 12 meses", pctPronto(u(R.pce_12m).valor), `meta do Fed 2% · ${mes(R.pce_12m)}`), cartao("Núcleo do PCE 12m", pctPronto(u(R.pce_nucleo_12m).valor), mes(R.pce_nucleo_12m))],
+      graficos: [
+        { t: "Inflação ao consumidor (CPI)", info: "cpi_eua", op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Mensal (dessaz.)", valores: Pares(B.cpi_mensal), cor: COR.azul }, { nome: "12 meses", valores: Pares(B.cpi_12m), tipo: "line", eixo: "dir", cor: COR.vermelho },
+          { nome: "Núcleo 12 meses", valores: Pares(B.cpi_nucleo_12m), tipo: "line", eixo: "dir", cor: COR.ambar, tracejado: true }] }) },
+        { t: "Inflação do PCE (a medida da meta do Fed)", info: "pce_eua", op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Mensal", valores: Pares(R.pce_mensal), cor: COR.azul }, { nome: "12 meses", valores: Pares(R.pce_12m), tipo: "line", eixo: "dir", cor: COR.vermelho },
+          { nome: "Núcleo 12 meses", valores: Pares(R.pce_nucleo_12m), tipo: "line", eixo: "dir", cor: COR.ambar, tracejado: true }] }) },
+        { t: "Núcleos em 12 meses: CPI × PCE e a meta de 2%", info: "pce_eua", largo: true, op: t(10, { series: [
+          { nome: "Núcleo do CPI", valores: Pares(B.cpi_nucleo_12m), tipo: "line", cor: COR.vermelho },
+          { nome: "Núcleo do PCE", valores: Pares(R.pce_nucleo_12m), tipo: "line", cor: COR.ambar }, meta(R.pce_nucleo_12m, 2, "Meta do Fed (2%)")] }) }] },
+    emprego: { fonte: "BLS",
+      cartoes: [cartao("Desemprego", pctPronto(u(B.desemprego).valor, 1), mes(B.desemprego)),
+        cartao("Payroll (vagas no mês)", u(B.payroll_var).valor != null ? `${num(u(B.payroll_var).valor, 0)} mil` : "—", mes(B.payroll_var))],
+      graficos: [
+        { t: "Payroll: vagas criadas no mês (mil)", info: "emprego_eua", op: t(5, { eixoEsq: "numero", series: [
+          { nome: "Payroll (mil vagas)", valores: Pares(B.payroll_var), cor: COR.verde }] }) },
+        { t: "Taxa de desemprego", info: "emprego_eua", op: t(10, { series: [
+          { nome: "Desemprego (dessaz.)", valores: Pares(B.desemprego), tipo: "line", cor: COR.vermelho }] }) }] },
+    monetaria: { fonte: "Fed de Nova York, BLS e FRED",
+      cartoes: [cartao("Fed Funds (meta)", `${pctPronto(u(F.meta_min).valor)}–${pctPronto(u(F.meta_max).valor)}`, "banda definida pelo FOMC"),
+        cartao("Fed Funds efetivo", pctPronto(u(F.effr).valor), dataBR(u(F.effr).data)), cartao("SOFR", pctPronto(u(F.sofr).valor), dataBR(u(F.sofr).data)),
+        cartao("Juro real (núcleo do PCE)", (() => { const j = R.pce_nucleo_12m ? juroReal(F.meta_max, R.pce_nucleo_12m) : []; return j.length ? pctPronto(j[j.length - 1][1], 1) : "—"; })(), "teto da banda ÷ núcleo do PCE 12m")],
+      graficos: [
+        { t: "Fed Funds: banda da meta, efetivo e SOFR", info: "fed_funds", op: t(10, { degrau: true, series: [
+          { nome: "Teto da banda", valores: ateHoje(F.meta_max), tipo: "line", cor: COR.vermelho }, { nome: "Piso da banda", valores: ateHoje(F.meta_min), tipo: "line", cor: COR.azul },
+          { nome: "Fed Funds efetivo", valores: Pares(F.effr), tipo: "line", cor: COR.ambar }, { nome: "SOFR", valores: Pares(F.sofr), tipo: "line", cor: COR.cinza, tracejado: true }] }) },
+        { t: "Juro real ex-post", info: "juro_real_eua", op: t(10, { series: [
+          { nome: "Teto da banda ÷ CPI 12m", valores: B.cpi_12m ? juroReal(F.meta_max, B.cpi_12m) : [], tipo: "line", cor: COR.vermelho },
+          { nome: "Teto da banda ÷ núcleo do PCE 12m", valores: R.pce_nucleo_12m ? juroReal(F.meta_max, R.pce_nucleo_12m) : [], tipo: "line", cor: COR.ambar }] }) }] },
+  } : {
+    atividade: { fonte: "Eurostat",
+      cartoes: [cartao("PIB tri/tri", pctPronto(u(Z.pib_tri).valor, 1), tri(Z.pib_tri)), cartao("PIB contra um ano antes", pctPronto(u(Z.pib_12m).valor, 1), tri(Z.pib_12m)),
+        cartao("Produção industrial 12m", pctPronto(u(Z.producao_12m).valor, 1), mes(Z.producao_12m)), cartao("Varejo 12m (volume)", pctPronto(u(Z.varejo_12m).valor, 1), mes(Z.varejo_12m))],
+      graficos: [
+        { t: "PIB", info: "pib_euro", op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Tri/tri (dessaz.)", valores: Pares(Z.pib_tri), cor: COR.azul }, { nome: "Contra o mesmo tri do ano anterior", valores: Pares(Z.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] }) },
+        { t: "Produção industrial (sem construção)", info: "producao_euro", op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Mensal (dessaz.)", valores: Pares(Z.producao_mensal), cor: COR.azul }, { nome: "12 meses (ajustado por dias úteis)", valores: Pares(Z.producao_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] }) },
+        { t: "Vendas no varejo (volume)", info: "varejo_euro", largo: true, op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Mensal (dessaz.)", valores: Pares(Z.varejo_mensal), cor: COR.azul }, { nome: "12 meses (ajustado por dias úteis)", valores: Pares(Z.varejo_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] }) }] },
+    inflacao: { fonte: "Eurostat",
+      cartoes: [cartao("HICP 12 meses", pctPronto(u(Z.hicp_12m).valor, 1), `meta do BCE 2% · ${mes(Z.hicp_12m)}`),
+        cartao("Núcleo 12m", pctPronto(u(Z.hicp_nucleo_12m).valor, 1), "sem energia, alimentos, álcool e fumo"), cartao("Serviços 12m", pctPronto(u(Z.hicp_servicos_12m).valor, 1), mes(Z.hicp_servicos_12m))],
+      graficos: [
+        { t: "Inflação (HICP) — 12 meses", info: "hicp", largo: true, op: t(10, { series: [
+          { nome: "Cheio", valores: Pares(Z.hicp_12m), tipo: "line", cor: COR.vermelho }, { nome: "Núcleo", valores: Pares(Z.hicp_nucleo_12m), tipo: "line", cor: COR.ambar },
+          { nome: "Serviços", valores: Pares(Z.hicp_servicos_12m), tipo: "line", cor: COR.ciano, tracejado: true }, meta(Z.hicp_12m, 2, "Meta do BCE (2%)")] }) }] },
+    emprego: { fonte: "Eurostat",
+      cartoes: [cartao("Desemprego", pctPronto(u(Z.desemprego).valor, 1), mes(Z.desemprego))],
+      graficos: [{ t: "Taxa de desemprego", info: "desemprego_euro", largo: true, op: t(10, { series: [
+        { nome: "Desemprego (dessaz.)", valores: Pares(Z.desemprego), tipo: "line", cor: COR.vermelho }] }) }] },
+    monetaria: { fonte: "BCE e Eurostat",
+      cartoes: [cartao("Taxa de depósito", pctPronto(u(E.deposito).valor), "a de referência hoje"), cartao("Refinanciamento (MRO)", pctPronto(u(E.refinanciamento).valor), ""),
+        cartao("€STR", pctPronto(u(E.estr).valor), dataBR(u(E.estr).data)),
+        cartao("Juro real", (() => { const j = Z.hicp_12m ? juroReal(E.deposito, Z.hicp_12m) : []; return j.length ? pctPronto(j[j.length - 1][1], 1) : "—"; })(), "depósito ÷ HICP 12m")],
+      graficos: [
+        { t: "Taxas do BCE e €STR", info: "bce_juros", op: t(10, { degrau: true, series: [
+          { nome: "Refinanciamento (MRO)", valores: ateHoje(E.refinanciamento), tipo: "line", cor: COR.vermelho }, { nome: "Depósito", valores: ateHoje(E.deposito), tipo: "line", cor: COR.azul },
+          { nome: "€STR", valores: Pares(E.estr), tipo: "line", cor: COR.ambar }] }) },
+        { t: "Juro real ex-post", info: "juro_real_euro", op: t(10, { series: [
+          { nome: "Depósito ÷ HICP 12m", valores: Z.hicp_12m ? juroReal(E.deposito, Z.hicp_12m) : [], tipo: "line", cor: COR.ambar },
+          { nome: "Depósito ÷ núcleo 12m", valores: Z.hicp_nucleo_12m ? juroReal(E.deposito, Z.hicp_nucleo_12m) : [], tipo: "line", cor: COR.vermelho, tracejado: true }] }) }] },
+  };
+  if (!D[ABA_PAIS_OFF]) ABA_PAIS_OFF = "atividade";
+  const a = D[ABA_PAIS_OFF];
+  const nomePais = pais === "eua" ? "Estados Unidos" : "Europa (Zona do Euro)";
+  app.innerHTML = `${cab("Mundo · Macro", `${nomePais}: ${a.fonte} (APIs oficiais)`)}${abas}
+    <div class="seletor seletor-editoria" id="sub-pais" style="margin:-4px 0 12px">${ABAS_PAIS_OFF.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_PAIS_OFF ? "ativo" : ""}">${n}</button>`).join("")}</div>
+    ${semFred && ["atividade", "inflacao"].includes(ABA_PAIS_OFF) ? `<div class="aviso">Aguardando a primeira coleta do FRED (chave cadastrada; os dados entram na próxima atualização).</div>` : ""}
+    <div class="grade-cartoes">${a.cartoes.join("")}</div>
+    <div class="grade">${a.graficos.map((g, i) => painelG(`gp-${i}`, g.t, g.info, "", g.largo ? "largo" : "")).join("")}</div>`;
+  a.graficos.forEach((g, i) => grafico(document.getElementById(`gp-${i}`), g.op));
+  document.getElementById("sub-pais").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    ABA_PAIS_OFF = b.dataset.k;
+    limparGraficos();
+    desenharPaisOff(pais, off, cab, abas);
+  });
+}
 
 function emConstrucao(itens) {
   return `<div class="aviso">Em construção: a estrutura está pronta e os dados entram nas próximas etapas.</div>
@@ -1527,36 +1641,7 @@ async function paginaOffshore(secao, parametro) {
     const sub = SUBS_MACRO_OFF.some(([k]) => k === parametro) ? parametro : "eua";
     const abas = `<div class="abas">${SUBS_MACRO_OFF.map(([k, n]) => `<a href="#/off/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
     if (PLANO_OFFSHORE[sub]) { app.innerHTML = `${cab("Mundo · Macro", "Atividade, inflação e emprego no exterior")}${abas}${emConstrucao(PLANO_OFFSHORE[sub][2])}`; return; }
-    if (sub === "eua") {
-      app.innerHTML = `${cab("Mundo · Macro", "Estados Unidos: BLS (API oficial)")}${abas}
-        <div class="grade-cartoes">
-          ${cartao("CPI 12 meses", pctPronto(u(B.cpi_12m).valor), mes(B.cpi_12m))}${cartao("Núcleo do CPI 12m", pctPronto(u(B.cpi_nucleo_12m).valor), mes(B.cpi_nucleo_12m))}
-          ${cartao("CPI no mês (dessaz.)", pctPronto(u(B.cpi_mensal).valor), mes(B.cpi_mensal))}${cartao("Desemprego", pctPronto(u(B.desemprego).valor, 1), mes(B.desemprego))}
-          ${cartao("Payroll (vagas no mês)", u(B.payroll_var).valor != null ? `${num(u(B.payroll_var).valor, 0)} mil` : "—", mes(B.payroll_var))}</div>
-        <div class="grade">${painelG("go-cpi", "Inflação ao consumidor (CPI)", "cpi_eua")}${painelG("go-cpin", "CPI — núcleo (sem alimentos e energia)", "cpi_eua")}
-          ${painelG("go-trab", "Mercado de trabalho: payroll e desemprego", "emprego_eua")}</div>`;
-      grafico(document.getElementById("go-cpi"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
-        { nome: "Mensal (dessaz.)", valores: Pares(B.cpi_mensal), cor: COR.azul }, { nome: "12 meses", valores: Pares(B.cpi_12m), tipo: "line", eixo: "dir", cor: COR.vermelho },
-        { nome: "Núcleo 12 meses", valores: Pares(B.cpi_nucleo_12m), tipo: "line", eixo: "dir", cor: COR.ambar, tracejado: true }] });
-      grafico(document.getElementById("go-cpin"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
-        { nome: "Núcleo mensal (dessaz.)", valores: Pares(B.cpi_nucleo_mensal), cor: COR.azul }, { nome: "Núcleo 12 meses", valores: Pares(B.cpi_nucleo_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] });
-      grafico(document.getElementById("go-trab"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "numero", eixoDir: "pctPronto", series: [
-        { nome: "Payroll (mil vagas no mês)", valores: Pares(B.payroll_var), cor: COR.verde }, { nome: "Desemprego", valores: Pares(B.desemprego), tipo: "line", eixo: "dir", cor: COR.vermelho }] });
-      return;
-    }
-    app.innerHTML = `${cab("Mundo · Macro", "Zona do Euro: Eurostat (API oficial)")}${abas}
-      <div class="grade-cartoes">
-        ${cartao("HICP 12 meses", pctPronto(u(Z.hicp_12m).valor, 1), mes(Z.hicp_12m))}${cartao("Núcleo 12m", pctPronto(u(Z.hicp_nucleo_12m).valor, 1), "sem energia, alimentos, álcool e fumo")}
-        ${cartao("Serviços 12m", pctPronto(u(Z.hicp_servicos_12m).valor, 1), mes(Z.hicp_servicos_12m))}${cartao("Desemprego", pctPronto(u(Z.desemprego).valor, 1), mes(Z.desemprego))}
-        ${cartao("PIB tri/tri", pctPronto(u(Z.pib_tri).valor, 1), u(Z.pib_tri).data ? `${Math.ceil(Number(u(Z.pib_tri).data.slice(5, 7)) / 3)}º tri/${u(Z.pib_tri).data.slice(0, 4)}` : "")}</div>
-      <div class="grade">${painelG("go-hicp", "Inflação (HICP) — 12 meses", "hicp")}${painelG("go-des", "Desemprego", "desemprego_euro")}${painelG("go-pib", "PIB", "pib_euro")}</div>`;
-    grafico(document.getElementById("go-hicp"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", series: [
-      { nome: "Cheio", valores: Pares(Z.hicp_12m), tipo: "line", cor: COR.vermelho }, { nome: "Núcleo", valores: Pares(Z.hicp_nucleo_12m), tipo: "line", cor: COR.ambar },
-      { nome: "Serviços", valores: Pares(Z.hicp_servicos_12m), tipo: "line", cor: COR.ciano, tracejado: true }] });
-    grafico(document.getElementById("go-des"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", series: [
-      { nome: "Desemprego (dessaz.)", valores: Pares(Z.desemprego), tipo: "line", cor: COR.vermelho }] });
-    grafico(document.getElementById("go-pib"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
-      { nome: "Tri/tri (dessaz.)", valores: Pares(Z.pib_tri), cor: COR.azul }, { nome: "Contra o mesmo tri do ano anterior", valores: Pares(Z.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] });
+    desenharPaisOff(sub, off, cab, abas);
     return;
   }
 
