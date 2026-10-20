@@ -111,6 +111,24 @@ def universo_selecionado() -> pd.DataFrame:
     return df.sort_values("DENOM_SOCIAL").reset_index(drop=True)
 
 
+CAMINHO_BANCOS_LISTADOS = Path(__file__).resolve().parent.parent / "config" / "bancos_listados.csv"
+
+
+def universo_perfis() -> pd.DataFrame:
+    """Lista de empresas + bancos listados: usada só nos perfis (FRE/FCA, fatos relevantes, cotação e proventos).
+
+    Os bancos não entram no padrão de demonstrações das empresas não financeiras (vêm do IF.data do
+    Banco Central, em pipeline.bancos)."""
+    empresas = universo_selecionado()
+    lista = pd.read_csv(CAMINHO_BANCOS_LISTADOS, sep=";", dtype=str, encoding="utf-8")
+    bancos = pd.DataFrame({
+        "CNPJ_CIA": lista["CNPJ_CIA"], "DENOM_SOCIAL": lista["Empresa"], "SETOR_ATIV": "Bancos",
+        "tickers_lista": [[t.strip() for t in x.split("/")] for x in lista["Tickers"]],
+    })
+    bancos = bancos[~bancos["CNPJ_CIA"].isin(empresas["CNPJ_CIA"])]
+    return pd.concat([empresas, bancos], ignore_index=True)
+
+
 def _ultimo_valor_por_empresa(bruto: pd.DataFrame, cd_conta: str) -> pd.Series:
     """De um DataFrame já filtrado por CD_CONTA, pega o valor mais recente (maior DT_FIM_EXERC) por empresa."""
     if bruto.empty:

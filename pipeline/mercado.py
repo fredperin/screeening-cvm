@@ -17,7 +17,7 @@ import pandas as pd
 import requests
 
 from pipeline import DIR_DADOS_SITE
-from src.screening import universo_selecionado
+from src.screening import universo_perfis as universo_selecionado  # empresas + bancos listados
 
 URL_EMPRESA = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/CompanyCall/GetListedSupplementCompany/{}"
 URL_COTACAO = "https://cotacao.b3.com.br/mds/api/v1/instrumentQuotation/{}"

@@ -251,7 +251,7 @@ async function iniciarBusca() {
 // Mesmas seções, na mesma ordem, nos dois lados: #/on/<seção>/<detalhe> e #/off/<seção>/<detalhe>
 const SECOES = [["", "Início"], ["noticias", "Notícias e agenda"], ["macro", "Macro"], ["juros", "Juros"], ["empresas", "Empresas"], ["downloads", "Downloads"]];
 const ROTAS = {
-  on: { "": paginaInicio, noticias: (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("on")), macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
+  on: { banco: (p) => paginaBanco(p), "": paginaInicio, noticias: (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("on")), macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
   off: Object.fromEntries(SECOES.map(([k]) => [k, (p) => paginaOffshore(k, p)])),
 };
 const SECOES_CONS = [["", "Juros"], ["inflacao", "Inflação"], ["atividade", "Atividade e emprego"], ["noticias", "Notícias e agenda"]];
@@ -278,7 +278,7 @@ async function rotear() {
     return;
   }
   const [lado, secao = "", parametro] = partes;
-  desenharNav(lado, secao === "empresa" ? "empresas" : secao);
+  desenharNav(lado, secao === "empresa" || secao === "banco" ? "empresas" : secao);
   await executar(ROTAS[lado][secao] || ROTAS[lado][""], parametro ? decodeURIComponent(parametro) : undefined);
 }
 
@@ -362,7 +362,7 @@ async function paginaInicio() {
 
 /* ============ Empresas (lista) ============ */
 // Duas abas: notícias e eventos das empresas (padrão) e a tabela com todas as empresas
-const ABAS_EMPRESAS = [["noticias", "Informações"], ["tabela", "Empresas"]];
+const ABAS_EMPRESAS = [["noticias", "Informações"], ["tabela", "Empresas"], ["financeiras", "Instituições financeiras"]];
 
 async function paginaEmpresas(aba) {
   if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "noticias";
@@ -383,6 +383,7 @@ async function paginaEmpresas(aba) {
   });
   const abas = `<div class="abas">${ABAS_EMPRESAS.map(([k, n]) => `<a href="#/on/empresas/${k}" class="${k === aba ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
   const cab = `<div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas da lista · clique numa empresa para abrir a página dela</div></div></div>`;
+  if (aba === "financeiras") return abaFinanceiras(cab, abas);
   if (aba === "noticias") {
     app.innerHTML = `${cab}${abas}
     <div class="grade">
@@ -1492,13 +1493,313 @@ function tabelaCalendario(cal, maximo = 400) {
       <td class="sub">${l.base_ano_anterior ? dataBR(l.base_ano_anterior) : "—"}</td><td class="sub">${dataBR(l.prazo_legal)}</td></tr>`).join("")}</table></div>`;
 }
 
+/* ============ Instituições financeiras (IF.data do Banco Central) ============ */
+const SEGMENTOS = {
+  S1: "S1 — porte igual ou maior que 10% do PIB ou atuação internacional relevante",
+  S2: "S2 — porte entre 1% e 10% do PIB", S3: "S3 — porte entre 0,1% e 1% do PIB", S4: "S4 — porte menor que 0,1% do PIB",
+  S5: "S5 — perfil de risco simplificado", "": "Sem segmento prudencial informado",
+};
+const TIPOS_IF = { bancos: ["B1", "B2", "B4"], cooperativas: ["B3S", "B3C"], nao_bancarias: ["N1", "N2"], pagamento: ["N4"] };
+const TIPO_CURTO = { B1: "Banco comercial/múltiplo", B2: "Banco múltiplo/investimento", B4: "Banco de desenvolvimento",
+  N1: "Não bancária de crédito", N2: "Mercado de capitais", N4: "Instituição de pagamento", B3S: "Cooperativa de crédito", B3C: "Central de cooperativas" };
+const triIF = (iso) => `${Math.ceil(Number(iso.slice(5, 7)) / 3)}T${iso.slice(2, 4)}`;
+
+async function abaFinanceiras(cab, abas) {
+  const b = await dados("dados/bancos.json").catch(() => null);
+  if (!b) { app.innerHTML = `${cab}${abas}<p class="erro">Dados do IF.data indisponíveis.</p>`; return; }
+  let tipo = "bancos", busca = "";
+  app.innerHTML = `${cab}${abas}
+    <div class="cabecalho"><div class="sub">${b.instituicoes.length} instituições do IF.data · data-base ${dataBR(b.data_base)} · por segmento prudencial (S1 a S5)
+      e, dentro de cada um, do maior para o menor ativo · clique para abrir</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <div class="seletor" id="tipo-if">${[["bancos", "Bancos"], ["cooperativas", "Cooperativas"], ["nao_bancarias", "Não bancárias"], ["pagamento", "Pagamento"], ["todas", "Todas"]]
+          .map(([k, r]) => `<button data-k="${k}" class="${k === tipo ? "ativo" : ""}">${r}</button>`).join("")}</div>
+        <input class="filtro" id="busca-if" placeholder="buscar instituição ou ticker" style="max-width:240px"></div></div>
+    <div class="painel" data-info="ifdata"><h2>Instituições financeiras</h2><div class="rolagem" id="tab-if"></div>
+      <div class="nota">Fonte: Banco Central — IF.data (conglomerado prudencial ou instituição independente). ROE = lucro dos últimos 12 meses ÷ PL;
+        inadimplência = carteira inadimplente ÷ carteira total. A BR Partners (BRBI11) não está no IF.data: os dados dela vêm da CVM (etiqueta "CVM").</div></div>`;
+  const desenhar = () => {
+    const q = busca.trim().toUpperCase();
+    const lista = b.instituicoes.filter((i) => (tipo === "todas" || TIPOS_IF[tipo].includes(i.tipo_cod))
+      && (!q || i.nome.toUpperCase().includes(q) || (i.ticker || "").includes(q)));
+    let seg = null;
+    const linhas = lista.map((i) => {
+      const cab = i.segmento !== seg ? `<tr><th colspan="11" style="text-align:left;color:var(--ambar);padding-top:12px">${esc(SEGMENTOS[(seg = i.segmento) || ""] || i.segmento)}</th></tr>` : "";
+      return `${cab}<tr class="clicavel" onclick="location.hash='#/on/banco/${esc(i.id)}'">
+        <td>${esc(i.nome.replace(/ - PRUDENCIAL$/, ""))}${i.ticker ? `<span class="etiqueta">${esc(i.ticker)}</span>` : ""}${i.fonte === "CVM" ? `<span class="etiqueta" title="Fora do IF.data: dados da CVM">CVM</span>` : ""}</td>
+        <td class="sub">${esc(TIPO_CURTO[i.tipo_cod] || i.tipo_cod || "")}</td><td class="sub">${esc(i.controle || "")}</td><td class="sub">${esc(i.uf || "")}</td>
+        <td>${reais(i.ativo)}</td><td>${reais(i.carteira)}</td><td>${reais(i.pl)}</td><td class="${classeSinal(i.lucro_12m)}">${reais(i.lucro_12m)}</td>
+        <td>${pct(i.roe)}</td><td>${pct(i.basileia)}</td><td>${pct(i.inadimplencia, 2)}</td></tr>`;
+    }).join("");
+    document.getElementById("tab-if").innerHTML = `<table class="tabela"><thead><tr><th>Instituição</th><th style="text-align:left">Tipo</th><th style="text-align:left">Controle</th>
+      <th>UF</th><th>Ativo total</th><th>Carteira</th><th>PL</th><th>Lucro 12m</th><th>ROE</th><th>Basileia</th><th>Inadimplência</th></tr></thead>
+      <tbody>${linhas || `<tr><td colspan="11" class="sub">Nenhuma instituição.</td></tr>`}</tbody></table>`;
+  };
+  document.getElementById("tipo-if").addEventListener("click", (ev) => {
+    const x = ev.target.closest("button"); if (!x) return;
+    tipo = x.dataset.k;
+    document.querySelectorAll("#tipo-if button").forEach((y) => y.classList.toggle("ativo", y === x));
+    desenhar();
+  });
+  document.getElementById("busca-if").addEventListener("input", (ev) => { busca = ev.target.value; desenhar(); });
+  desenhar();
+}
+
+// ---------- página de um banco ----------
+const ABAS_BANCO = [["perfil", "Perfil"], ["dfs", "DFs"], ["carteira_resumo", "Carteira — resumo"], ["carteira_total", "Carteira — total"]];
+let ABA_BANCO = "perfil";
+let PERIODO_DF = { tipo: "trimestre", fim: null };
+
+// períodos disponíveis de cada tipo: [{rotulo, idx: índices dos trimestres que compõem o período}]
+function periodosDF(trimestres, tipo) {
+  const n = trimestres.length, saida = [];
+  const mes = (i) => Number(trimestres[i].slice(5, 7)), ano = (i) => trimestres[i].slice(0, 4);
+  for (let i = 0; i < n; i++) {
+    if (tipo === "trimestre") saida.push({ rotulo: triIF(trimestres[i]), idx: [i] });
+    else if (tipo === "semestre" && (mes(i) === 6 || mes(i) === 12) && i >= 1 && ano(i - 1) === ano(i)) saida.push({ rotulo: `${mes(i) === 6 ? 1 : 2}S${ano(i).slice(2)}`, idx: [i - 1, i] });
+    else if (tipo === "anual" && mes(i) === 12 && i >= 3 && ano(i - 3) === ano(i)) saida.push({ rotulo: ano(i), idx: [i - 3, i - 2, i - 1, i] });
+    else if (tipo === "ltm" && i >= 3) saida.push({ rotulo: `LTM ${triIF(trimestres[i])}`, idx: [i - 3, i - 2, i - 1, i] });
+  }
+  return saida;
+}
+
+function tabelaDF(linhas, periodos, fluxo, baseK, escala) {
+  // fluxo (DRE): soma dos trimestres; estoque (balanço): saldo do último trimestre do período
+  const valor = (l, p) => {
+    if (!fluxo) return l.v[p.idx[p.idx.length - 1]];
+    const xs = p.idx.map((i) => l.v[i]);
+    return xs.some((x) => x == null) ? null : xs.reduce((a, b) => a + b, 0);
+  };
+  const base = linhas.find((l) => l.k === baseK);
+  const fmt = (v) => (v == null ? "—" : num(v / escala, 0));
+  return `<table class="tabela tabela-df"><tr><th></th>${periodos.map((p) => `<th>${p.rotulo}</th><th class="sub">(%)</th>`).join("")}<th>∆P (%)</th></tr>
+    ${linhas.map((l) => {
+      const vs = periodos.map((p) => valor(l, p)), bs = periodos.map((p) => (base ? valor(base, p) : null));
+      const ini = vs[0], fim = vs[vs.length - 1];
+      const delta = ini != null && fim != null && ini !== 0 && periodos.length > 1 ? (fim - ini) / Math.abs(ini) : null;
+      const estilo = l.n < 0 ? "font-weight:700;color:var(--texto-forte)" : "";
+      return `<tr><td style="text-align:left;padding-left:${8 + Math.max(l.n, 0) * 14}px;${estilo}">${esc(l.r)}</td>
+        ${vs.map((v, j) => `<td style="${estilo}">${fmt(v)}</td><td class="sub">${l.k === baseK || v == null || !bs[j] ? "" : pct(v / bs[j])}</td>`).join("")}
+        <td class="${delta == null ? "" : classeSinal(delta)}">${delta == null ? "—" : pct(delta)}</td></tr>`;
+    }).join("")}</table>`;
+}
+
+async function paginaBanco(id) {
+  const bk = await dados(`dados/bancos/${id}.json`);
+  const tk = bk.ticker;
+  const [ficha, negocio, resumoAp, eventos, mercado] = tk ? await Promise.all([
+    dados(`dados/fichas/${tk}.json`).catch(() => null), dados(`dados/negocio/${tk}.json`).catch(() => null),
+    dados(`dados/resumos/${tk}.json`).catch(() => null), dados(`dados/eventos/${tk}.json`).catch(() => null),
+    dados("dados/mercado.json").catch(() => null)]) : [null, null, null, null, null];
+  const mk = mercado ? mercado.empresas.find((x) => x.id === tk) || {} : {};
+  const cot = mk.papel_referencia && mk.cotacoes ? mk.cotacoes[mk.papel_referencia] : null;
+  const soCvm = bk.fonte === "CVM";
+  const T = bk.trimestres, n = T.length - 1;
+  const R = bk.resumo;
+  const ultimoR = (k) => (R[k] || [])[n];
+  const l4 = (R["Lucro Líquido"] || []).slice(-4);
+  const lucro12 = l4.length === 4 && l4.every((x) => x != null) ? l4.reduce((a, b) => a + b, 0) : null;
+  const cap = (k) => (bk.capital.find((l) => l.k === k) || { v: [] }).v[n];
+  const abasBanco = [...ABAS_BANCO.filter(([k]) => !(soCvm && k.startsWith("carteira"))), ...(tk ? [["eventos", "Eventos e notícias"]] : [])];
+  if (!abasBanco.some(([k]) => k === ABA_BANCO)) ABA_BANCO = "perfil";
+  const tg = (bk.carteiras["Total Geral"] || [])[n], inad = (bk.carteiras["Inadimplência"] || [])[n];
+  app.innerHTML = `
+    <div class="cabecalho"><div><h1>${esc(bk.nome.replace(/ - PRUDENCIAL$/, ""))}${bk.ticker ? ` · ${esc(bk.ticker)}` : ""}</h1>
+      <div class="sub">${esc(bk.tipo || "")} · ${esc(SEGMENTOS[bk.segmento || ""] || "")} · ${esc(bk.controle || "")} · ${esc(bk.municipio || "")}/${esc(bk.uf || "")}
+        · data-base ${dataBR(T[n])} · fonte: ${soCvm ? "CVM (ITR/DFP)" : "Banco Central (IF.data)"}</div></div>
+      <a class="botao" href="#/on/empresas/financeiras">Voltar à lista</a></div>
+    ${soCvm ? `<div class="aviso">Esta instituição não aparece no IF.data do Banco Central: os números vêm das demonstrações entregues à CVM (ITR/DFP),
+      no plano de contas da CVM, e não há dados de capital (Basileia) nem de carteira de crédito.</div>` : ""}
+    <div class="grade-cartoes">
+      ${cot ? cartao(`Preço ${esc(mk.papel_referencia)}`, `R$ ${num(cot.preco, 2)}`, `<span class="${classeSinal(cot.variacao_dia)}">${num(cot.variacao_dia, 2)}%</span> · ${dataBR(cot.data)}`) : ""}
+      ${mk.market_cap ? cartao("Market cap", reais(mk.market_cap), "ações B3 × preço") : ""}
+      ${mk.market_cap && ultimoR("Patrimônio Líquido") > 0 ? cartao("P/VP", vezes(mk.market_cap / ultimoR("Patrimônio Líquido")), "market cap ÷ PL") : ""}
+      ${mk.market_cap && lucro12 > 0 ? cartao("P/L", vezes(mk.market_cap / lucro12), "market cap ÷ lucro 12m") : ""}
+      ${mk.dy_12m != null ? cartao("DY 12m", pct(mk.dy_12m, 2), "proventos B3 ÷ preço") : ""}
+      ${cartao("Ativo total", reais(ultimoR("Ativo Total")), triIF(T[n]))}
+      ${soCvm ? "" : cartao("Carteira de crédito", reais(ultimoR("Carteira de Crédito")), "")}
+      ${soCvm ? "" : cartao("Captações", reais(ultimoR("Captações")), "")}
+      ${cartao("Patrimônio líquido", reais(ultimoR("Patrimônio Líquido")), "")}
+      ${cartao("Lucro 12 meses", reais(lucro12), "soma dos 4 trimestres")}
+      ${cartao("ROE", pct(lucro12 != null && ultimoR("Patrimônio Líquido") > 0 ? lucro12 / ultimoR("Patrimônio Líquido") : null), "lucro 12m ÷ PL")}
+      ${soCvm ? "" : cartao("Índice de Basileia", pct(cap("n")), `capital principal ${pct(cap("l"))}`)}
+      ${soCvm ? "" : cartao("Inadimplência", pct(tg ? inad / tg : null, 2), "carteira inadimplente ÷ total")}
+    </div>
+    <div class="abas" id="abas-banco">${abasBanco.map(([k, r]) => `<button data-k="${k}" class="${k === ABA_BANCO ? "ativo" : ""}">${r}</button>`).join("")}</div>
+    <div id="aba-banco"></div>`;
+  const area = () => document.getElementById("aba-banco");
+  const ultimos5 = T.map((_, i) => i).slice(-5);
+  const P = (s, datas) => datas.map((d, i) => [d, s[i]]);
+
+  const ABAS = {
+    perfil: () => {
+      const tabelaInfo = (titulo, linhas, fmt) => `<table class="tabela"><tr><th style="text-align:left">${titulo}</th>${ultimos5.map((i) => `<th>${triIF(T[i])}</th>`).join("")}<th>∆P (%)</th></tr>
+        ${linhas.map(([rotulo, vals, indice]) => { const ini = vals[ultimos5[0]], fim = vals[ultimos5[ultimos5.length - 1]];
+          const d = ini != null && fim != null && ini !== 0 ? (fim - ini) / Math.abs(ini) : null;
+          return `<tr><td style="text-align:left">${rotulo}</td>${ultimos5.map((i) => `<td>${indice ? pct(vals[i]) : fmt(vals[i])}</td>`).join("")}
+            <td class="${d == null ? "" : classeSinal(d)}">${d == null ? "—" : pct(d)}</td></tr>`; }).join("")}</table>`;
+      const mil = (v) => (v == null ? "—" : num(v / 1e3, 0));
+      const gerais = soCvm ? [["Ativo Total", R["Ativo Total"]], ["Patrimônio Líquido", R["Patrimônio Líquido"]], ["Lucro Líquido (trimestre)", R["Lucro Líquido"]]]
+        : [["Quantidade de clientes com operações ativas", bk.clientes["Quantidade de clientes com operações ativas"] || []],
+        ["Quantidade de operações ativas", bk.clientes["Quantidade de operações ativas"] || []],
+        ["Ativo Total", R["Ativo Total"]], ["Carteira de Crédito", R["Carteira de Crédito"]], ["Títulos e Valores Mobiliários", R["Títulos e Valores Mobiliários"]],
+        ["Passivo Exigível", R["Passivo Exigível"]], ["Captações", R["Captações"]], ["Patrimônio Líquido", R["Patrimônio Líquido"]],
+        ["Lucro Líquido (trimestre)", R["Lucro Líquido"]]];
+      const cad = [["Instituição", bk.nome], ["Tipo", bk.tipo], ["Segmento prudencial", SEGMENTOS[bk.segmento || ""]], ["Controle", bk.controle],
+        ["Atividade", bk.atividade], ["Sede", `${bk.municipio || "—"}/${bk.uf || "—"}`], ["Início das atividades", bk.inicio_atividade ? String(bk.inicio_atividade).replace(/(\d{4})(\d{2})/, "$2/$1") : "—"],
+        ["Código no IF.data", bk.cod || "não está no IF.data"], ["CNPJ da instituição líder", bk.cnpj_lider || "—"], ["Ticker na B3", bk.ticker || "não listada"]];
+      const H = bk.historico;
+      const perfilCvm = tk ? `<div id="resumo-aprofundado"></div><div class="grade" style="margin-bottom:10px"><div class="painel" id="ficha"></div><div class="painel" id="negocio"></div></div>` : "";
+      area().innerHTML = `${perfilCvm}<div class="grade">
+        <div class="painel" data-info="ifdata"><h2>Cadastro</h2><table class="tabela">${cad.map(([k, v]) => `<tr><td style="text-align:left" class="sub">${k}</td><td style="text-align:left">${esc(v || "—")}</td></tr>`).join("")}</table>
+          <div class="nota">Fonte: ${soCvm ? "CVM" : "Banco Central — IF.data (cadastro)"}.</div></div>
+        <div class="painel" data-info="ifdata"><h2>Dados gerais (valores em R$ mil)</h2><div class="rolagem">${tabelaInfo("Dados gerais", gerais.map(([r, v]) => [r, v]),
+          (v) => (v == null ? "—" : r_mil(v)))}</div></div>
+        ${soCvm ? "" : `<div class="painel largo" data-info="capital_banco"><h2>Dados patrimoniais e capital (valores em R$ mil)</h2><div class="rolagem">${tabelaInfo("Capital",
+          bk.capital.map((l) => [l.r, l.v, l.indice]), mil)}</div></div>`}
+        ${painelG("gb-ativo", soCvm ? "Ativo total" : "Ativo total e carteira de crédito (desde 2015)", "historico_banco")}
+        ${painelG("gb-lucro", soCvm ? "Lucro trimestral e patrimônio líquido" : "Lucro trimestral e patrimônio líquido (desde 2015)", "historico_banco")}
+        ${soCvm ? "" : painelG("gb-basileia", "Índice de Basileia (desde 2015)", "capital_banco", "", "largo")}
+      </div>`;
+      if (tk) { desenharFicha(ficha); desenharNegocio(negocio, resumoAp); }
+      grafico(document.getElementById("gb-ativo"), { xTempo: true, eixoEsq: "reais", series: [
+        { nome: "Ativo total", valores: P(H.ativo, H.datas), tipo: "line", cor: COR.azul },
+        ...(H.carteira ? [{ nome: "Carteira de crédito", valores: P(H.carteira, H.datas), tipo: "line", cor: COR.ambar }] : []),
+        ...(H.captacoes ? [{ nome: "Captações", valores: P(H.captacoes, H.datas), tipo: "line", cor: COR.cinza, tracejado: true }] : [])] });
+      grafico(document.getElementById("gb-lucro"), { xTempo: true, eixoEsq: "reais", eixoDir: "reais", series: [
+        { nome: "Lucro trimestral", valores: P(H.lucro_tri, H.datas), cor: COR.verde }, { nome: "Patrimônio líquido", valores: P(H.pl, H.datas), tipo: "line", eixo: "dir", cor: COR.ambar }] });
+      if (!soCvm) grafico(document.getElementById("gb-basileia"), { xTempo: true, eixoEsq: "pct", series: [
+        { nome: "Índice de Basileia", valores: P(H.basileia, H.datas), tipo: "line", cor: COR.ambar },
+        { nome: "Mínimo regulatório (11%)", valores: H.datas.map((d) => [d, 0.105]), tipo: "line", cor: COR.vermelho, tracejado: true }] });
+    },
+    dfs: () => {
+      const tipos = [["trimestre", "Trimestre"], ["semestre", "Semestre"], ["anual", "Anual"], ["ltm", "LTM"]];
+      const desenhar = () => {
+        const todos = periodosDF(T, PERIODO_DF.tipo);
+        if (!todos.length) { document.getElementById("df-corpo").innerHTML = `<p class="sub">Ainda não há período completo desse tipo no layout novo (desde 1T25).</p>`; return; }
+        let fim = todos.findIndex((p) => p.rotulo === PERIODO_DF.fim);
+        if (fim < 0) fim = todos.length - 1;
+        document.getElementById("df-fim").innerHTML = todos.map((p, i) => `<option value="${esc(p.rotulo)}" ${i === fim ? "selected" : ""}>${esc(p.rotulo)}</option>`).join("");
+        const sel = todos.slice(Math.max(0, fim - 4), fim + 1);
+        document.getElementById("df-corpo").innerHTML = `
+          <div class="painel largo" data-info="dfs_banco"><h2>Ativo (R$ mil)</h2><div class="rolagem">${tabelaDF(bk.ativo, sel, false, soCvm ? "1" : "k", 1e3)}</div></div>
+          <div class="painel largo" data-info="dfs_banco"><h2>Passivo (R$ mil)</h2><div class="rolagem">${tabelaDF(bk.passivo, sel, false, soCvm ? "2" : "k", 1e3)}</div></div>
+          <div class="painel largo" data-info="dfs_banco"><h2>DRE (R$ mil) — ${{ trimestre: "trimestre", semestre: "semestre", anual: "ano", ltm: "últimos 12 meses" }[PERIODO_DF.tipo]}</h2>
+            <div class="rolagem">${tabelaDF(bk.dre, sel, true, soCvm ? (bk.dre[0] || {}).k : "=receitas", 1e3)}</div>
+            <div class="nota">(%) da DRE = sobre as receitas da intermediação financeira; (%) do balanço = sobre o total. ∆P = variação entre a primeira e a última coluna.</div></div>`;
+      };
+      area().innerHTML = `<div class="cabecalho" style="margin-bottom:8px"><div class="seletor" id="df-tipo">${tipos.map(([k, r]) => `<button data-k="${k}" class="${k === PERIODO_DF.tipo ? "ativo" : ""}">${r}</button>`).join("")}</div>
+        <label class="sub">Até: <select id="df-fim" class="filtro" style="width:auto;display:inline-block"></select></label></div>
+        <div class="grade" id="df-corpo"></div>
+        <div class="nota secao">${soCvm ? "Demonstrações entregues à CVM (ITR/DFP), contas até o 3º nível; o 4º trimestre é o ano (DFP) menos os 9 meses."
+          : "Layout do IF.data desde 1T25 (Resolução CMN 4.966)."} Semestre e anual somam os trimestres; LTM soma os últimos 4 trimestres.
+          O balanço mostra o saldo no fim de cada período.</div>`;
+      document.getElementById("df-tipo").addEventListener("click", (ev) => {
+        const x = ev.target.closest("button"); if (!x) return;
+        PERIODO_DF = { tipo: x.dataset.k, fim: null };
+        document.querySelectorAll("#df-tipo button").forEach((y) => y.classList.toggle("ativo", y === x));
+        desenhar();
+      });
+      document.getElementById("df-fim").addEventListener("change", (ev) => { PERIODO_DF.fim = ev.target.value; desenhar(); });
+      desenhar();
+    },
+    carteira_resumo: () => {
+      const rot = T.map(triIF);
+      const empilhado = (obj, chaves, total) => chaves.filter((k) => obj[k] && obj[k].some((x) => x)).map((k, i) => ({
+        nome: k.split("|").pop(), valores: obj[k].map((x, j) => (x == null || !total[j] ? null : x / total[j])), cor: PALETA_GRAF[i % PALETA_GRAF.length], pilha: "a" }));
+      // prazo consolidado = soma das modalidades PF e PJ por faixa
+      const porFaixa = PRAZOS_IF.map((f) => T.map((_, j) => [bk.pf, bk.pj].reduce((s, g) => s + Object.entries(g)
+        .filter(([k]) => k.split("|")[1].toLowerCase() === f.toLowerCase()).reduce((a, [, v]) => a + (v[j] || 0), 0), 0)));
+      const totalFaixas = T.map((_, j) => porFaixa.reduce((a, s) => a + s[j], 0));
+      const C = bk.carteiras, tot = C["Total Geral"] || T.map(() => null);
+      area().innerHTML = `<div class="grade">
+        ${painelG("gr-prazo", "Carteira por prazo (% do total)", "carteira_banco")}
+        ${painelG("gr-c", "Carteira por classificação C1 a C5 (% do total)", "carteira_banco")}
+        ${painelG("gr-inad", "Inadimplência e ativos problemáticos (% da carteira)", "carteira_banco")}
+        ${painelG("gr-tam", "Carteira total, clientes e operações", "carteira_banco")}
+        ${painelG("gr-idx", "Carteira por indexador (% do total)", "carteira_banco")}
+        ${painelG("gr-reg", "Carteira por região (% do total)", "carteira_banco")}
+        ${painelG("gr-porte", "Carteira PJ por porte do tomador (% da carteira PJ)", "carteira_banco", "", "largo")}
+      </div><div class="nota secao">Concentração nos maiores devedores: não é divulgada no IF.data desde 2025.</div>`;
+      grafico(document.getElementById("gr-prazo"), { rotulos: rot, eixoEsq: "pct", series: PRAZOS_IF.map((f, i) => ({ nome: f.replace("A Vencer ", "").replace("Entre ", ""),
+        valores: porFaixa[i].map((x, j) => (totalFaixas[j] ? x / totalFaixas[j] : null)), cor: PALETA_GRAF[i], pilha: "a" })) });
+      grafico(document.getElementById("gr-c"), { rotulos: rot, eixoEsq: "pct", series: empilhado(C, ["C1", "C2", "C3", "C4", "C5", "Carteira não Informada ou não se Aplica", "Total não Individualizado", "Total Exterior"], tot) });
+      grafico(document.getElementById("gr-inad"), { rotulos: rot, eixoEsq: "pct", series: [
+        { nome: "Inadimplência", valores: (C["Inadimplência"] || []).map((x, j) => (x == null || !tot[j] ? null : x / tot[j])), tipo: "line", cor: COR.vermelho },
+        { nome: "Ativos problemáticos", valores: (C["Ativos problemáticos"] || []).map((x, j) => (x == null || !tot[j] ? null : x / tot[j])), tipo: "line", cor: COR.ambar }] });
+      grafico(document.getElementById("gr-tam"), { rotulos: rot, eixoEsq: "reais", eixoDir: "numero", series: [
+        { nome: "Carteira total", valores: tot, cor: COR.azul },
+        { nome: "Clientes", valores: bk.clientes["Quantidade de clientes com operações ativas"] || [], tipo: "line", eixo: "dir", cor: COR.ambar },
+        { nome: "Operações", valores: bk.clientes["Quantidade de operações ativas"] || [], tipo: "line", eixo: "dir", cor: COR.cinza, tracejado: true }] });
+      const idx = Object.keys(bk.indexador).filter((k) => !/^Total/.test(k));
+      const totIdx = bk.indexador["Total Geral"] || tot;
+      grafico(document.getElementById("gr-idx"), { rotulos: rot, eixoEsq: "pct", series: empilhado(bk.indexador, idx, totIdx) });
+      const reg = Object.keys(bk.regiao).filter((k) => k !== "Total Geral");
+      grafico(document.getElementById("gr-reg"), { rotulos: rot, eixoEsq: "pct", series: empilhado(bk.regiao, reg, bk.regiao["Total Geral"] || tot) });
+      const portes = ["Micro", "Pequena", "Média", "Grande", "Indisponível", "Total Exterior Pessoa Jurídica", "Total não Individualizado Pessoa Jurídica"];
+      grafico(document.getElementById("gr-porte"), { rotulos: rot, eixoEsq: "pct", series: empilhado(bk.porte, portes, bk.porte["Total da Carteira de Pessoa Jurídica"] || tot) });
+    },
+    eventos: async () => {
+      const not = await dados("dados/noticias.json").catch(() => null);
+      const doBanco = ((not && not.itens) || []).filter((x) => (x.empresas || []).includes(tk));
+      area().innerHTML = `<div class="grade">
+        <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Eventos (CVM)</h2>
+          <div class="seletor" id="sel-ev">${OPCOES_EVENTOS.map(([k, r]) => `<button data-k="${k}" class="${k === "todos" ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
+          <div class="rolagem rolagem-y" id="lista-eventos"></div>
+          <div class="nota">Fatos relevantes, comunicados ao mercado e avisos aos acionistas dos últimos 3 anos, com link para o documento oficial na CVM.</div></div>
+        <div class="painel"><h2>Notícias que citam o banco</h2>${listaNoticias(doBanco, 60)}
+          <div class="nota">Manchetes dos últimos dias que citam o ticker ou o nome de pregão.</div></div></div>`;
+      desenharEventos(eventos, "todos");
+      document.getElementById("sel-ev").addEventListener("click", (ev) => {
+        const x = ev.target.closest("button"); if (!x) return;
+        document.querySelectorAll("#sel-ev button").forEach((y) => y.classList.toggle("ativo", y === x));
+        desenharEventos(eventos, x.dataset.k);
+      });
+    },
+    carteira_total: () => {
+      const rot = T.map(triIF);
+      const modalidades = (g) => [...new Set(Object.keys(g).filter((k) => k.endsWith("|Total") && k.split("|")[0]).map((k) => k.split("|")[0]))];
+      const pfM = modalidades(bk.pf), pjM = modalidades(bk.pj);
+      const serieM = (g, m) => g[`${m}|Total`] || [];
+      const totPF = bk.pf["|Total da Carteira de Pessoa Física"] || [], totPJ = bk.pj["|Total da Carteira de Pessoa Jurídica"] || [];
+      const faixasUlt = (g, m) => PRAZOS_IF.map((f) => { const k = Object.keys(g).find((x) => x.split("|")[0] === m && x.split("|")[1].toLowerCase() === f.toLowerCase()); return k ? g[k][n] : null; });
+      area().innerHTML = `<div class="grade">
+        ${painelG("gt-pf", "Carteira PF por modalidade (R$)", "carteira_banco")}
+        ${painelG("gt-pj", "Carteira PJ por modalidade (R$)", "carteira_banco")}
+        ${painelG("gt-pf-prazo", `Carteira PF por modalidade e prazo — ${triIF(T[n])}`, "carteira_banco")}
+        ${painelG("gt-pj-prazo", `Carteira PJ por modalidade e prazo — ${triIF(T[n])}`, "carteira_banco")}
+        ${painelG("gt-pfpj", "Carteira PF x PJ (R$)", "carteira_banco", "", "largo")}
+      </div>`;
+      grafico(document.getElementById("gt-pf"), { rotulos: rot, eixoEsq: "reais", series: pfM.map((m, i) => ({ nome: m, valores: serieM(bk.pf, m), cor: PALETA_GRAF[i % PALETA_GRAF.length], pilha: "a" })) });
+      grafico(document.getElementById("gt-pj"), { rotulos: rot, eixoEsq: "reais", series: pjM.map((m, i) => ({ nome: m.slice(0, 40), valores: serieM(bk.pj, m), cor: PALETA_GRAF[i % PALETA_GRAF.length], pilha: "a" })) });
+      const porPrazo = (g, ms) => PRAZOS_IF.map((f, i) => ({ nome: f.replace("A Vencer ", "").replace("Entre ", ""), valores: ms.map((m) => faixasUlt(g, m)[i]), cor: PALETA_GRAF[i], pilha: "a" }));
+      grafico(document.getElementById("gt-pf-prazo"), { rotulos: pfM.map((m) => m.slice(0, 18)), eixoEsq: "reais", series: porPrazo(bk.pf, pfM) });
+      grafico(document.getElementById("gt-pj-prazo"), { rotulos: pjM.map((m) => m.slice(0, 18)), eixoEsq: "reais", series: porPrazo(bk.pj, pjM) });
+      grafico(document.getElementById("gt-pfpj"), { rotulos: rot, eixoEsq: "reais", series: [
+        { nome: "Pessoa física", valores: totPF, cor: COR.verde, pilha: "a" }, { nome: "Pessoa jurídica", valores: totPJ, cor: COR.azul, pilha: "a" }] });
+    },
+  };
+  const mostrar = (k) => {
+    limparGraficos();
+    ABA_BANCO = ABAS[k] ? k : "perfil";
+    document.querySelectorAll("#abas-banco button").forEach((x) => x.classList.toggle("ativo", x.dataset.k === ABA_BANCO));
+    ABAS[ABA_BANCO]();
+  };
+  document.getElementById("abas-banco").addEventListener("click", (ev) => { const x = ev.target.closest("button"); if (x) mostrar(x.dataset.k); });
+  mostrar(ABA_BANCO);
+}
+const r_mil = (v) => (v == null ? "—" : Math.abs(v) >= 1e4 ? num(v / 1e3, 0) : num(v, 0));
+const PRAZOS_IF = ["Vencido a Partir de 15 Dias", "A Vencer em até 90 Dias", "A Vencer Entre 91 a 360 Dias", "A Vencer Entre 361 a 1080 Dias",
+  "A Vencer Entre 1081 a 1800 Dias", "A Vencer Entre 1801 a 5400 Dias", "A Vencer Acima de 5400 Dias"];
+const PALETA_GRAF = ["#388bfd", "#f0b429", "#3fb950", "#a371f7", "#39c5cf", "#f85149", "#8b949e", "#db61a2", "#d29922", "#56d364", "#79c0ff", "#ff7b72"];
+
 /* ============ Status dos dados ============ */
 const NOMES_ETAPAS = {
   macro: "Macro (Banco Central, IBGE, FGV)", agenda: "Agenda (Banco Central, IBGE, FGV)", tesouro: "Tesouro Direto", curva_di: "Curva DI (B3)",
   mercado: "Cotações e proventos (B3)", noticias: "Notícias", planilhas: "Planilhas de Macro e Juros", eventos: "Eventos (CVM)",
   ficha: "Ficha da empresa (FRE/FCA)", fre_textos: "Trechos do Formulário de Referência", resumos: "Resumos aprofundados",
   cvm_base: "Base de demonstrações (CVM)", empresas: "Empresas (JSON e Excel)", indice: "Índice de empresas",
-  offshore: "Offshore (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)", eleicoes: "Eleições 2026 (TSE)", calendario_resultados: "Calendário de resultados (CVM)", tesouro_intradia: "Tesouro Direto — tempo real (3x ao dia)",
+  offshore: "Offshore (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)", bancos: "Instituições financeiras (IF.data)", eleicoes: "Eleições 2026 (TSE)", calendario_resultados: "Calendário de resultados (CVM)", tesouro_intradia: "Tesouro Direto — tempo real (3x ao dia)",
 };
 
 async function paginaStatus() {

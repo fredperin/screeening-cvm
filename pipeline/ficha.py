@@ -16,7 +16,7 @@ import pandas as pd
 import requests
 
 from pipeline import DIR_DADOS_SITE
-from src.screening import universo_selecionado
+from src.screening import universo_perfis as universo_selecionado  # empresas + bancos listados
 
 URL_FRE = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FRE/DADOS/fre_cia_aberta_{ano}.zip"
 URL_FCA = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/FCA/DADOS/fca_cia_aberta_{ano}.zip"

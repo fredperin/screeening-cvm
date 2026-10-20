@@ -16,7 +16,7 @@ import pandas as pd
 import requests
 
 from pipeline import DIR_DADOS_SITE
-from src.screening import universo_selecionado
+from src.screening import universo_perfis as universo_selecionado  # empresas + bancos listados
 
 URL = "https://dados.cvm.gov.br/dados/CIA_ABERTA/DOC/IPE/DADOS/ipe_cia_aberta_{ano}.zip"
 CATEGORIAS = {"Fato Relevante": "fato", "Comunicado ao Mercado": "comunicado", "Aviso aos Acionistas": "aviso"}

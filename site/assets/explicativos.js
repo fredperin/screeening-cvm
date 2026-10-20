@@ -374,6 +374,58 @@ window.EXPLICATIVOS = {
       </ul>
       <p class="sub">Fonte: CVM — índice de documentos ITR e DFP dos dados abertos (data de entrega de cada documento); estimativa do site.</p>`,
   },
+  ifdata: {
+    titulo: "IF.data — dados das instituições financeiras",
+    html: `<p>Relatórios trimestrais que o <b>Banco Central</b> publica para cada instituição supervisionada: resumo, balanço, DRE,
+      capital e carteira de crédito. Os números são do <b>conglomerado prudencial</b> (o grupo que o BC supervisiona como um todo)
+      ou da instituição independente — podem diferir um pouco do balanço consolidado em IFRS que o banco publica.</p>
+      <ul>
+        <li><b>Segmento (S1 a S5):</b> enquadramento prudencial pelo porte em relação ao PIB e pela atuação internacional; S1 são os maiores.</li>
+        <li><b>Tipo:</b> banco comercial/múltiplo, de investimento, de desenvolvimento, não bancária de crédito, mercado de capitais ou instituição de pagamento.</li>
+        <li><b>Layout novo desde 2025:</b> com a Resolução CMN 4.966, o plano de contas mudou; o detalhe vem desde o 1º tri de 2025 e o
+          histórico longo (desde 2015) fica com as linhas que existem nos dois layouts.</li>
+        <li><b>Resultado:</b> o BC informa o trimestre em março e setembro e o semestre em junho e dezembro; o site separa o 2º e o 4º trimestres.</li>
+      </ul>
+      <p class="sub">Fonte: Banco Central do Brasil — IF.data (API Olinda), dados oficiais.</p>`,
+  },
+  capital_banco: {
+    titulo: "Capital regulatório (Basileia)",
+    html: `<ul>
+        <li><b>Patrimônio de Referência (PR):</b> capital que conta para a regulação = Nível I (capital principal + complementar) + Nível II.</li>
+        <li><b>RWA:</b> ativos ponderados pelo risco (crédito, mercado e operacional) — o "tamanho do risco" do banco.</li>
+        <li><b>Índice de Basileia:</b> PR ÷ RWA. O mínimo exigido é 8% mais o adicional de conservação (2,5%), ou seja, 10,5%, além
+          de adicionais para os bancos sistêmicos; o gráfico marca 10,5%.</li>
+        <li><b>Índice de Capital Principal:</b> o capital de melhor qualidade ÷ RWA. <b>Razão de alavancagem:</b> Nível I ÷ exposição total, sem ponderar risco.</li>
+      </ul>
+      <p class="sub">Fonte: Banco Central do Brasil — IF.data, relatório Informações de Capital.</p>`,
+  },
+  historico_banco: {
+    titulo: "Histórico desde 2015",
+    html: `<p>Linhas do relatório Resumo do IF.data que existem tanto no layout antigo quanto no novo: ativo total, carteira de crédito,
+      captações, patrimônio líquido, lucro líquido e índice de Basileia. O lucro é trimestral (o 2º e o 4º trimestres saem por diferença do semestre).</p>
+      <p class="sub">Fonte: Banco Central do Brasil — IF.data, relatório Resumo.</p>`,
+  },
+  dfs_banco: {
+    titulo: "Demonstrações financeiras (IF.data)",
+    html: `<p>Balanço e DRE no layout do IF.data desde 2025, na estrutura da planilha de rating de emissores bancários.</p>
+      <ul>
+        <li><b>Receitas da intermediação financeira:</b> rendas de aplicações interfinanceiras, de TVM, de crédito, de arrendamento, de outras
+          operações de crédito, derivativos e outros resultados de intermediação.</li>
+        <li><b>Resultado da intermediação:</b> antes da perda esperada (PDD). <b>Resultado líquido da intermediação:</b> depois da PDD.</li>
+        <li><b>Seletor:</b> trimestre, semestre, ano ou LTM (soma dos 4 últimos trimestres); o balanço mostra o saldo no fim de cada período.</li>
+      </ul>
+      <p class="sub">Fonte: Banco Central do Brasil — IF.data, relatórios Ativo, Passivo e Demonstração de Resultado.</p>`,
+  },
+  carteira_banco: {
+    titulo: "Carteira de crédito",
+    html: `<ul>
+        <li><b>Prazo:</b> soma das modalidades de PF e PJ por faixa (vencido há mais de 15 dias e a vencer por prazo).</li>
+        <li><b>C1 a C5:</b> classificação das carteiras na Resolução CMN 4.966 — da C1 (menor risco, com garantias mais fortes) à C5.</li>
+        <li><b>Inadimplência</b> e <b>ativos problemáticos</b> como divulgados pelo BC, em % da carteira total.</li>
+        <li><b>Indexador, região, porte do tomador e modalidades</b> (consignado, veículos, habitação, cartão, rural, capital de giro, comércio exterior etc.).</li>
+      </ul>
+      <p class="sub">Fonte: Banco Central do Brasil — IF.data, relatórios de carteira de crédito ativa.</p>`,
+  },
   receita: {
     titulo: "Receita líquida",
     html: `<p>Vendas de produtos e serviços já descontados impostos sobre vendas, devoluções e abatimentos (linha 3.01 da DRE
