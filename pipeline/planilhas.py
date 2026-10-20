@@ -22,7 +22,7 @@ ABAS_MACRO = {
     "Desemprego": ["desemprego"],
     "Selic e juro real": ["selic_meta", "juro_real"],
     "CDI e câmbio (diário)": ["cdi", "usd", "eur"],
-    "Contas públicas": ["dbgg", "dlsp", "nfsp_primario", "nfsp_juros", "nfsp_nominal", "nfsp_primario_central",
+    "Política fiscal": ["dbgg", "dlsp", "nfsp_primario", "nfsp_juros", "nfsp_nominal", "nfsp_primario_central",
                         "nfsp_primario_regionais", "nfsp_primario_estatais"],
     "Dívida mobiliária federal": ["dmf_selic", "dmf_pre", "dmf_ipca", "dmf_igpm", "dmf_cambio", "dmf_tr", "dmf_igpdi", "dmf_tjlp",
                                   "dmf_outros", "dmf_prazo"],
@@ -62,7 +62,7 @@ def gerar_macro():
                      "Fontes: Banco Central (SGS) e boletim Focus. IPCA, PIB e PNAD são do IBGE; IGP-M e INCC são da FGV (via SGS).",
                      "Médias de 3 meses anualizadas: variação acumulada nos últimos 3 meses elevada à 4ª potência, sem ajuste sazonal.",
                      "Média dos núcleos: média simples mensal de EX0, EX3, MS, DP e P55, calculada pelo site.",
-                     "Contas públicas: NFSP (necessidade de financiamento do setor público) em 12 meses, % do PIB — positivo = déficit, negativo = superávit (no site o sinal aparece invertido, como resultado).",
+                     "Política fiscal: NFSP (necessidade de financiamento do setor público) em 12 meses, % do PIB — positivo = déficit, negativo = superávit (no site o sinal aparece invertido, como resultado).",
                      "Dívida mobiliária federal: participação por indexador (posição em carteira); a do IPCA é calculada por diferença (100% − demais).",
                      "Cada aba corresponde a um grupo de gráficos da seção Macro."])
         for aba, chaves in ABAS_MACRO.items():

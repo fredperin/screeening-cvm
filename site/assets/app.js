@@ -936,7 +936,7 @@ function desenharDreBalancoResumido(emp) {
 
 /* ============ Macro ============ */
 let JANELA_MACRO = 10;
-const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["monetaria", "Política monetária"], ["expectativas", "Expectativas (Focus)"], ["cambio", "Câmbio"], ["fiscal", "Contas públicas"]];
+const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["expectativas", "Expectativas (Focus)"], ["cambio", "Câmbio"]];
 const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
 const ESCOLHA_GRAFICO = {};  // opção escolhida em cada gráfico com botões (fica ao trocar de janela)
 const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinza], ["nucleo_ex3", "EX3", COR.roxo],
