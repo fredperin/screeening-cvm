@@ -185,6 +185,46 @@ window.EXPLICATIVOS = {
     html: `<p>Saldo da carteira de crédito das famílias e das empresas. Detalhes de cada um nas abas Pessoa física e Pessoa jurídica.</p>
       <p class="sub">Fonte: Banco Central do Brasil — Nota de Crédito, via SGS.</p>`,
   },
+  externo_tc: {
+    titulo: "Transações correntes e investimento direto",
+    html: `<p><b>Transações correntes:</b> saldo de tudo o que o Brasil vende e compra do exterior em bens, serviços e rendas (juros, lucros e
+      dividendos remetidos). Negativo = déficit, que precisa ser financiado com capital de fora. <b>Investimento direto no país (IDP):</b>
+      capital estrangeiro aplicado em empresas no Brasil — a forma mais estável de financiar o déficit. Quando o IDP supera o déficit em
+      transações correntes, o financiamento externo é considerado confortável. Ambos em 12 meses e em % do PIB.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — balanço de pagamentos (BPM6), SGS 23079, 24419, 22701 e 22885. IDP em % do PIB calculado
+      pelo PIB em dólares implícito na série de transações correntes.</p>`,
+  },
+  externo_balanca: {
+    titulo: "Balança comercial",
+    html: `<p>Exportações e importações de bens no mês, em dólares (valor FOB, sem frete e seguro), e o saldo. Registro aduaneiro do
+      governo, divulgado no começo do mês seguinte (antes do balanço de pagamentos do BC).</p>
+      <p class="sub">Fonte: Comex Stat — Ministério do Desenvolvimento, Indústria, Comércio e Serviços (API oficial).</p>`,
+  },
+  externo_produtos: {
+    titulo: "Exportações por produto",
+    html: `<p>Valor exportado nos últimos 12 meses dos produtos que mais pesam para as empresas da B3: minério de ferro (Vale), petróleo
+      (Petrobras, Prio), soja, farelo e milho (agronegócio e tradings), carnes (JBS, BRF, Minerva), celulose (Suzano, Klabin), açúcar e
+      café, aço (Gerdau, Usiminas) e aviões (Embraer). Classificação pela posição de 4 dígitos do Sistema Harmonizado.</p>
+      <p class="sub">Fonte: Comex Stat (API oficial).</p>`,
+  },
+  externo_destinos: {
+    titulo: "Exportações por destino",
+    html: `<p>Valor exportado nos últimos 12 meses para os principais compradores do Brasil. A China compra sobretudo minério, soja,
+      petróleo e carnes; os EUA, petróleo, aço, aviões e manufaturados.</p>
+      <p class="sub">Fonte: Comex Stat (API oficial); União Europeia pelo bloco econômico.</p>`,
+  },
+  externo_carteira: {
+    titulo: "Investimento estrangeiro em carteira",
+    html: `<p>Compras líquidas de estrangeiros em <b>ações</b> e <b>títulos de dívida</b> (públicos e privados) no Brasil, somadas em 12 meses.
+      Positivo = entrada de recursos. É o capital mais volátil: entra e sai rápido conforme juros e risco.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — balanço de pagamentos (SGS 22924, 22927 e 22939).</p>`,
+  },
+  externo_reservas: {
+    titulo: "Reservas internacionais",
+    html: `<p>Dólares e outros ativos externos em poder do Banco Central (conceito liquidez, que inclui as linhas de swap), na posição do fim
+      de cada mês. Funcionam como colchão contra crises cambiais.</p>
+      <p class="sub">Fonte: Banco Central do Brasil (SGS 13982).</p>`,
+  },
   fiscal_divida: {
     titulo: "Dívida pública: bruta (DBGG) e líquida (DLSP)",
     html: `<p><b>Dívida bruta do governo geral (DBGG):</b> tudo o que governo federal, INSS, estados e municípios devem

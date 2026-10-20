@@ -942,7 +942,7 @@ function desenharDreBalancoResumido(emp) {
 
 /* ============ Macro ============ */
 let JANELA_MACRO = 10;
-const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["expectativas", "Expectativas (Focus)"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["credito", "Crédito"], ["cambio", "Câmbio"]];
+const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["expectativas", "Expectativas (Focus)"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["credito", "Crédito"], ["cambio", "Câmbio"], ["externo", "Setor externo"]];
 const SUBS_CREDITO = [["total", "Total"], ["pj", "Pessoa jurídica"], ["pf", "Pessoa física"]];
 let ABA_CREDITO = "total";
 const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
@@ -952,8 +952,12 @@ const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinz
 
 async function paginaMacro(sub) {
   if (!SUBS_MACRO.some(([k]) => k === sub)) sub = SUBS_MACRO[0][0];
-  const [macro, cred] = await Promise.all([dados("dados/macro.json"), sub === "credito" ? dados("dados/credito.json").catch(() => null) : null]);
-  const S = cred ? { ...macro.series, ...cred.series } : macro.series, F = macro.focus;
+  const [macro, cred, ext] = await Promise.all([dados("dados/macro.json"), sub === "credito" ? dados("dados/credito.json").catch(() => null) : null,
+    sub === "externo" ? dados("dados/setor_externo.json").catch(() => null) : null]);
+  // Setor externo: séries do BC e do Comex Stat entram no mesmo dicionário (prefixo cx_ para o Comex); valores em US$
+  const S = { ...macro.series, ...((cred && cred.series) || {}), ...((ext && ext.bc) || {}),
+    ...(ext && ext.comex ? { cx_exportacoes: ext.comex.exportacoes, cx_importacoes: ext.comex.importacoes } : {}) }, F = macro.focus;
+  if (sub === "externo") MOEDA = "US$";
   const u = (k) => ultimo(S[k]);
   const mes = (k) => (u(k).data ? `${MESES[Number(u(k).data.slice(5, 7)) - 1]}/${u(k).data.slice(2, 4)}` : "");
   const focusAno = (k) => { const a = String(new Date().getFullYear()); const f = F[k] && F[k][a]; return f ? f.valores[f.valores.length - 1] : null; };
@@ -977,11 +981,12 @@ async function paginaMacro(sub) {
       cartao("Resultado nominal 12m", pctPronto(u("nfsp_nominal").valor == null ? null : -u("nfsp_nominal").valor, 2), "% do PIB"),
       cartao("Dívida federal pós-fixada (Selic)", pctPronto(u("dmf_selic").valor, 1), `do estoque · ${mes("dmf_selic")}`)],
     credito: cred ? cartoesCredito(S, u, mes) : [],
+    externo: ext ? cartoesExterno(S, u, mes) : [],
     expectativas: [cartao(`IPCA ${new Date().getFullYear()}`, pctPronto(focusAno("ipca")), "mediana Focus"), cartao(`Selic fim de ${new Date().getFullYear()}`, pctPronto(focusAno("selic")), "mediana Focus"),
       cartao(`Câmbio fim de ${new Date().getFullYear()}`, focusAno("cambio") ? `R$ ${num(focusAno("cambio"), 2)}` : "—", "mediana Focus"), cartao(`PIB ${new Date().getFullYear()}`, pctPronto(focusAno("pib")), "mediana Focus")],
   }[sub];
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS, Estatísticas Fiscais e de Crédito), IBGE, FGV e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
+    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS, Estatísticas Fiscais, de Crédito e do Setor Externo), IBGE, FGV, Comex Stat e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${sub === "expectativas" ? "" : `<div class="seletor" id="janela">${[[1, "1A"], [5, "5A"], [10, "10A"], [99, "Máx"]].map(([a, r]) => `<button data-a="${a}" class="${a === JANELA_MACRO ? "ativo" : ""}">${r}</button>`).join("")}</div>`}
         <a class="botao" href="downloads/macro.xlsx" download>Baixar planilha de Macro</a></div></div>
@@ -1001,12 +1006,12 @@ async function paginaMacro(sub) {
     const b = ev.target.closest("button"); if (!b) return;
     JANELA_MACRO = Number(b.dataset.a);
     document.querySelectorAll("#janela button").forEach((x) => x.classList.toggle("ativo", x === b));
-    desenharMacro(S, F, sub, cred);
+    desenharMacro(S, F, sub, cred, ext);
   });
-  desenharMacro(S, F, sub, cred);
+  desenharMacro(S, F, sub, cred, ext);
 }
 
-function desenharMacro(S, F, sub, cred = null) {
+function desenharMacro(S, F, sub, cred = null, ext = null) {
   limparGraficos();
   // Histórico completo em todos os gráficos; os botões de janela só escolhem o início (dá para dar zoom para trás)
   const inicio = (anos) => { if (anos >= 99) return null; const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
@@ -1028,6 +1033,35 @@ function desenharMacro(S, F, sub, cred = null) {
     { nome: "IPCA cheio", valores: P(S[`ipca_${suf}`]), tipo: "line", cor: COR.vermelho, tracejado: true }] }]));
   const anos = S.pib_anual ? S.pib_anual.datas.map((d) => d.slice(0, 4)) : [];
   const nominal = S.pib_nominal ? Object.fromEntries(S.pib_nominal.datas.map((d, i) => [d.slice(0, 4), S.pib_nominal.valores[i]])) : {};
+  // Setor externo: valores em US$ milhões (BC e Comex Stat); 12 meses = soma móvel dos últimos 12 meses
+  const MU = (s) => P(s).map(([d, v]) => [d, v == null ? null : v * 1e6]);
+  const soma12 = (s) => { const p = P(s); return p.map(([d], i) => [d, i >= 11 ? p.slice(i - 11, i + 1).reduce((a, x) => a + (x[1] || 0), 0) * 1e6 : null]).filter((x) => x[1] != null); };
+  const defsExterno = () => {
+    const C = ext.comex || {}, prod = C.produtos || {}, dest = C.destinos || {};
+    const grupoProd = (cods) => ({ eixoEsq: "reais", series: cods.filter((c) => prod[c]).map((c, j) => ({ nome: prod[c].nome, valores: soma12(prod[c]), tipo: "line", cor: PALETA_GRAF[j] })) });
+    const saldo = C.exportacoes && C.importacoes ? P(C.exportacoes).map(([d, v], i) => [d, (v - (C.importacoes.valores[i] || 0)) * 1e6]) : [];
+    return [
+      { t: "Transações correntes e investimento direto (12 meses, % do PIB)", info: "externo_tc", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Transações correntes", valores: P(S.tc_pib), tipo: "line", cor: COR.vermelho },
+        { nome: "Investimento direto no país (IDP)", valores: P(S.idp_pib), tipo: "line", cor: COR.verde }] } },
+      { t: "Balança comercial — mensal (Comex Stat)", info: "externo_balanca", op: { eixoEsq: "reais", inicio: inicio(Math.min(JANELA_MACRO, 5)), series: [
+        { nome: "Exportações", valores: MU(C.exportacoes), cor: COR.verde }, { nome: "Importações", valores: MU(C.importacoes), cor: COR.vermelho },
+        { nome: "Saldo", valores: saldo, tipo: "line", cor: COR.ambar }] } },
+      { t: "Exportações por produto — acumulado em 12 meses", info: "externo_produtos", largo: true, alt: {
+        "Minerais e energia": grupoProd(["2709", "2601", "2710", "7207"]), "Grãos": grupoProd(["1201", "2304", "1005", "5201"]),
+        "Proteínas e alimentos": grupoProd(["0202", "0207", "1701", "0901"]), "Celulose e aviões": grupoProd(["4703", "8802"]) } },
+      { t: "Exportações por destino — acumulado em 12 meses", info: "externo_destinos", op: { eixoEsq: "reais", series:
+        ["China", "União Europeia", "Estados Unidos", "Argentina"].filter((p) => dest[p]).map((p, j) => ({ nome: p, valores: soma12(dest[p]), tipo: "line", cor: [COR.vermelho, COR.azul, COR.verde, COR.ciano][j] })) } },
+      { t: "Investimento estrangeiro em carteira — acumulado em 12 meses", info: "externo_carteira", op: { eixoEsq: "reais", series: [
+        { nome: "Ações", valores: soma12(S.carteira_acoes), cor: COR.azul, pilha: "c" },
+        { nome: "Títulos de dívida", valores: soma12(S.carteira_titulos), cor: COR.roxo, pilha: "c" },
+        { nome: "Total em carteira", valores: soma12(S.carteira_mensal), tipo: "line", cor: COR.ambar }] } },
+      { t: "Investimento direto no país (IDP)", info: "externo_tc", op: { eixoEsq: "reais", eixoDir: "reais", series: [
+        { nome: "No mês", valores: MU(S.idp_mensal), cor: COR.verde }, { nome: "12 meses (eixo direito)", valores: soma12(S.idp_mensal), tipo: "line", eixo: "dir", cor: COR.ambar }] } },
+      { t: "Reservas internacionais (conceito liquidez)", info: "externo_reservas", op: { eixoEsq: "reais", series: [
+        { nome: "Reservas no fim do mês", valores: MU(S.reservas), tipo: "line", cor: COR.verde }] } },
+    ];
+  };
   // Crédito (Banco Central): saldos e concessões vêm em R$ milhões
   const M = (s) => P(s).map(([d, v]) => [d, v == null ? null : v * 1e6]);
   // Selic meta vigente no fim de cada mês da série de referência (a Selic guarda só as datas de mudança)
@@ -1130,6 +1164,7 @@ function desenharMacro(S, F, sub, cred = null) {
       { t: "Juro real ex-post (Selic ÷ IPCA 12m)", info: "juro_real", largo: true, op: { series: [{ nome: "Juro real", valores: P(S.juro_real), tipo: "line", cor: COR.verde }], eixoEsq: "pctPronto" } },
     ],
     credito: cred ? defsCredito(ABA_CREDITO) : [],
+    externo: ext ? defsExterno() : [],
     fiscal: [
       { t: "Dívida pública (% do PIB): bruta e líquida", info: "fiscal_divida", op: { eixoEsq: "pctPronto", series: [
         { nome: "Dívida bruta do governo geral (DBGG)", valores: P(S.dbgg), tipo: "line", cor: COR.vermelho },
@@ -1181,6 +1216,10 @@ function desenharMacro(S, F, sub, cred = null) {
     grafico(el, xTempo ? { xTempo: true, inicioTempo: (ini !== undefined ? ini : corte) || "1990-01-01", deslizante: true, ...resto } : resto);
   };
   defs.forEach((_, i) => desenhar(i));
+  if (sub === "externo" && ext && ext.comex && ext.comex.produtos) {  // tabela logo abaixo do gráfico de produtos
+    const graf = document.getElementById(`gm-${defs.findIndex((d) => d.info === "externo_produtos")}`);
+    (graf ? graf.closest(".painel") : area.lastElementChild).insertAdjacentHTML("afterend", tabelaProdutosExterno(ext.comex));
+  }
   area.querySelectorAll("[data-alt]").forEach((sel) => sel.addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
     const i = Number(sel.dataset.alt);
@@ -1188,6 +1227,35 @@ function desenharMacro(S, F, sub, cred = null) {
     sel.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
     desenhar(i);
   }));
+}
+
+// Setor externo: cartões e tabela de produtos (US$ milhões)
+function cartoesExterno(S, u, mes) {
+  const bi = (x) => (x == null ? "—" : `US$ ${num(x / 1000, 1)} bi`);
+  const ult12 = (s) => (s && s.valores.length >= 12 ? s.valores.slice(-12).reduce((a, b) => a + b, 0) : null);
+  const ant12 = (s) => (s && s.valores.length >= 24 ? s.valores.slice(-24, -12).reduce((a, b) => a + b, 0) : null);
+  const e12 = ult12(S.cx_exportacoes), i12 = ult12(S.cx_importacoes), eAnt = ant12(S.cx_exportacoes);
+  return [
+    cartao("Transações correntes 12m", pctPronto(u("tc_pib").valor, 1), `do PIB · ${bi(u("tc_12m").valor)} · ${mes("tc_pib")}`),
+    cartao("Investimento direto 12m", pctPronto(u("idp_pib").valor, 1), `do PIB · ${bi(u("idp_12m").valor)}`),
+    cartao("Balança comercial 12m", bi(e12 != null && i12 != null ? e12 - i12 : null), `Comex Stat · até ${mes("cx_exportacoes")}`),
+    cartao("Exportações 12m", bi(e12), eAnt ? `${num((e12 / eAnt - 1) * 100, 1)}% contra 12 meses antes` : ""),
+    cartao("Reservas internacionais", bi(u("reservas").valor), "conceito liquidez"),
+    cartao("Estrangeiros em ações 12m", bi(u("carteira_acoes_12m").valor), "investimento em carteira, líquido"),
+  ];
+}
+function tabelaProdutosExterno(C) {
+  const tot = C.exportacoes ? C.exportacoes.valores.slice(-12).reduce((a, b) => a + b, 0) : null;
+  const linhas = Object.values(C.produtos).map((p) => {
+    const v = p.valores, s12 = v.slice(-12).reduce((a, b) => a + b, 0), a12 = v.length >= 24 ? v.slice(-24, -12).reduce((a, b) => a + b, 0) : null;
+    return { nome: p.nome, cod: p.codigo, mes: v[v.length - 1], data: p.datas[p.datas.length - 1], s12, var: a12 ? s12 / a12 - 1 : null, part: tot ? s12 / tot : null };
+  }).sort((a, b) => b.s12 - a.s12);
+  return `<div class="painel largo" data-info="externo_produtos"><h2>Principais produtos exportados — US$ milhões</h2><div class="rolagem"><table class="tabela">
+    <tr><th style="text-align:left">Produto</th><th>SH</th><th>Último mês</th><th>12 meses</th><th>% das exportações</th><th>Var. 12m</th></tr>
+    ${linhas.map((l) => `<tr><td style="text-align:left">${esc(l.nome)}</td><td class="sub">${l.cod}</td><td>${num(l.mes, 0)} <span class="sub">${mesAno(l.data)}</span></td>
+      <td>${num(l.s12, 0)}</td><td>${pct(l.part)}</td><td>${l.var == null ? "—" : `<span class="${classeSinal(l.var)}">${num(l.var * 100, 1)}%</span>`}</td></tr>`).join("")}
+  </table></div><div class="nota">Valor FOB das exportações, pela posição de 4 dígitos do Sistema Harmonizado (SH). Var. 12m = últimos 12 meses contra os 12 anteriores.
+    Fonte: Comex Stat (Ministério do Desenvolvimento, Indústria, Comércio e Serviços).</div></div>`;
 }
 
 // Cartões da aba Crédito (saldo em R$ milhões no SGS)
@@ -1497,7 +1565,7 @@ const PLANO_OFFSHORE = {
     ["Comparáveis estrangeiras", "Receita, margens, endividamento e retorno de empresas listadas nos EUA.", "SEC EDGAR (balanços XBRL, API oficial)"]]],
 };
 const CATEGORIAS_OFF = { fed: ["Fed", COR.verde], bce: ["BCE", COR.roxo], eua: ["EUA (dados)", COR.azul], europa: ["Europa (dados)", COR.ciano] };
-const SUBS_MACRO_OFF = [["eua", "Estados Unidos"], ["euro", "Europa (Zona do Euro)"], ["china", "China"], ["global", "Global"], ["mercados", "Mercados"]];
+const SUBS_MACRO_OFF = [["global", "Global"], ["eua", "Estados Unidos"], ["euro", "Europa (Zona do Euro)"], ["china", "China"], ["mercados", "Mercados"]];
 // Abas internas de cada país (mesma organização da seção Brasil)
 const ABAS_PAIS_OFF = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["emprego", "Emprego"], ["monetaria", "Política monetária"]];
 let ABA_PAIS_OFF = "atividade";
@@ -2001,7 +2069,7 @@ async function paginaOffshore(secao, parametro) {
   const ust10 = T.historico ? u(T.historico["10 anos"]) : {};
 
   if (secao === "macro") {
-    const sub = SUBS_MACRO_OFF.some(([k]) => k === parametro) ? parametro : "eua";
+    const sub = SUBS_MACRO_OFF.some(([k]) => k === parametro) ? parametro : SUBS_MACRO_OFF[0][0];
     const abas = `<div class="abas">${SUBS_MACRO_OFF.map(([k, n]) => `<a href="#/off/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
     const mundo = ["china", "global", "mercados"].includes(sub) ? await dados("dados/mundo.json").catch(() => null) : null;
     if (["china", "global", "mercados"].includes(sub) && !mundo) { app.innerHTML = `${cab("Mundo · Macro", "")}${abas}<p class="sub">Dados indisponíveis no momento.</p>`; return; }
@@ -2612,7 +2680,7 @@ const PALETA_GRAF = ["#388bfd", "#f0b429", "#3fb950", "#a371f7", "#39c5cf", "#f8
 
 /* ============ Status dos dados ============ */
 const NOMES_ETAPAS = {
-  macro: "Macro (Banco Central, IBGE, FGV)", credito: "Crédito (Banco Central)", mundo: "Mundo — mercados, commodities, China e Global (FRED, Banco Mundial, OCDE, FMI)", empresas_mundo: "Mundo — empresas do S&P 500 (SEC EDGAR)", agenda: "Agenda (Banco Central, IBGE, FGV)", tesouro: "Tesouro Direto", curva_di: "Curva DI (B3)",
+  macro: "Macro (Banco Central, IBGE, FGV)", credito: "Crédito (Banco Central)", setor_externo: "Setor externo (Banco Central e Comex Stat)", mundo: "Mundo — mercados, commodities, China e Global (FRED, Banco Mundial, OCDE, FMI)", empresas_mundo: "Mundo — empresas do S&P 500 (SEC EDGAR)", agenda: "Agenda (Banco Central, IBGE, FGV)", tesouro: "Tesouro Direto", curva_di: "Curva DI (B3)",
   mercado: "Cotações e proventos (B3)", noticias: "Notícias", planilhas: "Planilhas de Macro e Juros", eventos: "Eventos (CVM)",
   ficha: "Ficha da empresa (FRE/FCA)", fre_textos: "Trechos do Formulário de Referência", resumos: "Resumos aprofundados",
   cvm_base: "Base de demonstrações (CVM)", empresas: "Empresas (JSON e Excel)", indice: "Índice de empresas",

@@ -72,6 +72,17 @@ def gerar_macro():
                   for k, anos in macro["focus"].items() for ano, serie in anos.items()
                   for d, v in zip(serie["datas"], serie["valores"])]
         pd.DataFrame(linhas).to_excel(w, sheet_name="Focus", index=False)
+        # Setor externo (pipeline.setor_externo): balanço de pagamentos (BC) e comércio exterior (Comex Stat), US$ milhões
+        arq_ext = DIR_DADOS_SITE / "setor_externo.json"
+        if arq_ext.exists():
+            X = json.loads(arq_ext.read_text(encoding="utf-8"))
+            _tabela(X.get("bc", {}), list(X.get("bc", {}))).to_excel(w, sheet_name="Setor externo (BC)")
+            cx = X.get("comex", {})
+            series_cx = {"exportacoes": cx.get("exportacoes"), "importacoes": cx.get("importacoes"),
+                         **{f"prod_{k}": v for k, v in (cx.get("produtos") or {}).items()}, **{f"dest_{k}": v for k, v in (cx.get("destinos") or {}).items()}}
+            series_cx = {k: v for k, v in series_cx.items() if v}
+            if series_cx:
+                _tabela(series_cx, list(series_cx)).to_excel(w, sheet_name="Comércio exterior (Comex)")
         # Crédito (pipeline.credito): uma aba por grupo, como na seção Macro → Crédito
         arq_cred = DIR_DADOS_SITE / "credito.json"
         if arq_cred.exists():
