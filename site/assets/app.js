@@ -383,13 +383,14 @@ async function paginaInicio() {
 }
 
 /* ============ Empresas (lista) ============ */
-// Duas abas: notícias e eventos das empresas (padrão) e a tabela com todas as empresas
-const ABAS_EMPRESAS = [["noticias", "Informações"], ["tabela", "Empresas"], ["financeiras", "Instituições financeiras"]];
+// Abas: informações (calendário, divulgações, proventos), notícias e fatos relevantes, tabela das empresas e instituições financeiras
+const ABAS_EMPRESAS = [["noticias", "Informações"], ["fatos", "Notícias e fatos relevantes"], ["tabela", "Empresas não financeiras"], ["financeiras", "Instituições financeiras"]];
 
 async function paginaEmpresas(aba) {
   if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "noticias";
   const [mercado, fatos, noticias, cal] = await Promise.all([dados("dados/mercado.json").catch(() => ({ empresas: [] })),
-    dados("dados/eventos_recentes.json").catch(() => null), dados("dados/noticias.json").catch(() => null),
+    dados("dados/eventos_recentes.json").catch(() => null),
+    dados("dados/noticias_empresas.json").catch(() => dados("dados/noticias.json").catch(() => null)),
     dados("dados/calendario_resultados.json").catch(() => null)]);
   const citadas = ((noticias && noticias.itens) || []).filter((n) => (n.empresas || []).length);
   const recentes = [...INDICE].filter((e) => e.ultimo_periodo).sort((a, b) => b.ultimo_periodo.localeCompare(a.ultimo_periodo) || a.nome.localeCompare(b.nome)).slice(0, 15);
@@ -406,22 +407,29 @@ async function paginaEmpresas(aba) {
   const abas = `<div class="abas">${ABAS_EMPRESAS.map(([k, n]) => `<a href="#/on/empresas/${k}" class="${k === aba ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
   const cab = `<div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas da lista · clique numa empresa para abrir a página dela</div></div></div>`;
   if (aba === "financeiras") return abaFinanceiras(cab, abas);
+  if (aba === "fatos") {
+    // fatos relevantes na 1ª linha e notícias na 2ª, cada um na largura toda
+    app.innerHTML = `${cab}${abas}
+    <div class="grade grade-empilhada">
+      <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
+        <tr><th>Data</th><th>Papel</th><th style="text-align:left">Assunto</th></tr>
+        ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 200).map((e) => `<tr><td>${dataBR(e.data)}</td>
+          <td><a href="#/on/empresa/${esc(e.id)}">${esc(e.id)}</a></td>
+          <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")
+          : `<tr><td colspan="3" class="sub">Sem fatos relevantes recentes.</td></tr>`}
+      </table></div><div class="nota">Fonte: CVM (documentos IPE), com link para o documento oficial.</div></div>
+      <div class="painel"><h2>Notícias das empresas</h2>${listaNoticias(citadas, 400)}
+        <div class="nota">Manchetes de jornais e fontes oficiais que citam o ticker ou o nome de pregão de uma empresa da lista (etiqueta = empresa),
+          da mais recente para a mais antiga, guardadas por até ${(noticias && noticias.dias) || 7} dias. Mesmas fontes da seção Notícias e agenda.</div></div>
+    </div>`;
+    return;
+  }
   if (aba === "noticias") {
     app.innerHTML = `${cab}${abas}
     <div class="grade">
       <div class="painel largo" data-info="calendario_resultados"><h2>Calendário de resultados — próximo ITR/DFP de cada empresa</h2>${tabelaCalendario(cal)}
         <div class="nota">"est." = estimativa pelo histórico: a data em que a empresa entregou o mesmo trimestre no ano anterior, limitada ao prazo legal.
           Não é a data oficial anunciada pela empresa. Fonte: CVM (datas de entrega de ITR/DFP).</div></div>
-      <div class="painel"><h2>Notícias das empresas</h2>${listaNoticias(citadas, 80)}
-        <div class="nota">Manchetes de jornais e fontes oficiais que citam o ticker ou o nome de pregão de uma empresa da lista (etiqueta = empresa).
-          Fontes: Valor Econômico, Folha, Estadão, Brazil Journal, InfoMoney, Banco Central, IBGE, CVM e Agência Brasil.</div></div>
-      <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
-        <tr><th>Data</th><th>Papel</th><th style="text-align:left">Assunto</th></tr>
-        ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 60).map((e) => `<tr><td>${dataBR(e.data)}</td>
-          <td><a href="#/on/empresa/${esc(e.id)}">${esc(e.id)}</a></td>
-          <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")
-          : `<tr><td colspan="3" class="sub">Sem fatos relevantes recentes.</td></tr>`}
-      </table></div><div class="nota">Fonte: CVM (documentos IPE), com link para o documento oficial.</div></div>
       <div class="painel"><h2>Últimas divulgações de resultado</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Empresa</th><th>Período</th><th>Receita</th><th>Var. a/a</th><th>Lucro</th><th>Var. a/a</th></tr>
         ${recentes.map((e) => `<tr class="clicavel" onclick="location.hash='#/on/empresa/${esc(e.id)}'">
@@ -439,7 +447,7 @@ async function paginaEmpresas(aba) {
     return;
   }
   app.innerHTML = `${cab}${abas}
-    <div class="cabecalho"><h2 style="margin:0">Todas as empresas</h2><input class="filtro" id="filtro" placeholder="filtrar por nome, ticker ou setor"></div>
+    <div class="cabecalho"><h2 style="margin:0">Empresas não financeiras</h2><input class="filtro" id="filtro" placeholder="filtrar por nome, ticker ou setor"></div>
     <div class="painel"><div class="rolagem"><table class="tabela" id="tab">
       <thead><tr><th>Papel</th><th>Empresa</th><th>Setor</th><th>Market cap</th><th>Receita LTM</th><th>Lucro LTM</th>
       <th>Margem líq.</th><th>ROE</th><th>DL/EBITDA</th><th>DL/EBITDA c/ IFRS16</th><th>P/L</th><th>DY 12m</th></tr></thead><tbody></tbody></table></div></div>`;
