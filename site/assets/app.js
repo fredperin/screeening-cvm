@@ -1298,7 +1298,7 @@ async function paginaNoticias(lado = "on") {
   const jornais = { on: "Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney", off: "WSJ, Financial Times, CNBC, MarketWatch, The Guardian e BBC",
     cons: "jornais do Brasil e do exterior" }[lado];
   const oficiais = { on: "Banco Central, IBGE, CVM e Agência Brasil", off: "Federal Reserve e BCE", cons: "Banco Central, IBGE, CVM, Agência Brasil, Fed e BCE" }[lado];
-  // Brasil e Consolidado: agenda em cima e notícias embaixo, cada uma na largura toda e mais alta; Mundo: lado a lado
+  // Agenda em cima e notícias embaixo, cada uma na largura toda e mais alta (Brasil, Mundo e Consolidado)
   const painelNoticias = `
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
         ${comEditoria ? `<div class="seletor seletor-editoria" id="filtro-editoria">${EDITORIAS.map(([k, r]) => `<button data-k="${k}" class="${k === editoria ? "ativo" : ""}">${r}</button>`).join("")}</div>` : ""}</div>
@@ -1320,7 +1320,7 @@ async function paginaNoticias(lado = "on") {
   app.innerHTML = `
     <div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">Notícias de mercado (${jornais}) e oficiais (${oficiais}) · só a manchete, com link para a fonte</div></div></div>
     ${lado === "on" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
-    ${lado !== "off" ? `<div class="grade grade-empilhada">${painelAgenda}${painelNoticias}</div>` : `<div class="grade grade-noticias">${painelNoticias}${painelAgenda}</div>`}`;
+    <div class="grade grade-empilhada">${painelAgenda}${painelNoticias}</div>`;
   const passa = (n) => {
     if (comEditoria && editoria !== "todas" && (n.categoria || "economia") !== editoria) return false;
     if (filtro === "todas") return true;
