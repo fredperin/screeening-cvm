@@ -929,7 +929,7 @@ function desenharDreBalancoResumido(emp) {
 
 /* ============ Macro ============ */
 let JANELA_MACRO = 10;
-const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["credito", "Crédito"], ["expectativas", "Expectativas (Focus)"], ["cambio", "Câmbio"]];
+const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["expectativas", "Expectativas (Focus)"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["credito", "Crédito"], ["cambio", "Câmbio"]];
 const SUBS_CREDITO = [["total", "Total"], ["pj", "Pessoa jurídica"], ["pf", "Pessoa física"]];
 let ABA_CREDITO = "total";
 const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
