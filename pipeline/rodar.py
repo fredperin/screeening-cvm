@@ -136,9 +136,9 @@ def main(tudo=False):
         _etapa("empresas", gerar_empresas, status)
     elif reprocessados:
         novos = tickers_com_entrega_nova(universo, atuais)
-        if novos is None:
-            print(f"Gerando todas as empresas (primeiro registro das entregas); ZIPs reprocessados: {reprocessados}")
-            _etapa("empresas", gerar_empresas, status)
+        if novos is None:  # primeira vez: os arquivos já existem e estão em dia; só cria o registro das entregas
+            print("Registro das entregas da CVM criado; a partir da próxima atualização só as empresas com documento novo são refeitas")
+            ARQ_ENTREGAS.write_text(json.dumps(sorted(atuais)), encoding="utf-8")
         elif novos:
             print(f"CVM atualizada: gerando só {len(novos)} papéis com documento novo: {sorted(novos)}")
             _etapa("empresas", lambda: gerar_empresas(filtro=novos), status)

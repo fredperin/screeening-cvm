@@ -1515,9 +1515,12 @@ async function abaFinanceiras(cab, abas) {
         <div class="seletor" id="tipo-if">${[["bancos", "Bancos"], ["cooperativas", "Cooperativas"], ["nao_bancarias", "Não bancárias"], ["pagamento", "Pagamento"], ["todas", "Todas"]]
           .map(([k, r]) => `<button data-k="${k}" class="${k === tipo ? "ativo" : ""}">${r}</button>`).join("")}</div>
         <input class="filtro" id="busca-if" placeholder="buscar instituição ou ticker" style="max-width:240px"></div></div>
+    <div class="painel aviso-4966" data-info="ifdata_4966" style="margin-bottom:10px"><h2>Mudança no IF.data em 2025 (Resolução CMN 4.966)</h2>
+      <p class="sub" style="margin:0">O detalhe das demonstrações e das carteiras começa no 1º tri de 2025, quando entraram as novas regras contábeis dos bancos.
+        Clique em ⓘ para entender o que mudou.</p></div>
     <div class="painel" data-info="ifdata"><h2>Instituições financeiras</h2><div class="rolagem" id="tab-if"></div>
       <div class="nota">Fonte: Banco Central — IF.data (conglomerado prudencial ou instituição independente). ROE = lucro dos últimos 12 meses ÷ PL;
-        inadimplência = carteira inadimplente ÷ carteira total. A BR Partners (BRBI11) não está no IF.data: os dados dela vêm da CVM (etiqueta "CVM").</div></div>`;
+        inadimplência = carteira inadimplente ÷ carteira total.</div></div>`;
   const desenhar = () => {
     const q = busca.trim().toUpperCase();
     const lista = b.instituicoes.filter((i) => (tipo === "todas" || TIPOS_IF[tipo].includes(i.tipo_cod))
@@ -1527,7 +1530,7 @@ async function abaFinanceiras(cab, abas) {
       const cab = i.segmento !== seg ? `<tr><th colspan="11" style="text-align:left;color:var(--ambar);padding-top:12px">${esc(SEGMENTOS[(seg = i.segmento) || ""] || i.segmento)}</th></tr>` : "";
       return `${cab}<tr class="clicavel" onclick="location.hash='#/on/banco/${esc(i.id)}'">
         <td>${esc(i.nome.replace(/ - PRUDENCIAL$/, ""))}${i.ticker ? `<span class="etiqueta">${esc(i.ticker)}</span>` : ""}${i.fonte === "CVM" ? `<span class="etiqueta" title="Fora do IF.data: dados da CVM">CVM</span>` : ""}</td>
-        <td class="sub">${esc(TIPO_CURTO[i.tipo_cod] || i.tipo_cod || "")}</td><td class="sub">${esc(i.controle || "")}</td><td class="sub">${esc(i.uf || "")}</td>
+        <td class="sub">${esc(TIPO_CURTO[i.tipo_cod] || i.tipo_cod || "")}${i.segmento_calculado ? ' <span class="etiqueta" title="Segmento em branco no cadastro do BC: calculado pelo site pela regra da Res. 4.553">seg. calculado</span>' : ""}</td><td class="sub">${esc(i.controle || "")}</td><td class="sub">${esc(i.uf || "")}</td>
         <td>${reais(i.ativo)}</td><td>${reais(i.carteira)}</td><td>${reais(i.pl)}</td><td class="${classeSinal(i.lucro_12m)}">${reais(i.lucro_12m)}</td>
         <td>${pct(i.roe)}</td><td>${pct(i.basileia)}</td><td>${pct(i.inadimplencia, 2)}</td></tr>`;
     }).join("");
@@ -1594,6 +1597,8 @@ async function paginaBanco(id) {
   const mk = mercado ? mercado.empresas.find((x) => x.id === tk) || {} : {};
   const cot = mk.papel_referencia && mk.cotacoes ? mk.cotacoes[mk.papel_referencia] : null;
   const soCvm = bk.fonte === "CVM";
+  const lista = await dados("dados/bancos.json").catch(() => null);
+  const temExcel = Boolean(lista && (lista.instituicoes.find((i) => i.id === id) || {}).excel);
   const T = bk.trimestres, n = T.length - 1;
   const R = bk.resumo;
   const ultimoR = (k) => (R[k] || [])[n];
@@ -1605,9 +1610,10 @@ async function paginaBanco(id) {
   const tg = (bk.carteiras["Total Geral"] || [])[n], inad = (bk.carteiras["Inadimplência"] || [])[n];
   app.innerHTML = `
     <div class="cabecalho"><div><h1>${esc(bk.nome.replace(/ - PRUDENCIAL$/, ""))}${bk.ticker ? ` · ${esc(bk.ticker)}` : ""}</h1>
-      <div class="sub">${esc(bk.tipo || "")} · ${esc(SEGMENTOS[bk.segmento || ""] || "")} · ${esc(bk.controle || "")} · ${esc(bk.municipio || "")}/${esc(bk.uf || "")}
+      <div class="sub">${esc(bk.tipo || "")} · ${esc(SEGMENTOS[bk.segmento || ""] || "")}${bk.segmento_calculado ? " (calculado pelo site: em branco no cadastro do BC)" : ""} · ${esc(bk.controle || "")} · ${esc(bk.municipio || "")}/${esc(bk.uf || "")}
         · data-base ${dataBR(T[n])} · fonte: ${soCvm ? "CVM (ITR/DFP)" : "Banco Central (IF.data)"}</div></div>
-      <a class="botao" href="#/on/empresas/financeiras">Voltar à lista</a></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">${temExcel ? `<a class="botao" href="downloads/bancos/${esc(bk.id)}.xlsx" download>Baixar Excel (DFs)</a>` : ""}
+        <a class="botao" href="#/on/empresas/financeiras">Voltar à lista</a></div></div>
     ${soCvm ? `<div class="aviso">Esta instituição não aparece no IF.data do Banco Central: os números vêm das demonstrações entregues à CVM (ITR/DFP),
       no plano de contas da CVM, e não há dados de capital (Basileia) nem de carteira de crédito.</div>` : ""}
     <div class="grade-cartoes">
@@ -1690,6 +1696,10 @@ async function paginaBanco(id) {
       };
       area().innerHTML = `<div class="cabecalho" style="margin-bottom:8px"><div class="seletor" id="df-tipo">${tipos.map(([k, r]) => `<button data-k="${k}" class="${k === PERIODO_DF.tipo ? "ativo" : ""}">${r}</button>`).join("")}</div>
         <label class="sub">Até: <select id="df-fim" class="filtro" style="width:auto;display:inline-block"></select></label></div>
+        ${soCvm ? "" : `<div class="painel aviso-4966" data-info="ifdata_4966"><h2>Mudança no IF.data em 2025 (Resolução CMN 4.966)</h2>
+          <p class="sub" style="margin:0">Desde o 1º tri de 2025 os bancos seguem novas regras contábeis, alinhadas ao IFRS 9, e o Banco Central mudou os
+            relatórios: provisão por perda esperada, carteiras C1 a C5, "ativos problemáticos" e outro plano de contas. Por isso as DFs começam em 1T25.
+            Clique em ⓘ para o resumo das mudanças.</p></div>`}
         <div class="grade" id="df-corpo"></div>
         <div class="nota secao">${soCvm ? "Demonstrações entregues à CVM (ITR/DFP), contas até o 3º nível; o 4º trimestre é o ano (DFP) menos os 9 meses."
           : "Layout do IF.data desde 1T25 (Resolução CMN 4.966)."} Semestre e anual somam os trimestres; LTM soma os últimos 4 trimestres.

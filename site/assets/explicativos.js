@@ -380,13 +380,43 @@ window.EXPLICATIVOS = {
       capital e carteira de crédito. Os números são do <b>conglomerado prudencial</b> (o grupo que o BC supervisiona como um todo)
       ou da instituição independente — podem diferir um pouco do balanço consolidado em IFRS que o banco publica.</p>
       <ul>
-        <li><b>Segmento (S1 a S5):</b> enquadramento prudencial pelo porte em relação ao PIB e pela atuação internacional; S1 são os maiores.</li>
+        <li><b>Segmento (S1 a S5):</b> enquadramento prudencial pelo porte em relação ao PIB e pela atuação internacional; S1 são os maiores.
+          Quando o cadastro do BC traz o segmento em branco (caso do Bradesco), o site o calcula pela regra da Resolução 4.553 com a exposição
+          total e os ativos no exterior do relatório de Segmentação, e marca "seg. calculado".</li>
         <li><b>Tipo:</b> banco comercial/múltiplo, de investimento, de desenvolvimento, não bancária de crédito, mercado de capitais ou instituição de pagamento.</li>
         <li><b>Layout novo desde 2025:</b> com a Resolução CMN 4.966, o plano de contas mudou; o detalhe vem desde o 1º tri de 2025 e o
           histórico longo (desde 2015) fica com as linhas que existem nos dois layouts.</li>
         <li><b>Resultado:</b> o BC informa o trimestre em março e setembro e o semestre em junho e dezembro; o site separa o 2º e o 4º trimestres.</li>
       </ul>
       <p class="sub">Fonte: Banco Central do Brasil — IF.data (API Olinda), dados oficiais.</p>`,
+  },
+  ifdata_4966: {
+    titulo: "O que mudou em 2025: Resolução CMN 4.966",
+    html: `<p>Em <b>1º de janeiro de 2025</b> entrou em vigor a <b>Resolução CMN 4.966/2021</b>, complementada pela <b>Resolução BCB 352/2023</b>.
+      Ela aproxima a contabilidade dos bancos brasileiros do padrão internacional <b>IFRS 9</b>. Como as regras mudaram, o Banco Central
+      reorganizou o IF.data: os relatórios a partir da data-base de março de 2025 têm outro formato, e por isso o site mostra o
+      detalhe das demonstrações e das carteiras só desde o 1º trimestre de 2025.</p>
+      <h4>Principais mudanças</h4>
+      <ul>
+        <li><b>Provisão por perda esperada:</b> antes (Resolução 2.682), o banco classificava cada operação em níveis de risco de AA a H,
+          com provisão mínima por nível — um modelo de perda <i>incorrida</i>. Agora a provisão é pela <b>perda esperada</b>: o banco estima
+          o que deve perder já na concessão do crédito e revisa a estimativa quando o risco do cliente piora (estágios 1, 2 e 3).</li>
+        <li><b>Ativos problemáticos:</b> conceito novo para operações com atraso acima de 90 dias ou com indício de que não serão pagas
+          (como reestruturações). Para eles o banco deixa de reconhecer os juros como receita enquanto o problema durar.</li>
+        <li><b>Carteiras C1 a C5:</b> o Banco Central passou a agrupar as operações por tipo e garantia, da C1 (garantias mais fortes)
+          à C5 (sem garantia), com provisões mínimas que crescem com o atraso. Substituem, no IF.data, a carteira por nível de risco AA–H.</li>
+        <li><b>Classificação dos ativos financeiros:</b> pelo modelo de negócio — custo amortizado, valor justo no resultado ou valor justo
+          no patrimônio —, como no IFRS 9.</li>
+        <li><b>Juros pela taxa efetiva:</b> tarifas e custos ligados à concessão do crédito passam a ser reconhecidos ao longo do prazo da
+          operação, junto com os juros.</li>
+        <li><b>Novo plano de contas (Cosif):</b> o balanço e a DRE do IF.data ganharam linhas novas — perda esperada destacada por tipo de
+          ativo, transações de pagamento, ajustes de variação cambial e de hedge — e outras deixaram de existir.</li>
+      </ul>
+      <h4>Efeito na comparação</h4>
+      <p>Números de 2024 para trás e de 2025 em diante não são diretamente comparáveis: a provisão, a receita de juros e o patrimônio
+        dos bancos foram recalculados na transição (o ajuste inicial foi lançado no patrimônio). Por isso o histórico longo do site
+        (desde 2015) usa só as linhas que existem nos dois formatos — ativo total, carteira, captações, patrimônio, lucro e Basileia.</p>
+      <p class="sub">Fontes: Resolução CMN 4.966/2021 e Resolução BCB 352/2023 (Banco Central do Brasil); IF.data — Banco Central.</p>`,
   },
   capital_banco: {
     titulo: "Capital regulatório (Basileia)",

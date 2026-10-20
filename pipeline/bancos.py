@@ -38,13 +38,14 @@ RELATORIOS_NOVOS = {"resumo": "1", "ativo": "2", "passivo": "3", "dre": "4", "ca
 TIPOS = {"B1": "Banco comercial / múltiplo com carteira comercial", "B2": "Banco múltiplo sem carteira comercial / investimento",
          "B4": "Banco de desenvolvimento", "N1": "Não bancário de crédito", "N2": "Não bancário do mercado de capitais",
          "N4": "Instituição de pagamento", "B3S": "Cooperativa de crédito singular", "B3C": "Central e confederação de cooperativas"}
+TIPOS_BANCO = {"B1", "B2", "B4"}
 CONTROLE = {1: "Público", 2: "Privado nacional", 3: "Privado com controle estrangeiro"}
 
 # Bancos listados na B3 (conglomerado prudencial no IF.data -> ticker), para o perfil com dados da CVM e da B3
 LISTADOS = {"C0080099": "ITUB4", "C0080075": "BBDC4", "C0080329": "BBAS3", "C0080185": "SANB11", "C0080336": "BPAC11",
             "C0080312": "ABCB4", "C0080154": "BRSR6", "C0080178": "BMGB4", "C0080374": "PINE4", "C0080123": "BMEB4",
             "C0080147": "BEES3", "C0080288": "BSLI4", "C0081586": "BPAR3", "C0081634": "BGIP4", "C0081249": "BAZA3",
-            "C0081593": "BNBR3"}
+            "C0081593": "BNBR3", "C0080934": "BRBI11"}
 
 # ---- estrutura das tabelas (mesma ordem e nomes da aba DFS da planilha); código = letra do IF.data ----
 LAYOUT_ATIVO = [("a", "Disponibilidades", 0), ("b", "Aplicações Interfinanceiras de Liquidez", 0), ("c", "Títulos e Valores Mobiliários", 0),
@@ -201,8 +202,96 @@ def _iso(am):
     return (date(a + (m == 12), (m % 12) + 1, 1) - timedelta(days=1)).isoformat()
 
 
+DIR_EXCEL = DIR_DADOS_SITE.parent / "downloads" / "bancos"
+
+
+def _rotulo_tri(iso):
+    return f"{(int(iso[5:7]) + 2) // 3}T{iso[2:4]}"
+
+
+def gerar_excel(detalhe):
+    """Excel do banco com uma aba DFS (ativo, passivo e DRE trimestrais, R$ mil, (%) e ∆P), no estilo do Excel das empresas."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    from src.exportar import COR_SUBTOTAL, COR_TOTAL, FORMATO_NUMERO
+
+    tri = detalhe["trimestres"]
+    so_cvm = detalhe.get("fonte") == "CVM"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "DFS"
+    verde, cinza = PatternFill("solid", fgColor=COR_TOTAL), PatternFill("solid", fgColor=COR_SUBTOTAL)
+    branco_negrito, branco_titulo, negrito = Font(color="FFFFFF", bold=True), Font(color="FFFFFF", bold=True, size=12), Font(bold=True)
+    ws["A1"] = detalhe["nome"].replace(" - PRUDENCIAL", "")
+    ws["A1"].font = Font(bold=True, size=14)
+    ws["A2"] = " · ".join(x for x in [detalhe.get("tipo"), f"segmento {detalhe['segmento']}" if detalhe.get("segmento") else None,
+                                       detalhe.get("ticker"), f"data-base {tri[-1][8:10]}/{tri[-1][5:7]}/{tri[-1][:4]}"] if x)
+    ws["A3"] = ("Fonte: CVM — demonstrações ITR/DFP (a instituição não está no IF.data); 4º trimestre = ano − 9 meses."
+                if so_cvm else "Fonte: Banco Central — IF.data (conglomerado prudencial ou instituição independente), layout da Res. CMN 4.966 "
+                "desde 1T25; o 2º e o 4º trimestres do resultado saem por diferença do semestre. Valores em R$ mil.")
+    ws["A3"].font = Font(italic=True, color="666666")
+    linha = 5
+    blocos = [("ATIVO (em R$ mil)", detalhe["ativo"], "1" if so_cvm else "k"), ("PASSIVO (em R$ mil)", detalhe["passivo"], "2" if so_cvm else "k"),
+              ("DRE (em R$ mil) — trimestral", detalhe["dre"], (detalhe["dre"][0]["k"] if detalhe["dre"] else None) if so_cvm else "=receitas")]
+    n_col = 2 + 2 * len(tri)
+    for titulo, linhas, base_k in blocos:
+        cab = [titulo] + [x for t in tri for x in (_rotulo_tri(t), "(%)")] + ["∆P (%)"]
+        for j, v in enumerate(cab, start=1):
+            c = ws.cell(linha, j, v)
+            c.fill, c.font, c.alignment = verde, branco_titulo, Alignment(horizontal="center" if j > 1 else "left")
+        linha += 1
+        base = next((l["v"] for l in linhas if l["k"] == base_k), None)
+        for l in linhas:
+            nivel = l["n"]
+            ws.cell(linha, 1, ("   " * max(nivel, 0)) + l["r"])
+            for i, v in enumerate(l["v"]):
+                c = ws.cell(linha, 2 + 2 * i, None if v is None else round(v / 1000, 2))
+                c.number_format = FORMATO_NUMERO
+                if base and l["k"] != base_k and v is not None and base[i]:
+                    p = ws.cell(linha, 3 + 2 * i, v / base[i])
+                    p.number_format = "0.0%"
+            ini, fim = l["v"][0], l["v"][-1]
+            if ini not in (None, 0) and fim is not None and len(l["v"]) > 1:
+                d = ws.cell(linha, n_col, (fim - ini) / abs(ini))
+                d.number_format = "0.0%"
+            estilo = (verde, branco_negrito) if nivel == -1 else (cinza, negrito) if nivel == -2 else (None, None)
+            if estilo[0]:
+                for j in range(1, n_col + 1):
+                    ws.cell(linha, j).fill, ws.cell(linha, j).font = estilo
+            linha += 1
+        linha += 1
+    ws.column_dimensions["A"].width = 62
+    for j in range(2, n_col + 1):
+        ws.column_dimensions[get_column_letter(j)].width = 15 if (j % 2 == 0 or j == n_col) else 8
+    ws.freeze_panes = "B5"
+    DIR_EXCEL.mkdir(parents=True, exist_ok=True)
+    wb.save(DIR_EXCEL / f"{detalhe['id']}.xlsx")
+
+
+def gerar_excels(ids):
+    """Gera o Excel só de quem mudou (o arquivo do site é a fonte; um hash evita refazer 1.300 planilhas por dia)."""
+    import hashlib
+    from pipeline import DIR_INTERMEDIARIO
+    arq_hash = DIR_INTERMEDIARIO / "bancos_excel.json"
+    feitos = json.loads(arq_hash.read_text(encoding="utf-8")) if arq_hash.exists() else {}
+    novos = 0
+    for id_ in ids:
+        bruto = (DIR_BANCOS / f"{id_}.json").read_bytes()
+        h = hashlib.sha1(bruto).hexdigest()
+        if feitos.get(id_) == h and (DIR_EXCEL / f"{id_}.xlsx").exists():
+            continue
+        gerar_excel(json.loads(bruto))
+        feitos[id_] = h
+        novos += 1
+    arq_hash.write_text(json.dumps(feitos), encoding="utf-8")
+    print(f"✅ Excel dos bancos: {novos} gerados, {len(ids) - novos} sem mudança")
+
+
 # Bancos listados que não aparecem no IF.data: demonstrações da CVM (ITR/DFP), com aviso no site
-SO_CVM = {"BRBI11": ("10739356000103", "BR PARTNERS S.A.", "Banco de investimento — dados da CVM (fora do IF.data)")}
+# (a BR Partners está no IF.data como "BR PARTNERS - PRUDENCIAL"; a rotina fica para outro banco que precise)
+SO_CVM = {}
 
 
 def gerar_cvm(ticker, cnpj, nome, tipo):
@@ -282,6 +371,34 @@ def gerar_cvm(ticker, cnpj, nome, tipo):
             "roe": lucro_12m / pl[-1] if lucro_12m is not None and pl[-1] else None, "basileia": None, "inadimplencia": None}
 
 
+def segmentos_calculados(linhas_segmentacao):
+    """Segmento prudencial pela regra da Resolução CMN 4.553/2017, para quem vem sem segmento no cadastro do IF.data.
+
+    S1: exposição total de 10% do PIB ou mais, ou ativos no exterior acima de US$ 10 bi; S2: de 1% a 10%;
+    S3: de 0,1% a 1%; S4: abaixo de 0,1%; S5: quem adota a metodologia simplificada de capital."""
+    macro = json.loads((DIR_DADOS_SITE / "macro.json").read_text(encoding="utf-8"))
+    pib = macro["series"]["pib_nominal"]["valores"][-1]  # PIB anual em R$ (último ano fechado)
+    por = {}
+    for l in linhas_segmentacao:
+        nome = _primeira_linha(l["NomeColuna"])
+        por.setdefault(l["CodInst"], {})[nome] = l.get("Saldo")
+    saida = {}
+    for cod, v in por.items():
+        exp = v.get("Exposição Total ou Ativo Total") or 0
+        exterior = v.get("Total de Ativos Consolidados no Exterior") or 0
+        if v.get("Instituição Utiliza") == 1:
+            saida[cod] = "S5"
+        elif exp >= 0.10 * pib or exterior >= 10e9:
+            saida[cod] = "S1"
+        elif exp >= 0.01 * pib:
+            saida[cod] = "S2"
+        elif exp >= 0.001 * pib:
+            saida[cod] = "S3"
+        elif exp:
+            saida[cod] = "S4"
+    return saida
+
+
 def gerar():
     ultimo = ultimo_trimestre()
     novos = _trimestres(INICIO_LAYOUT_NOVO, ultimo)
@@ -320,6 +437,7 @@ def gerar():
         return None
 
     instituicoes = sorted(dados["resumo"][ultimo])
+    segmento_calc = segmentos_calculados(relatorio(ultimo, "6", ultimo))
     DIR_BANCOS.mkdir(parents=True, exist_ok=True)
     lista = []
     for cod in instituicoes:
@@ -392,7 +510,8 @@ def gerar():
         clientes = grupos("clientes")
         carteiras = grupos("carteiras")
         detalhe = {
-            "id": id_, "cod": cod, "nome": cad.get("NomeInstituicao", cod), "segmento": cad.get("Sr"), "tipo_cod": cad.get("Tcb"),
+            "id": id_, "cod": cod, "nome": cad.get("NomeInstituicao", cod), "segmento": cad.get("Sr") or segmento_calc.get(cod),
+            "segmento_calculado": not cad.get("Sr") and cod in segmento_calc, "tipo_cod": cad.get("Tcb"),
             "tipo": TIPOS.get(cad.get("Tcb"), cad.get("Tcb")), "controle": CONTROLE.get(cad.get("Tc")), "uf": cad.get("Uf"),
             "municipio": cad.get("Municipio"), "atividade": cad.get("Atividade"), "inicio_atividade": cad.get("DataInicioAtividade"),
             "cnpj_lider": cad.get("CnpjInstituicaoLider"), "ticker": LISTADOS.get(cod),
@@ -411,7 +530,7 @@ def gerar():
         total_cart = (carteiras.get("Total Geral") or [None])[-1]
         inad = (carteiras.get("Inadimplência") or [None])[-1]
         lista.append({
-            "id": id_, "cod": cod, "nome": detalhe["nome"], "segmento": detalhe["segmento"], "tipo_cod": detalhe["tipo_cod"],
+            "id": id_, "cod": cod, "nome": detalhe["nome"], "segmento": detalhe["segmento"], "segmento_calculado": detalhe["segmento_calculado"], "tipo_cod": detalhe["tipo_cod"],
             "controle": detalhe["controle"], "uf": detalhe["uf"], "ticker": detalhe["ticker"], "ativo": ativo,
             "carteira": resumo["Carteira de Crédito"][-1], "pl": pl, "lucro_12m": lucro_12m,
             "roe": lucro_12m / pl if lucro_12m is not None and pl and pl > 0 else None, "basileia": cap_n,
@@ -431,6 +550,16 @@ def gerar():
         "instituicoes": lista, "fonte": "Banco Central — IF.data (API Olinda), conglomerados prudenciais e instituições independentes"},
         ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"✅ bancos: {len(lista)} instituições, data-base {_iso(ultimo)}; trimestres {novos[0]}–{novos[-1]}")
+    # Excel só dos bancos mais relevantes (S1, S2 e S3) e dos listados na B3
+    com_excel = [i for i in lista if i["tipo_cod"] in TIPOS_BANCO and (i["segmento"] in ("S1", "S2", "S3") or i["ticker"])]
+    for i in lista:
+        i["excel"] = i in com_excel
+    gerar_excels([i["id"] for i in com_excel])
+    for x in DIR_EXCEL.glob("*.xlsx"):  # quem saiu da regra perde o arquivo
+        if x.stem not in {i["id"] for i in com_excel}:
+            x.unlink()
+    (DIR_DADOS_SITE / "bancos.json").write_text(json.dumps({**json.loads((DIR_DADOS_SITE / "bancos.json").read_text(encoding="utf-8")),
+                                                           "instituicoes": lista}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return len(lista)
 
 
