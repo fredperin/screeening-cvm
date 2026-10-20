@@ -858,19 +858,14 @@ function desenharDreBalanco(emp) {
     ${[...linhas, ...extra].map((l) => `<tr class="${l.estilo != null ? l.estilo : estilo(l.c, "")}"><td style="text-align:left;padding-left:${6 + Math.max(0, nivel(l.c || "x") - 1) * 14}px">${esc(l.r)}</td>
       ${l.v.map((x, i) => `<td>${mi(x)}</td><td class="sub">${av(x, base[i])}</td>`).join("")}</tr>`).join("")}</table>`;
   const linha = (ls, c) => (ls.find((l) => l.c === c) || { v: [] }).v;
-  // EBITDA e D&A não são contas da DRE da CVM: entram como memória, com a D&A da DFC (mesma regra dos gráficos)
-  const daCol = (i) => { const c = dm.colunas[i]; const v = c.ltm ? emp.ltm : emp.anual; const j = v.periodos.indexOf(c.data); return j >= 0 ? (v.series.da || [])[j] : null; };
-  const ebit = linha(dm.dre, "3.05");
-  const da = dm.colunas.map((_, i) => daCol(i));
-  const memoria = [
-    { c: "", r: "Memória: D&A (depreciação e amortização, da DFC)", v: da, estilo: "memoria" },
-    { c: "", r: "Memória: EBITDA (EBIT + D&A)", v: ebit.map((x, i) => (x == null || da[i] == null ? null : x + da[i])), estilo: "memoria" },
-  ];
+  // DRE simples: só as linhas principais (sem abrir despesas, sem D&A/EBITDA — a D&A está embutida em custos e despesas)
+  const PRINCIPAIS = ["3.01", "3.02", "3.03", "3.04", "3.05", "3.06", "3.07", "3.08", "3.11"];
+  const simples = PRINCIPAIS.map((c) => dm.dre.find((l) => l.c === c)).filter(Boolean)
+    .map((l) => ({ ...l, estilo: ["3.01", "3.11"].includes(l.c) ? "total" : ["3.03", "3.05", "3.07"].includes(l.c) ? "subtotal" : "" }));
   const receita = linha(dm.dre, "3.01");
-  document.getElementById("tab-dre").innerHTML = tabela(dm.dre, receita, memoria) + `<div class="nota">Mesmas contas da aba Demonstrações do Excel (padrão da CVM).
-    Anos fechados: número oficial da DFP; LTM: soma dos últimos 4 trimestres. AV em % da receita líquida. As despesas operacionais aparecem abertas
-    como a empresa divulga (vendas, gerais e administrativas, perdas por não recuperabilidade, outras receitas e despesas, equivalência patrimonial).
-    A CVM não separa a D&amp;A dentro de custos e despesas: ela fica embutida nessas linhas e aparece na memória, junto com o EBITDA.</div>`;
+  document.getElementById("tab-dre").innerHTML = tabela(simples, receita) + `<div class="nota">Linhas principais da DRE da CVM (as mesmas do Excel).
+    Anos fechados: número oficial da DFP; LTM: soma dos últimos 4 trimestres. AV em % da receita líquida.
+    Custos e despesas incluem a depreciação e amortização (a CVM não a separa); EBIT = resultado antes do resultado financeiro e dos tributos.</div>`;
   const ativo = linha(dm.bp, "1");
   document.getElementById("tab-bp").innerHTML = tabela(dm.bp, ativo) + `<div class="nota">Mesmas contas da aba Demonstrações do Excel (padrão da CVM),
     posição no fim de cada exercício e, na coluna LTM, no último trimestre. AV em % do ativo total (igual ao passivo total). Contas zeradas em todas as datas ficam de fora.</div>`;
@@ -891,24 +886,20 @@ function desenharDreBalancoResumido(emp) {
   </table>`;
   if (!cols.length) { ["tab-dre", "tab-bp"].forEach((id) => (document.getElementById(id).innerHTML = `<p class="sub">Sem anos fechados nem LTM disponíveis.</p>`)); return; }
 
-  const receita = (c) => g(c, "receita"), lb = (c) => g(c, "lucro_bruto"), ebit = (c) => g(c, "ebit"), da = (c) => g(c, "da");
-  const ebitda = (c) => (g(c, "ebitda") != null ? g(c, "ebitda") : soma(ebit(c), da(c)));
+  const receita = (c) => g(c, "receita"), lb = (c) => g(c, "lucro_bruto"), ebit = (c) => g(c, "ebit");
   document.getElementById("tab-dre").innerHTML = tabela([
     ["Receita líquida", receita, "total"],
     ["(−) Custos", (c) => soma(lb(c), receita(c) == null ? null : -receita(c))],
     ["Lucro bruto", lb, "subtotal"],
-    ["(−) Despesas operacionais, sem D&amp;A", (c) => soma(ebitda(c), lb(c) == null ? null : -lb(c))],
-    ["EBITDA", ebitda, "subtotal"],
-    ["(−) Depreciação e amortização", (c) => (da(c) == null ? null : -Math.abs(da(c)))],
+    ["(−) Despesas operacionais", (c) => soma(ebit(c), lb(c) == null ? null : -lb(c))],
     ["EBIT", ebit, "subtotal"],
     ["(+/−) Resultado financeiro", (c) => g(c, "res_fin")],
     ["Lucro antes do IR (LAIR)", (c) => g(c, "lair"), "subtotal"],
     ["(−) IR e CSLL", (c) => g(c, "ir")],
     ["Lucro líquido", (c) => g(c, "lucro_liquido"), "total"],
   ], receita) + `<div class="nota">Anos fechados (DFP) e últimos 12 meses (LTM). AV = análise vertical, em % da receita líquida do período.
-    A CVM não separa a D&amp;A entre custos e despesas: as despesas aparecem sem a D&amp;A (EBITDA − lucro bruto) e a D&amp;A total, na linha própria
-    (vem da DFC). Despesas operacionais incluem equivalência patrimonial e outras receitas/despesas operacionais.
-    Lucro líquido consolidado, inclusive a parte dos minoritários.</div>`;
+    Custos e despesas incluem a depreciação e amortização (a CVM não a separa). Despesas operacionais incluem equivalência patrimonial e outras
+    receitas/despesas operacionais. Lucro líquido consolidado, inclusive a parte dos minoritários.</div>`;
 
   const at = (c) => g(c, "ativo_total"), ac = (c) => g(c, "ativo_circ"), pc = (c) => g(c, "passivo_circ"), pl = (c) => g(c, "pl");
   const caixa = (c) => (g(c, "caixa") == null && g(c, "aplicacoes") == null ? null : (g(c, "caixa") || 0) + (g(c, "aplicacoes") || 0));
@@ -1179,8 +1170,8 @@ async function paginaJuros() {
           Taxa e preço andam em sentidos opostos: taxa sobe, preço cai (e vice-versa).</div></div>
     </div>
     <div class="nota secao">A curva DI vem do arquivo "Taxas de Mercado para Swaps" da B3 (fim de dia). As curvas do Tesouro usam a taxa de compra
-      do Tesouro Direto: título sem cupom e, nos prazos onde ele não existe, o título com juros semestrais. A inflação implícita interpola a curva
-      prefixada nos vencimentos do IPCA+, sem extrapolar.</div>`;
+      do Tesouro Direto: título sem cupom e, nos prazos onde ele não existe, o título com juros semestrais. A inflação implícita é calculada nos
+      vencimentos do IPCA+ e dos prefixados onde as duas curvas existem, interpolando a outra curva, sem extrapolar.</div>`;
 
   const rotulos = Object.keys(tes.curvas);
   const porData = (fonte, campo, maxAnos, minAnos = 0) => rotulos

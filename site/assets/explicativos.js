@@ -111,11 +111,10 @@ window.EXPLICATIVOS = {
   dre_resumida: {
     titulo: "DRE com análise vertical",
     html: `<p>Demonstração do resultado dos últimos 4 exercícios fechados e dos últimos 12 meses (LTM), em R$ milhões, com as
-      mesmas contas do Excel (padrão da CVM): custos, despesas com vendas, gerais e administrativas (SG&amp;A), perdas por não
-      recuperabilidade, outras receitas e despesas operacionais e equivalência patrimonial. Ao lado de cada valor, a
-      <b>análise vertical (AV)</b>: quanto a linha representa da receita líquida (ex.: AV do resultado bruto = margem bruta).</p>
-      <p>EBITDA = EBIT + depreciação e amortização. A D&amp;A vem da demonstração do fluxo de caixa, porque a CVM não a separa
-      dentro de custos e despesas — por isso EBITDA e D&amp;A aparecem como memória, no fim da tabela.</p>
+      linhas principais da DRE da CVM: receita, custos, resultado bruto, despesas operacionais, EBIT, resultado financeiro,
+      lucro antes dos tributos, IR/CSLL e lucro líquido. Ao lado de cada valor, a <b>análise vertical (AV)</b>: quanto a linha
+      representa da receita líquida (ex.: AV do resultado bruto = margem bruta).</p>
+      <p>A depreciação e amortização fica embutida em custos e despesas (a CVM não a separa na DRE); o EBITDA está na aba Gráficos.</p>
       <p class="sub">Fonte: CVM — demonstrações financeiras padronizadas (DFP e ITR), consolidado.</p>`,
   },
   balanco_resumido: {
@@ -254,7 +253,10 @@ window.EXPLICATIVOS = {
     html: `<p>A inflação que <b>iguala</b> o retorno de um prefixado e de um IPCA+ de mesmo prazo:
       <code>(1 + taxa prefixada) ÷ (1 + taxa real) − 1</code>. Também chamada de breakeven.</p>
       <p>Não é exatamente a expectativa de inflação: inclui um prêmio pelo risco de a inflação surpreender e diferenças de liquidez
-        entre os títulos. A curva prefixada é interpolada nos vencimentos do IPCA+, sem extrapolar.</p>
+        entre os títulos.</p>
+      <p>Calculada em cada vencimento do IPCA+ e de cada prefixado dentro da faixa de prazos em que existem os dois tipos de título
+        (a outra curva é interpolada linearmente nesse prazo, sem extrapolar). Antes do IPCA+ mais curto e depois do prefixado mais
+        longo (hoje cerca de 10 anos) não há como calcular.</p>
       <p class="sub">Fonte: Cálculo do site com as taxas oficiais do Tesouro Direto (Tesouro Transparente).</p>`,
   },
   vertices: {

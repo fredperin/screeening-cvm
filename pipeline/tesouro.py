@@ -97,21 +97,35 @@ def _curva(dia, tipos):
     ]
 
 
+def _interpolar(curva, anos):
+    """Taxa da curva no prazo (interpolação linear entre vencimentos), ou None fora da faixa — nunca extrapola."""
+    xs, ys = [p["anos"] for p in curva], [p["taxa"] for p in curva]
+    if len(xs) < 2 or not xs[0] <= anos <= xs[-1]:
+        return None
+    i = next(k for k in range(1, len(xs)) if xs[k] >= anos)
+    frac = (anos - xs[i - 1]) / (xs[i] - xs[i - 1]) if xs[i] != xs[i - 1] else 0
+    return ys[i - 1] + frac * (ys[i] - ys[i - 1])
+
+
 def _inflacao_implicita(pre, ipca):
-    """Em cada vencimento IPCA+, interpola a taxa prefixada (sem extrapolar) e compara."""
-    if len(pre) < 2:
+    """
+    Em cada vencimento IPCA+ e em cada vencimento prefixado dentro da faixa em que as duas curvas existem,
+    interpola a outra curva (sem extrapolar) e calcula (1 + pré) ÷ (1 + real) − 1.
+    """
+    if len(pre) < 2 or len(ipca) < 2:
         return []
-    xs, ys = [p["anos"] for p in pre], [p["taxa"] for p in pre]
-    saida = []
+    pontos = {}
     for p in ipca:
-        if not xs[0] <= p["anos"] <= xs[-1]:
-            continue
-        i = next(k for k in range(1, len(xs)) if xs[k] >= p["anos"])
-        frac = (p["anos"] - xs[i - 1]) / (xs[i] - xs[i - 1]) if xs[i] != xs[i - 1] else 0
-        taxa_pre = ys[i - 1] + frac * (ys[i] - ys[i - 1])
-        saida.append({"vencimento": p["vencimento"], "anos": p["anos"],
-                      "taxa": round(((1 + taxa_pre / 100) / (1 + p["taxa"] / 100) - 1) * 100, 4)})
-    return saida
+        taxa_pre = _interpolar(pre, p["anos"])
+        if taxa_pre is not None:
+            pontos[p["anos"]] = (p["vencimento"], taxa_pre, p["taxa"], "IPCA+")
+    for p in pre:
+        taxa_real = _interpolar(ipca, p["anos"])
+        if taxa_real is not None and p["anos"] not in pontos:
+            pontos[p["anos"]] = (p["vencimento"], p["taxa"], taxa_real, "prefixado")
+    return [{"vencimento": venc, "anos": anos, "base": base,
+             "taxa": round(((1 + tp / 100) / (1 + tr / 100) - 1) * 100, 4)}
+            for anos, (venc, tp, tr, base) in sorted(pontos.items())]
 
 
 def gerar(baixar_arquivo=True):
