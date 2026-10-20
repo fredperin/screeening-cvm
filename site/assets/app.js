@@ -1995,7 +1995,9 @@ async function paginaBanco(id) {
   const l4 = (R["Lucro Líquido"] || []).slice(-4);
   const lucro12 = l4.length === 4 && l4.every((x) => x != null) ? l4.reduce((a, b) => a + b, 0) : null;
   const cap = (k) => (bk.capital.find((l) => l.k === k) || { v: [] }).v[n];
-  const abasBanco = [...ABAS_BANCO.filter(([k]) => !(soCvm && k.startsWith("carteira"))), ...(tk ? [["eventos", "Eventos e notícias"]] : [])];
+  // Eventos e notícias logo depois do Perfil (só para bancos listados, que têm documentos na CVM)
+  const abasBanco = ABAS_BANCO.filter(([k]) => !(soCvm && k.startsWith("carteira")))
+    .flatMap((a) => (a[0] === "perfil" && tk ? [a, ["eventos", "Eventos e notícias"]] : [a]));
   if (!abasBanco.some(([k]) => k === ABA_BANCO)) ABA_BANCO = "perfil";
   const tg = (bk.carteiras["Total Geral"] || [])[n], inad = (bk.carteiras["Inadimplência"] || [])[n];
   app.innerHTML = `
@@ -2187,15 +2189,17 @@ async function paginaBanco(id) {
       grafico(document.getElementById("gr-porte"), { rotulos: rot, eixoEsq: "pct", series: empilhado(bk.porte, portes, bk.porte["Total da Carteira de Pessoa Jurídica"] || tot) });
     },
     eventos: async () => {
-      const not = await dados("dados/noticias.json").catch(() => null);
+      const not = await dados("dados/noticias_empresas.json").catch(() => dados("dados/noticias.json").catch(() => null));
       const doBanco = ((not && not.itens) || []).filter((x) => (x.empresas || []).includes(tk));
-      area().innerHTML = `<div class="grade">
+      // eventos na 1ª linha e notícias na 2ª, cada um na largura toda (igual à página das empresas)
+      area().innerHTML = `<div class="grade grade-empilhada">
         <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Eventos (CVM)</h2>
           <div class="seletor" id="sel-ev">${OPCOES_EVENTOS.map(([k, r]) => `<button data-k="${k}" class="${k === "todos" ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
           <div class="rolagem rolagem-y" id="lista-eventos"></div>
           <div class="nota">Fatos relevantes, comunicados ao mercado e avisos aos acionistas dos últimos 3 anos, com link para o documento oficial na CVM.</div></div>
-        <div class="painel"><h2>Notícias que citam o banco</h2>${listaNoticias(doBanco, 60)}
-          <div class="nota">Manchetes dos últimos dias que citam o ticker ou o nome de pregão.</div></div></div>`;
+        <div class="painel"><h2>Notícias que citam o banco</h2>${listaNoticias(doBanco, 300)}
+          <div class="nota">Manchetes que citam o ticker ou o nome de pregão, da mais recente para a mais antiga, nas mesmas fontes da seção
+            Notícias e agenda, guardadas por até ${(not && not.dias) || 7} dias. Só a manchete, com link para a matéria.</div></div></div>`;
       desenharEventos(eventos, "todos");
       document.getElementById("sel-ev").addEventListener("click", (ev) => {
         const x = ev.target.closest("button"); if (!x) return;
