@@ -287,6 +287,70 @@ def adicionar_indicadores(visoes, aliquota=0.34):
     return visoes
 
 
+def demonstracoes(blocos, fator, base, visoes, anos=4):
+    """
+    DRE e Balanço com as mesmas contas da aba "Demonstrações" do Excel (sem abrir mais contas),
+    nos últimos `anos` exercícios fechados e no último LTM — para a aba Resultados do site.
+    DRE anual: número oficial da DFP quando houver; senão, soma dos 4 trimestres. LTM: soma dos
+    últimos 4 trimestres. Balanço: posição na data. Linhas zeradas em todas as colunas ficam de fora.
+    """
+    por_titulo = {t: d for t, d in blocos if d is not None and not d.empty}
+    if "DRE" not in por_titulo or "Balanço Patrimonial" not in por_titulo:
+        return None
+    dre_bloco, bp_bloco = por_titulo["DRE"], por_titulo["Balanço Patrimonial"]
+    dre, bp = _por_codigo(dre_bloco, fator), _por_codigo(bp_bloco, fator)
+    por_ano_mes = {(d.year, d.month): d for d in dre.columns}
+
+    # DRE anual oficial (DFP), por código
+    dfp = base[(base["FONTE"] == "DFP") & (base["SIGLA"] == "DRE") & base["DT_INI_EXERC"].notna()].copy()
+    oficial = pd.DataFrame()
+    if not dfp.empty:
+        dfp = dfp[(pd.to_datetime(dfp["DT_FIM_EXERC"]) - pd.to_datetime(dfp["DT_INI_EXERC"])).dt.days >= 360]
+        fim = pd.to_datetime(dfp["DT_FIM_EXERC"])
+        fev = (fim.dt.month == 2) & (fim.dt.day == 28) & fim.dt.is_leap_year
+        dfp["DT_FIM_EXERC"] = fim.where(~fev, fim + pd.offsets.MonthEnd(0)).dt.date
+        tem_con = dfp[dfp["TIPO"] == "con"].groupby("DT_FIM_EXERC")["SIGLA"].nunique() >= 1
+        usar_con = dfp["DT_FIM_EXERC"].map(tem_con).fillna(False).astype(bool)
+        dfp = dfp[(dfp["TIPO"] == "con") == usar_con]
+        dfp = dfp.sort_values(["DT_REFER", "VERSAO"]).drop_duplicates(["CD_CONTA", "DT_FIM_EXERC"], keep="last")
+        dfp["VL"] = dfp["VL_CONTA"] * dfp["ESCALA_MOEDA"].map(ESCALAS).fillna(1)
+        oficial = dfp.pivot_table(index="CD_CONTA", columns="DT_FIM_EXERC", values="VL", aggfunc="first")
+
+    colunas = []
+    for d in list(visoes["anual"].index)[-anos:]:
+        tri = [por_ano_mes.get(_mes_anterior(d.year, d.month, n)) for n in (9, 6, 3, 0)]
+        colunas.append({"data": d, "ltm": False, "tri": tri})
+    ltm = visoes["ltm"]
+    if not ltm.empty and (not colunas or ltm.index[-1] != colunas[-1]["data"]):
+        d = ltm.index[-1]
+        tri = [por_ano_mes.get(_mes_anterior(d.year, d.month, n)) for n in (9, 6, 3, 0)]
+        colunas.append({"data": d, "ltm": True, "tri": tri})
+    if not colunas:
+        return None
+
+    def valor_dre(cd, col):
+        if not col["ltm"] and cd in oficial.index and col["data"] in oficial.columns and pd.notna(oficial.loc[cd, col["data"]]):
+            return oficial.loc[cd, col["data"]]
+        if not all(col["tri"]) or cd not in dre.index:
+            return float("nan")
+        return dre.loc[cd, col["tri"]].sum(min_count=4)
+
+    def valor_bp(cd, col):
+        return bp.loc[cd, col["data"]] if cd in bp.index and col["data"] in bp.columns else float("nan")
+
+    def linhas(bloco, valor):
+        saida = []
+        for cd, ds in zip(bloco.attrs["codigos"], bloco.index):
+            v = [_limpar(valor(cd, c)) for c in colunas]
+            if all(x in (None, 0) for x in v):
+                continue
+            saida.append({"c": cd, "r": str(ds).strip(), "v": v})
+        return saida
+
+    return {"colunas": [{"data": c["data"].isoformat(), "ltm": c["ltm"]} for c in colunas],
+            "dre": linhas(dre_bloco, valor_dre), "bp": linhas(bp_bloco, valor_bp)}
+
+
 def _limpar(v):
     if v is None or (isinstance(v, float) and (math.isnan(v) or math.isinf(v))):
         return None

@@ -548,8 +548,8 @@ async function paginaEmpresa(id) {
         <div class="painel" id="painel-indicadores"><h2>Painel de indicadores</h2>
           <p class="sub">Espaço reservado para o painel de indicadores (em montagem).</p>
           <details><summary class="sub" style="cursor:pointer">Tabela de indicadores atual (anos fechados e LTM)</summary><div class="rolagem" id="tab-ind"></div></details></div>
-        <div class="painel" data-info="dre_resumida"><h2>DRE resumida · R$ milhões e análise vertical (% da receita)</h2><div class="rolagem" id="tab-dre"></div></div>
-        <div class="painel" data-info="balanco_resumido"><h2>Balanço resumido · R$ milhões e análise vertical (% do ativo total)</h2><div class="rolagem" id="tab-bp"></div></div></div>`;
+        <div class="painel" data-info="dre_resumida"><h2>DRE · R$ milhões e análise vertical (% da receita)</h2><div class="rolagem" id="tab-dre"></div></div>
+        <div class="painel" data-info="balanco_resumido"><h2>Balanço patrimonial · R$ milhões e análise vertical (% do ativo total)</h2><div class="rolagem" id="tab-bp"></div></div></div>`;
       desenharIndicadores(emp);
       desenharDreBalanco(emp);
     },
@@ -842,8 +842,41 @@ function desenharCotacao(prov, m) {
   desenhar();
 }
 
-// Aba Resultados: DRE e balanço resumidos — últimos 4 anos fechados + LTM, cada valor com a análise vertical ao lado
+// Aba Resultados: DRE e balanço com as contas do Excel (CVM), últimos 4 anos fechados + LTM, análise vertical ao lado.
+// Enquanto a empresa não foi reprocessada com essas contas, mostra a versão resumida (desenharDreBalancoResumido).
 function desenharDreBalanco(emp) {
+  const dm = emp.demonstracoes;
+  if (!dm || !dm.dre || !dm.dre.length) return desenharDreBalancoResumido(emp);
+  const mesFim = emp.mes_fim_exercicio || 12;
+  const cols = dm.colunas.map((c) => (c.ltm ? `LTM ${rotuloPeriodo(c.data, "trimestral")}` : rotuloPeriodo(c.data, "anual", mesFim)));
+  const mi = (x) => (x == null ? "—" : num(x / 1e6, 0));
+  const av = (x, b) => (x == null || !b ? "—" : `${num((x / b) * 100, 1)}%`);
+  const nivel = (c) => c.split(".").length - 1;
+  const estilo = (c, tot) => (c === tot || nivel(c) === 0 ? "total" : nivel(c) === 1 ? "subtotal" : "");
+  const tabela = (linhas, base, extra = []) => `<table class="tabela tabela-av">
+    <tr><th style="text-align:left">R$ milhões</th>${cols.map((t) => `<th>${t}</th><th class="sub">AV</th>`).join("")}</tr>
+    ${[...linhas, ...extra].map((l) => `<tr class="${l.estilo != null ? l.estilo : estilo(l.c, "")}"><td style="text-align:left;padding-left:${6 + Math.max(0, nivel(l.c || "x") - 1) * 14}px">${esc(l.r)}</td>
+      ${l.v.map((x, i) => `<td>${mi(x)}</td><td class="sub">${av(x, base[i])}</td>`).join("")}</tr>`).join("")}</table>`;
+  const linha = (ls, c) => (ls.find((l) => l.c === c) || { v: [] }).v;
+  // EBITDA e D&A não são contas da DRE da CVM: entram como memória, com a D&A da DFC (mesma regra dos gráficos)
+  const daCol = (i) => { const c = dm.colunas[i]; const v = c.ltm ? emp.ltm : emp.anual; const j = v.periodos.indexOf(c.data); return j >= 0 ? (v.series.da || [])[j] : null; };
+  const ebit = linha(dm.dre, "3.05");
+  const da = dm.colunas.map((_, i) => daCol(i));
+  const memoria = [
+    { c: "", r: "Memória: D&A (depreciação e amortização, da DFC)", v: da, estilo: "memoria" },
+    { c: "", r: "Memória: EBITDA (EBIT + D&A)", v: ebit.map((x, i) => (x == null || da[i] == null ? null : x + da[i])), estilo: "memoria" },
+  ];
+  const receita = linha(dm.dre, "3.01");
+  document.getElementById("tab-dre").innerHTML = tabela(dm.dre, receita, memoria) + `<div class="nota">Mesmas contas da aba Demonstrações do Excel (padrão da CVM).
+    Anos fechados: número oficial da DFP; LTM: soma dos últimos 4 trimestres. AV em % da receita líquida. As despesas operacionais aparecem abertas
+    como a empresa divulga (vendas, gerais e administrativas, perdas por não recuperabilidade, outras receitas e despesas, equivalência patrimonial).
+    A CVM não separa a D&amp;A dentro de custos e despesas: ela fica embutida nessas linhas e aparece na memória, junto com o EBITDA.</div>`;
+  const ativo = linha(dm.bp, "1");
+  document.getElementById("tab-bp").innerHTML = tabela(dm.bp, ativo) + `<div class="nota">Mesmas contas da aba Demonstrações do Excel (padrão da CVM),
+    posição no fim de cada exercício e, na coluna LTM, no último trimestre. AV em % do ativo total (igual ao passivo total). Contas zeradas em todas as datas ficam de fora.</div>`;
+}
+
+function desenharDreBalancoResumido(emp) {
   const anual = emp.anual, ltm = emp.ltm, mesFim = emp.mes_fim_exercicio || 12;
   const cols = anual.periodos.map((p, i) => ({ v: anual, i, titulo: rotuloPeriodo(p, "anual", mesFim) })).slice(-4);
   const nl = ltm.periodos.length - 1;

@@ -109,19 +109,20 @@ window.EXPLICATIVOS = {
       <p class="sub">Fonte: IBGE, séries 7326 e 1207 do SGS do Banco Central.</p>`,
   },
   dre_resumida: {
-    titulo: "DRE resumida com análise vertical",
-    html: `<p>Demonstração do resultado dos últimos 4 exercícios fechados e dos últimos 12 meses (LTM), em R$ milhões.
-      Ao lado de cada valor, a <b>análise vertical (AV)</b>: quanto a linha representa da receita líquida do período
-      (ex.: AV do lucro bruto = margem bruta).</p>
-      <p>EBITDA = EBIT + depreciação e amortização (D&amp;A da demonstração do fluxo de caixa). Como a CVM não separa a D&amp;A
-      entre custos e despesas, a linha de despesas aparece sem a D&amp;A, para a conta fechar até o EBITDA.</p>
+    titulo: "DRE com análise vertical",
+    html: `<p>Demonstração do resultado dos últimos 4 exercícios fechados e dos últimos 12 meses (LTM), em R$ milhões, com as
+      mesmas contas do Excel (padrão da CVM): custos, despesas com vendas, gerais e administrativas (SG&amp;A), perdas por não
+      recuperabilidade, outras receitas e despesas operacionais e equivalência patrimonial. Ao lado de cada valor, a
+      <b>análise vertical (AV)</b>: quanto a linha representa da receita líquida (ex.: AV do resultado bruto = margem bruta).</p>
+      <p>EBITDA = EBIT + depreciação e amortização. A D&amp;A vem da demonstração do fluxo de caixa, porque a CVM não a separa
+      dentro de custos e despesas — por isso EBITDA e D&amp;A aparecem como memória, no fim da tabela.</p>
       <p class="sub">Fonte: CVM — demonstrações financeiras padronizadas (DFP e ITR), consolidado.</p>`,
   },
   balanco_resumido: {
-    titulo: "Balanço resumido com análise vertical",
-    html: `<p>Principais grupos do balanço no fim de cada exercício (e do último trimestre, na coluna LTM), em R$ milhões, com a
-      <b>análise vertical</b> em % do ativo total. Empréstimos e financiamentos incluem debêntures; "outros" são calculados por
-      diferença entre o grupo e as linhas destacadas.</p>
+    titulo: "Balanço patrimonial com análise vertical",
+    html: `<p>Balanço no fim de cada exercício (e do último trimestre, na coluna LTM), em R$ milhões, com as mesmas contas do Excel
+      (padrão da CVM: circulante, não circulante e patrimônio líquido abertos no primeiro nível de detalhe) e a
+      <b>análise vertical</b> em % do ativo total.</p>
       <p class="sub">Fonte: CVM — demonstrações financeiras padronizadas (DFP e ITR), consolidado.</p>`,
   },
   fiscal_divida: {

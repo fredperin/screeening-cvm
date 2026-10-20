@@ -17,7 +17,7 @@ import pandas as pd
 
 from pipeline import DIR_DADOS_SITE, DIR_DOWNLOADS_SITE, DIR_INTERMEDIARIO
 from pipeline.cvm_lote import atualizar_base_cvm, carregar_empresa
-from pipeline.series_empresa import adicionar_indicadores, aplicar_anual_dfp, montar_trimestral, montar_visoes, para_json
+from pipeline.series_empresa import adicionar_indicadores, aplicar_anual_dfp, demonstracoes, montar_trimestral, montar_visoes, para_json
 from src import cvm_itr
 from src.cvm_itr import buscar_dados_cadastrais, buscar_dados_fca, buscar_itr, montar_documento_padrao
 from src.exportar import exportar_documento_padrao
@@ -80,6 +80,8 @@ def processar(empresa, log):
         "gerado_em": date.today().isoformat(),
         "notas": notas,
         **para_json(visoes),
+        # DRE e Balanço com as contas do Excel (aba Resultados do site)
+        "demonstracoes": demonstracoes(blocos, fator, base, visoes),
     }
     return dados, blocos
 
