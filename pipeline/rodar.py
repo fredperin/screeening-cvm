@@ -59,7 +59,8 @@ def semanal_pendente(arq):
 
 
 def main(tudo=False):
-    from pipeline import agenda, curva_di, eventos, ficha, fre_textos, macro, mercado, noticias, offshore, planilhas, resumos, tesouro
+    from pipeline import (agenda, calendario_resultados, curva_di, eleicoes, eventos, ficha, fre_textos, macro, mercado, noticias,
+                          offshore, planilhas, resumos, tesouro)
     from pipeline.cvm_lote import atualizar_base_cvm
     from pipeline.gerar_empresas import DIR_EMPRESAS, gerar_indice
     from pipeline.gerar_empresas import main as gerar_empresas
@@ -73,6 +74,7 @@ def main(tudo=False):
     _etapa("mercado", mercado.gerar, status)
     _etapa("noticias", noticias.gerar, status)
     _etapa("offshore", offshore.gerar, status)
+    _etapa("eleicoes", eleicoes.gerar, status)
     _etapa("planilhas", planilhas.gerar, status)
     _etapa("eventos", eventos.gerar, status)
     _etapa("ficha", ficha.gerar, status)
@@ -97,6 +99,7 @@ def main(tudo=False):
             if date.today().weekday() >= 5:  # qualquer refação completa no fim de semana já vale como a semanal
                 arq_semanal.write_text(date.today().isoformat())
     _etapa("indice", gerar_indice, status)
+    _etapa("calendario_resultados", calendario_resultados.gerar, status)  # usa os ZIPs da CVM e o índice de empresas
 
     status_final = {"atualizado_em": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                     "cvm_reprocessados": [f"{f} {a}" for f, a in reprocessados], "etapas": status}

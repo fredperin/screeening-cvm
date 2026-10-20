@@ -348,6 +348,30 @@ window.EXPLICATIVOS = {
       As metodologias são próximas (padrão da OIT), mas não idênticas.</p>
       <p class="sub">Fonte: U.S. Bureau of Labor Statistics (LNS14000000), Eurostat (une_rt_m) e IBGE (PNAD Contínua, tabela 6381).</p>`,
   },
+  eleicoes: {
+    titulo: "Eleições 2026 — Presidente",
+    html: `<p>Resultado oficial da eleição presidencial, nos arquivos públicos de divulgação do <b>Tribunal Superior Eleitoral</b>.
+      Durante a apuração o TSE atualiza os arquivos; o cartão "apurado" mostra o % de seções já totalizadas.</p>
+      <ul>
+        <li><b>% válidos:</b> votos do candidato ÷ votos válidos (sem brancos e nulos) — é o critério da Constituição para vencer.</li>
+        <li><b>2º turno:</b> quando ninguém passa de 50% dos válidos no 1º turno, os dois mais votados disputam o 2º.</li>
+        <li><b>Por estado:</b> o mais votado e o segundo colocado em cada UF.</li>
+      </ul>
+      <p>Pesquisas eleitorais não entram: o TSE registra as pesquisas, mas os números são divulgados pelos institutos.</p>
+      <p class="sub">Fonte: TSE — Divulgação de Resultados (resultados.tse.jus.br).</p>`,
+  },
+  calendario_resultados: {
+    titulo: "Calendário de resultados",
+    html: `<p>Quando cada empresa da lista deve divulgar o próximo balanço (ITR trimestral ou DFP anual).</p>
+      <ul>
+        <li><b>Prazo legal:</b> ITR até 45 dias depois do fim do trimestre; DFP até 3 meses depois do fim do exercício.</li>
+        <li><b>Data estimada ("est."):</b> a data em que a empresa entregou o mesmo período no ano anterior, um ano depois (mesmo dia
+          da semana) e limitada ao prazo legal. Empresas costumam repetir o calendário, mas a data oficial é a que cada uma anuncia
+          no seu calendário de eventos corporativos.</li>
+        <li><b>Atrasado:</b> o prazo legal passou e a entrega ainda não aparece na CVM.</li>
+      </ul>
+      <p class="sub">Fonte: CVM — índice de documentos ITR e DFP dos dados abertos (data de entrega de cada documento); estimativa do site.</p>`,
+  },
   receita: {
     titulo: "Receita líquida",
     html: `<p>Vendas de produtos e serviços já descontados impostos sobre vendas, devoluções e abatimentos (linha 3.01 da DRE

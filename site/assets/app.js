@@ -251,7 +251,7 @@ async function iniciarBusca() {
 // Mesmas seções, na mesma ordem, nos dois lados: #/on/<seção>/<detalhe> e #/off/<seção>/<detalhe>
 const SECOES = [["", "Início"], ["noticias", "Notícias e agenda"], ["macro", "Macro"], ["juros", "Juros"], ["empresas", "Empresas"], ["downloads", "Downloads"]];
 const ROTAS = {
-  on: { "": paginaInicio, noticias: () => paginaNoticias("on"), macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
+  on: { "": paginaInicio, noticias: (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("on")), macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
   off: Object.fromEntries(SECOES.map(([k]) => [k, (p) => paginaOffshore(k, p)])),
 };
 const SECOES_CONS = [["", "Juros"], ["inflacao", "Inflação"], ["atividade", "Atividade e emprego"], ["noticias", "Notícias e agenda"]];
@@ -366,8 +366,9 @@ const ABAS_EMPRESAS = [["noticias", "Informações"], ["tabela", "Empresas"]];
 
 async function paginaEmpresas(aba) {
   if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "noticias";
-  const [mercado, fatos, noticias] = await Promise.all([dados("dados/mercado.json").catch(() => ({ empresas: [] })),
-    dados("dados/eventos_recentes.json").catch(() => null), dados("dados/noticias.json").catch(() => null)]);
+  const [mercado, fatos, noticias, cal] = await Promise.all([dados("dados/mercado.json").catch(() => ({ empresas: [] })),
+    dados("dados/eventos_recentes.json").catch(() => null), dados("dados/noticias.json").catch(() => null),
+    dados("dados/calendario_resultados.json").catch(() => null)]);
   const citadas = ((noticias && noticias.itens) || []).filter((n) => (n.empresas || []).length);
   const recentes = [...INDICE].filter((e) => e.ultimo_periodo).sort((a, b) => b.ultimo_periodo.localeCompare(a.ultimo_periodo) || a.nome.localeCompare(b.nome)).slice(0, 15);
   const proximos = mercado.empresas.flatMap((e) => (e.proximos_proventos || []).map((p) => ({ ...p, id: e.id })));
@@ -385,6 +386,9 @@ async function paginaEmpresas(aba) {
   if (aba === "noticias") {
     app.innerHTML = `${cab}${abas}
     <div class="grade">
+      <div class="painel largo" data-info="calendario_resultados"><h2>Calendário de resultados — próximo ITR/DFP de cada empresa</h2>${tabelaCalendario(cal)}
+        <div class="nota">"est." = estimativa pelo histórico: a data em que a empresa entregou o mesmo trimestre no ano anterior, limitada ao prazo legal.
+          Não é a data oficial anunciada pela empresa. Fonte: CVM (datas de entrega de ITR/DFP).</div></div>
       <div class="painel"><h2>Notícias das empresas</h2>${listaNoticias(citadas, 80)}
         <div class="nota">Manchetes de jornais e fontes oficiais que citam o ticker ou o nome de pregão de uma empresa da lista (etiqueta = empresa).
           Fontes: Valor Econômico, Folha, Estadão, Brazil Journal, InfoMoney, Banco Central, IBGE, CVM e Agência Brasil.</div></div>
@@ -462,6 +466,8 @@ const INDICADORES_LTM = [
 
 async function paginaEmpresa(id) {
   ULTIMO_DIV = null;
+  const calendario = await dados("dados/calendario_resultados.json").catch(() => null);
+  const proxResultado = calendario ? calendario.empresas.find((l) => l.id === id) : null;
   const [emp, mercado, prov, ficha, eventos, negocio, resumo] = await Promise.all([
     dados(`dados/empresas/${id}.json`), dados("dados/mercado.json").catch(() => ({ empresas: [] })),
     dados(`dados/proventos/${id}.json`).catch(() => null), dados(`dados/fichas/${id}.json`).catch(() => null),
@@ -492,6 +498,8 @@ async function paginaEmpresa(id) {
       ${cartao("FCF yield", pct(mc && L("fcf") != null ? L("fcf") / mc : null), "FCF LTM ÷ market cap")}
       ${cartao("DY 12m", pct(m.dy_12m, 2), "proventos B3 (data-com 12m) ÷ preço atual")}
       ${cartao("ROE / ROIC", `${pct(L("roe"))} / ${pct(L("roic"))}`, "LTM")}
+      ${proxResultado ? cartao("Próximo resultado", proxResultado.atrasado ? "atrasado" : proxResultado.data_estimada ? dataBR(proxResultado.data_estimada) : `até ${dataBR(proxResultado.prazo_legal)}`,
+        `${proxResultado.documento} · ${proxResultado.data_estimada ? "estimado pelo ano anterior" : "prazo legal"}`) : ""}
     </div>
     <div class="abas" id="abas-empresa">${ABAS_EMPRESA.map(([k, r]) => `<button data-k="${k}" class="${k === ABA_EMPRESA ? "ativo" : ""}">${r}</button>`).join("")}</div>
     <div id="aba-empresa"></div>`;
@@ -1078,6 +1086,7 @@ async function paginaNoticias(lado = "on") {
   const oficiais = { on: "Banco Central, IBGE, CVM e Agência Brasil", off: "Federal Reserve e BCE", cons: "Banco Central, IBGE, CVM, Agência Brasil, Fed e BCE" }[lado];
   app.innerHTML = `
     <div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">Notícias de mercado (${jornais}) e oficiais (${oficiais}) · só a manchete, com link para a fonte</div></div></div>
+    ${lado === "on" ? abasNoticiasOn("") : ""}
     <div class="grade grade-noticias">
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
         <div class="seletor" id="filtro-fonte">${filtros.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}
@@ -1411,13 +1420,72 @@ async function paginaConsolidado(secao) {
     linha("eua", "Selic − Fed Funds", passo(fedv)), linha("euro", "Selic − BCE", passo(bcev))] });
 }
 
+/* ============ Eleições 2026 (Onshore · Notícias e agenda) ============ */
+const ABAS_NOTICIAS_ON = [["", "Notícias e agenda"], ["eleicoes", "Eleições 2026"]];
+const abasNoticiasOn = (ativa) => `<div class="abas">${ABAS_NOTICIAS_ON.map(([k, n]) => `<a href="#/on/noticias${k ? `/${k}` : ""}" class="${k === ativa ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
+
+async function paginaEleicoes() {
+  const el = await dados("dados/eleicoes.json");
+  const [t1, t2] = el.turnos;
+  const t2apurado = t2 && t2.apurado_pct > 0;
+  const atual = t2apurado ? t2 : t1;
+  const cores = [COR.azul, COR.vermelho, COR.verde, COR.roxo, COR.ciano, COR.ambar, COR.cinza];
+  const corDe = {};
+  t1.candidatos.forEach((c, i) => (corDe[c.nome] = cores[i] || COR.cinza));
+  const tabela = (t) => `<table class="tabela"><tr><th>Candidato</th><th style="text-align:left">Partido / coligação</th><th>Votos</th><th>% válidos</th><th>Situação</th></tr>
+    ${t.candidatos.map((c) => `<tr><td><span style="color:${corDe[c.nome] || COR.cinza}">●</span> ${esc(c.nome)} <span class="sub">${esc(c.numero)}</span></td>
+      <td style="text-align:left;white-space:normal">${esc(c.partido)}${c.coligacao ? ` <span class="sub">· ${esc(c.coligacao)}</span>` : ""}</td>
+      <td>${c.votos.toLocaleString("pt-BR")}</td><td><b>${num(c.pct, 2)}%</b></td><td class="sub">${esc(c.situacao)}</td></tr>`).join("")}</table>`;
+  const ufs = Object.entries(atual.por_uf || {});
+  app.innerHTML = `
+    <div class="cabecalho"><div><h1>Eleições 2026 · Presidente</h1><div class="sub">Resultado oficial do TSE · 1º turno em ${dataBR(t1.data)} · 2º turno em ${dataBR(t2.data)}
+      · atualizado pelo TSE em ${esc(atual.atualizado_tse)}</div></div></div>
+    ${abasNoticiasOn("eleicoes")}
+    <div class="grade-cartoes">
+      ${cartao(t2apurado ? "2º turno apurado" : "1º turno apurado", `${num(atual.apurado_pct, 2)}%`, `${atual.turno}º turno · ${dataBR(atual.data)}`)}
+      ${cartao("Comparecimento", `${num(atual.comparecimento_pct, 2)}%`, `${atual.eleitores.toLocaleString("pt-BR")} eleitores`)}
+      ${cartao("Abstenção", `${num(atual.abstencao_pct, 2)}%`, "")}
+      ${cartao("Brancos / nulos", `${num(atual.brancos_pct, 2)}% / ${num(atual.nulos_pct, 2)}%`, "do total de votos")}
+      ${t2apurado ? "" : cartao("2º turno", dataBR(t2.data), t2.candidatos.map((c) => c.nome).join(" x "))}
+    </div>
+    <div class="grade">
+      ${t2apurado ? `<div class="painel" data-info="eleicoes"><h2>2º turno — votos válidos</h2><div class="grafico" id="ge-t2"></div></div>` : ""}
+      <div class="painel" data-info="eleicoes"><h2>1º turno — votos válidos</h2><div class="grafico" id="ge-t1"></div></div>
+      <div class="painel" data-info="eleicoes"><h2>${t2apurado ? "2º turno" : "1º turno"} — candidatos</h2><div class="rolagem">${tabela(atual)}</div></div>
+      ${t2apurado ? `<div class="painel" data-info="eleicoes"><h2>1º turno — candidatos</h2><div class="rolagem">${tabela(t1)}</div></div>` : ""}
+      <div class="painel largo" data-info="eleicoes"><h2>Resultado por estado — ${atual.turno}º turno</h2><div class="rolagem"><table class="tabela">
+        <tr><th>UF</th><th style="text-align:left">Mais votado</th><th>%</th><th style="text-align:left">Segundo</th><th>%</th><th>Diferença</th></tr>
+        ${ufs.map(([uf, [a, b]]) => `<tr><td>${uf}</td><td style="text-align:left"><span style="color:${corDe[a.nome] || COR.cinza}">●</span> ${esc(a.nome)}</td><td>${num(a.pct, 2)}%</td>
+          <td style="text-align:left" class="sub">${b ? esc(b.nome) : "—"}</td><td class="sub">${b ? `${num(b.pct, 2)}%` : "—"}</td><td>${b ? `${num(a.pct - b.pct, 2)} p.p.` : "—"}</td></tr>`).join("")}
+      </table></div></div>
+    </div>
+    <div class="nota secao">Fonte: TSE — Divulgação de Resultados (arquivos públicos de resultados.tse.jus.br). Percentuais sobre os votos válidos
+      (sem brancos e nulos). No dia do 2º turno a atualização diária traz o resultado na manhã seguinte.</div>`;
+  const barras = (id, t) => grafico(document.getElementById(id), { rotulos: t.candidatos.map((c) => c.nome), eixoEsq: "pctPronto", janela: 20,
+    series: [{ nome: "% dos votos válidos", valores: t.candidatos.map((c) => c.pct), cor: COR.ambar }] });
+  barras("ge-t1", t1);
+  if (t2apurado) barras("ge-t2", t2);
+}
+
+/* ============ Calendário de resultados (Empresas · Informações) ============ */
+function tabelaCalendario(cal, maximo = 400) {
+  if (!cal || !cal.empresas) return `<p class="sub">Calendário indisponível.</p>`;
+  const tri = (iso) => { const m = Number(iso.slice(5, 7)); return `${Math.ceil(m / 3)}º tri/${iso.slice(2, 4)}`; };
+  return `<div class="rolagem rolagem-y"><table class="tabela"><tr><th>Data</th><th>Empresa</th><th>Período</th><th>Doc.</th>
+    <th>Ano anterior</th><th>Prazo legal</th></tr>
+    ${cal.empresas.slice(0, maximo).map((l) => `<tr class="clicavel" onclick="location.hash='#/on/empresa/${esc(l.id)}'">
+      <td>${l.atrasado ? `<span class="neg">atrasado</span>` : l.data_estimada ? `${dataBR(l.data_estimada)} <span class="sub">est.</span>` : `<span class="sub">até ${dataBR(l.prazo_legal)}</span>`}</td>
+      <td>${esc(l.id)} <span class="sub">${esc(l.nome.slice(0, 26))}</span></td><td>${tri(l.proximo_periodo)}</td><td class="sub">${l.documento}</td>
+      <td class="sub">${l.base_ano_anterior ? dataBR(l.base_ano_anterior) : "—"}</td><td class="sub">${dataBR(l.prazo_legal)}</td></tr>`).join("")}</table></div>`;
+}
+
 /* ============ Status dos dados ============ */
 const NOMES_ETAPAS = {
   macro: "Macro (Banco Central, IBGE, FGV)", agenda: "Agenda (Banco Central, IBGE, FGV)", tesouro: "Tesouro Direto", curva_di: "Curva DI (B3)",
   mercado: "Cotações e proventos (B3)", noticias: "Notícias", planilhas: "Planilhas de Macro e Juros", eventos: "Eventos (CVM)",
   ficha: "Ficha da empresa (FRE/FCA)", fre_textos: "Trechos do Formulário de Referência", resumos: "Resumos aprofundados",
   cvm_base: "Base de demonstrações (CVM)", empresas: "Empresas (JSON e Excel)", indice: "Índice de empresas",
-  offshore: "Offshore (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)", tesouro_intradia: "Tesouro Direto — tempo real (3x ao dia)",
+  offshore: "Offshore (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)", eleicoes: "Eleições 2026 (TSE)", calendario_resultados: "Calendário de resultados (CVM)", tesouro_intradia: "Tesouro Direto — tempo real (3x ao dia)",
 };
 
 async function paginaStatus() {
