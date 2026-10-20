@@ -454,6 +454,15 @@ window.EXPLICATIVOS = {
       anual, ~5%) e tri/tri com ajuste sazonal. Os dados são do <b>NBS</b> (escritório de estatísticas da China), repassados à OCDE.</p>
       <p class="sub">Fonte: OCDE, Key Short-Term Economic Indicators (dados do NBS).</p>`,
   },
+  descontinuada_china: {
+    titulo: "Séries da China sem continuidade",
+    html: `<p><b>Valor adicionado da indústria</b> (produção industrial) e <b>vendas no varejo</b>: variação contra o mesmo mês do ano anterior.
+      <b>Desemprego urbano:</b> pesquisa do NBS nas cidades (total e jovens de 16 a 24 anos).</p>
+      <p>Estas séries vêm do <b>espelho gratuito</b> dos dados do NBS mantido pelo DBnomics, que guarda só os últimos 13 meses e
+      <b>parou de atualizar em fevereiro de 2026</b>. O site oficial do NBS bloqueia acesso automatizado e a OCDE não repassa essas séries
+      de forma estável. Em janeiro e fevereiro o NBS divulga só o acumulado dos dois meses.</p>
+      <p class="sub">Fonte: NBS (Escritório Nacional de Estatísticas da China), via DBnomics — série interrompida.</p>`,
+  },
   comercio_china: {
     titulo: "Comércio exterior da China",
     html: `<p>Variação em 12 meses do valor, em dólares, das exportações e importações de mercadorias — termômetro da demanda externa pela

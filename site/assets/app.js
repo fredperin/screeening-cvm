@@ -1495,7 +1495,10 @@ function desenharPaisOff(pais, off, cab, abas, mundo = null) {
           { nome: "Tri/tri (dessaz.)", valores: Pares(C.pib_tri), cor: COR.azul }, { nome: "Contra o mesmo tri do ano anterior", valores: Pares(C.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] }) },
         { t: "Comércio exterior: exportações e importações (12 meses, em dólares)", info: "comercio_china", op: t(10, { series: [
           { nome: "Exportações", valores: Pares(C.exportacoes_12m), tipo: "line", cor: COR.verde }, { nome: "Importações", valores: Pares(C.importacoes_12m), tipo: "line", cor: COR.vermelho }] }) },
-        { t: "Indicador antecedente e confiança", info: "antecedente_china", largo: true, op: t(10, { eixoEsq: "numero", eixoDir: "numero", series: [
+        { t: "Produção industrial e varejo (12 meses) — série interrompida", info: "descontinuada_china", aviso: true, op: t(3, { series: [
+          { nome: "Valor adicionado da indústria", valores: Pares(C.producao_12m), tipo: "line", cor: COR.azul },
+          { nome: "Vendas no varejo", valores: Pares(C.varejo_12m), tipo: "line", cor: COR.verde }] }) },
+        { t: "Indicador antecedente e confiança", info: "antecedente_china", op: t(10, { eixoEsq: "numero", eixoDir: "numero", series: [
           { nome: "Indicador antecedente (OCDE, 100 = tendência)", valores: Pares(C.antecedente), tipo: "line", cor: COR.ambar },
           { nome: "Confiança do consumidor", valores: Pares(C.confianca_consumidor), tipo: "line", eixo: "dir", cor: COR.azul },
           { nome: "Confiança das empresas (saldo)", valores: Pares(C.confianca_empresas), tipo: "line", eixo: "dir", cor: COR.verde, tracejado: true }] }) }] },
@@ -1503,6 +1506,12 @@ function desenharPaisOff(pais, off, cab, abas, mundo = null) {
       cartoes: [cartao("CPI 12 meses", pctPronto(u(C.cpi_12m).valor, 1), `meta do governo ~3% · ${mes(C.cpi_12m)}`), cartao("CPI no mês", pctPronto(u(C.cpi_mensal).valor, 1), mes(C.cpi_mensal))],
       graficos: [{ t: "Inflação ao consumidor (CPI)", info: "cpi_china", largo: true, op: t(10, { eixoDir: "pctPronto", series: [
         { nome: "Mensal", valores: Pares(C.cpi_mensal), cor: COR.azul }, { nome: "12 meses", valores: Pares(C.cpi_12m), tipo: "line", eixo: "dir", cor: COR.vermelho }] }) }] },
+    emprego: { fonte: "NBS via DBnomics (série interrompida)",
+      cartoes: [cartao("Desemprego urbano", pctPronto(u(C.desemprego).valor, 1), `último dado: ${mes(C.desemprego)}`),
+        cartao("Desemprego 16–24 anos", pctPronto(u(C.desemprego_jovens).valor, 1), `último dado: ${mes(C.desemprego_jovens)}`)],
+      graficos: [{ t: "Desemprego urbano (pesquisa) — série interrompida", info: "descontinuada_china", aviso: true, largo: true, op: t(3, { series: [
+        { nome: "Total", valores: Pares(C.desemprego), tipo: "line", cor: COR.vermelho },
+        { nome: "16 a 24 anos (eixo direito)", valores: Pares(C.desemprego_jovens), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pctPronto" }) }] },
     monetaria: { fonte: "OCDE",
       cartoes: [cartao("Juros curtos (3 meses)", pctPronto(u(C.juros_curto).valor), `interbancário · ${mes(C.juros_curto)}`), cartao("Juros longos (10 anos)", pctPronto(u(C.juros_longo).valor), mes(C.juros_longo)),
         cartao("Câmbio", u(C.cambio).valor != null ? `¥ ${num(u(C.cambio).valor, 2)}` : "—", `yuans por dólar · ${mes(C.cambio)}`)],
@@ -1602,11 +1611,12 @@ function desenharPaisOff(pais, off, cab, abas, mundo = null) {
   const abasPais = ABAS_PAIS_OFF.filter(([k]) => D[k]);
   app.innerHTML = `${cab("Mundo · Macro", `${nomePais}: ${a.fonte} (APIs oficiais)`)}${abas}
     <div class="seletor seletor-editoria" id="sub-pais" style="margin:-4px 0 12px">${abasPais.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_PAIS_OFF ? "ativo" : ""}">${n}</button>`).join("")}</div>
-    ${pais === "china" ? `<div class="nota" style="margin:-6px 0 10px">Produção industrial, varejo e desemprego da China ficam de fora: não há fonte oficial gratuita e em dia
-      (a série de produção da OCDE para a China é instável e o espelho do NBS no DBnomics parou em fev/2026).</div>` : ""}
+
     ${semFred && ["atividade", "inflacao"].includes(ABA_PAIS_OFF) ? `<div class="aviso">Aguardando a primeira coleta do FRED (chave cadastrada; os dados entram na próxima atualização).</div>` : ""}
     <div class="grade-cartoes">${a.cartoes.join("")}</div>
-    <div class="grade">${a.graficos.map((g, i) => painelG(`gp-${i}`, g.t, g.info, "", g.largo ? "largo" : "")).join("")}</div>`;
+    <div class="grade">${a.graficos.map((g, i) => painelG(`gp-${i}`, g.t, g.info, g.aviso ? `<div class="aviso" style="margin-top:8px">Sem continuidade: esta série vem do espelho
+      gratuito dos dados oficiais da China (NBS, via DBnomics), que guarda só 13 meses e não é atualizado desde fev/2026. Não há outra fonte oficial
+      gratuita em dia; os valores servem como referência histórica.</div>` : "", g.largo ? "largo" : "")).join("")}</div>`;
   a.graficos.forEach((g, i) => grafico(document.getElementById(`gp-${i}`), g.op));
   document.getElementById("sub-pais").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;

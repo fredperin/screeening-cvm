@@ -9,9 +9,8 @@ Mundo — Mercados, commodities, China e Global (passos 3 a 6), só de fontes of
   página oficial do Banco Mundial.
 - China (OCDE, Key Short-Term Economic Indicators): PIB, inflação, comércio exterior, indicador
   antecedente, confiança, juros e câmbio. A OCDE recebe os dados do NBS e os mantém em séries
-  contínuas (o espelho do NBS no DBnomics parou em fev/2026). Produção industrial, varejo e desemprego
-  ficam de fora: a série de produção da OCDE para a China é instável e não há fonte oficial gratuita
-  e em dia para varejo e desemprego.
+  contínuas. Produção industrial, varejo e desemprego vêm do espelho do NBS no DBnomics, que guarda só
+  13 meses e parou de atualizar em fev/2026: entram marcados como "descontinuados" (o site mostra o aviso).
 - Global (FMI, World Economic Outlook, DataMapper API): PIB, inflação, desemprego, dívida, resultado
   fiscal e conta corrente por país, com projeções (revistas em abril e outubro).
 
@@ -142,6 +141,14 @@ SERIES_CHINA = {
 }
 
 
+SERIES_NBS_DBNOMICS = {
+    "producao_12m": ("M_A0201/A020101", "Valor adicionado da indústria — 12 meses"),
+    "varejo_12m": ("M_A0701/A070103", "Vendas no varejo — 12 meses"),
+    "desemprego": ("M_A0E01/A0E0101", "Desemprego urbano (pesquisa)"),
+    "desemprego_jovens": ("M_A0E01/A0E0105", "Desemprego urbano — 16 a 24 anos"),
+}
+
+
 def china():
     texto = _get(URL_OCDE_KEI, headers=NAVEGADOR).text
     linhas = list(csv.DictReader(io.StringIO(texto)))
@@ -162,6 +169,16 @@ def china():
             saida[k] = {"nome": nome, **_serie(pd.Series(pontos).sort_index(), 2)}
     if "cpi_12m" not in saida or "pib_12m" not in saida:
         raise RuntimeError("OCDE (China): inflação ou PIB ausentes")
+    # Séries do NBS sem fonte contínua: espelho do DBnomics (13 meses, parado em fev/2026) — marcadas como descontinuadas
+    for k, (serie, nome) in SERIES_NBS_DBNOMICS.items():
+        try:
+            x = _get(f"https://api.db.nomics.world/v22/series/NBS/{serie}?observations=1", headers=NAVEGADOR).json()["series"]["docs"][0]
+            pontos = {pd.Timestamp(p + "-01"): float(v) for p, v in zip(x["period"], x["value"]) if v not in ("NA", None)}
+            if pontos:
+                saida[k] = {"nome": nome, "descontinuada": True, "fonte": "NBS via DBnomics (13 meses, sem atualização desde fev/2026)",
+                            **_serie(pd.Series(pontos).sort_index(), 2)}
+        except Exception:  # noqa: BLE001 — opcional: se o espelho sair do ar, a série some e o resto segue
+            pass
     return saida
 
 
