@@ -1108,12 +1108,13 @@ function desenharMacro(S, F, sub, cred = null) {
       { t: "INCC-DI (custo da construção)", info: "incc", alt: indice("incc") },
     ],
     atividade: [
-      { t: "IBC-Br (prévia mensal do PIB)", info: "ibcbr", op: { series: [{ nome: "Mensal (dessaz., m/m)", valores: P(S.ibcbr_mensal), cor: COR.azul }, { nome: "Acumulado em 12 meses", valores: P(S.ibcbr_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto", inicio: inicio(Math.min(JANELA_MACRO, 3)) } },
-      { t: "PIB trimestral", info: "pib_tri", op: { series: [{ nome: "Trimestral (dessaz., tri/tri)", valores: P(S.pib_tri), cor: COR.azul }, { nome: "Acumulado em 4 trimestres", valores: P(S.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto" } },
-      { t: "PIB anual (anos fechados)", info: "pib_anual", op: { xTempo: false, rotulos: anos, eixoEsq: "reais", eixoDir: "pctPronto", janela: 30, series: [
+      // linha 1: PIB anual inteiro; linha 2: IBC-Br | PIB trimestral; linha 3: desemprego inteiro
+      { t: "PIB anual (anos fechados)", info: "pib_anual", largo: true, op: { xTempo: false, rotulos: anos, eixoEsq: "reais", eixoDir: "pctPronto", janela: 30, series: [
         { nome: "PIB nominal (R$ correntes)", valores: anos.map((a) => nominal[a] ?? null), cor: COR.azul },
         { nome: "Crescimento real", valores: S.pib_anual ? S.pib_anual.valores : [], tipo: "line", eixo: "dir", cor: COR.ambar }] } },
-      { t: "Desemprego (PNAD Contínua, trimestre móvel)", info: "desemprego_br", op: { eixoEsq: "pctPronto", series: [
+      { t: "IBC-Br (prévia mensal do PIB)", info: "ibcbr", op: { series: [{ nome: "Mensal (dessaz., m/m)", valores: P(S.ibcbr_mensal), cor: COR.azul }, { nome: "Acumulado em 12 meses", valores: P(S.ibcbr_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto", inicio: inicio(Math.min(JANELA_MACRO, 3)) } },
+      { t: "PIB trimestral", info: "pib_tri", op: { series: [{ nome: "Trimestral (dessaz., tri/tri)", valores: P(S.pib_tri), cor: COR.azul }, { nome: "Acumulado em 4 trimestres", valores: P(S.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto" } },
+      { t: "Desemprego (PNAD Contínua, trimestre móvel)", info: "desemprego_br", largo: true, op: { eixoEsq: "pctPronto", series: [
         { nome: "Taxa de desocupação", valores: P(S.desemprego), tipo: "line", cor: COR.vermelho }] } },
     ],
     monetaria: [
