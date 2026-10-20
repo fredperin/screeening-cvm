@@ -1130,9 +1130,10 @@ function desenharMacro(S, F, sub, cred = null) {
         { nome: "Juros nominais", valores: neg(S.nfsp_juros), tipo: "line", cor: COR.ambar },
         { nome: "Resultado nominal", valores: neg(S.nfsp_nominal), tipo: "line", cor: COR.vermelho }] } },
       { t: "Resultado primário por esfera em 12 meses (% do PIB)", info: "fiscal_esferas", op: { eixoEsq: "pctPronto", series: [
-        { nome: "Governo Federal e Banco Central", valores: neg(S.nfsp_primario_central), cor: COR.azul, pilha: "esfera" },
-        { nome: "Estados e municípios", valores: neg(S.nfsp_primario_regionais), cor: COR.roxo, pilha: "esfera" },
-        { nome: "Empresas estatais", valores: neg(S.nfsp_primario_estatais), cor: COR.ciano, pilha: "esfera" },
+        // barras empilhadas precisam das mesmas datas: todas alinhadas pelo total (desde nov/2002), com o sinal invertido
+        { nome: "Governo Federal e Banco Central", valores: alinhar(S.nfsp_primario, ["nfsp_primario_central"]).map(([d, v]) => [d, -v]), cor: COR.azul, pilha: "esfera" },
+        { nome: "Estados e municípios", valores: alinhar(S.nfsp_primario, ["nfsp_primario_regionais"]).map(([d, v]) => [d, -v]), cor: COR.roxo, pilha: "esfera" },
+        { nome: "Empresas estatais", valores: alinhar(S.nfsp_primario, ["nfsp_primario_estatais"]).map(([d, v]) => [d, -v]), cor: COR.ciano, pilha: "esfera" },
         { nome: "Total (setor público consolidado)", valores: neg(S.nfsp_primario), tipo: "line", cor: COR.ambar }] } },
       { t: "Prazo médio da dívida mobiliária federal (meses)", info: "fiscal_prazo", op: { eixoEsq: "numero", series: [
         { nome: "Prazo médio dos títulos emitidos", valores: P(S.dmf_prazo), tipo: "line", cor: COR.ambar }] } },

@@ -256,8 +256,9 @@ def checar_offshore():
                ("€STR", E.get("estr"), 6), ("curva AAA do BCE", E.get("aaa_10a"), 6), ("CPI EUA", B.get("cpi_12m"), 75),
                ("desemprego EUA", B.get("desemprego"), 75), ("HICP", Z.get("hicp_12m"), 75), ("desemprego Zona do Euro", Z.get("desemprego"), 100),
                ("PIB Zona do Euro", Z.get("pib_tri"), 250), ("produção industrial Zona do Euro", Z.get("producao_12m"), 100),
-               ("PCE EUA (FRED)", off.get("fred", {}).get("pce_12m"), 75), ("PIB EUA (FRED)", off.get("fred", {}).get("pib_tri_anual"), 200),
-               ("confiança do consumidor EUA (FRED)", off.get("fred", {}).get("confianca"), 75)]
+               # datas do FRED são o início do período: PCE de agosto sai no fim de setembro; PIB do 2º tri no fim de julho (revisado até setembro)
+               ("PCE EUA (FRED)", off.get("fred", {}).get("pce_12m"), 100), ("PIB EUA (FRED)", off.get("fred", {}).get("pib_tri_anual"), 240),
+               ("confiança do consumidor EUA (FRED)", off.get("fred", {}).get("confianca"), 100)]
     for nome, s, max_dias in limites:
         if not s or not s.get("datas"):
             problemas.append(f"{nome}: série ausente")
