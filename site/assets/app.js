@@ -1468,10 +1468,6 @@ async function paginaDownloads() {
 const PLANO_OFFSHORE = {
   empresas: ["Empresas", "Empresas estrangeiras para comparação setorial.", [
     ["Comparáveis estrangeiras", "Receita, margens, endividamento e retorno de empresas listadas nos EUA.", "SEC EDGAR (balanços XBRL, API oficial)"]]],
-  china: ["China", "", [["China", "PIB, inflação e produção industrial.", "DBnomics (dados do NBS)"]]],
-  global: ["Global", "", [["Global", "PIB e projeções por país.", "FMI (World Economic Outlook), Banco Mundial, OCDE"]]],
-  mercados: ["Mercados", "", [["Mercados", "Índices de ações (S&P 500, Nasdaq, Stoxx), petróleo, minério, ouro e dólar global.",
-    "FRED e EIA (precisam de chave gratuita), Banco Mundial (Pink Sheet, mensal)"]]],
 };
 const CATEGORIAS_OFF = { fed: ["Fed", COR.verde], bce: ["BCE", COR.roxo], eua: ["EUA (dados)", COR.azul], europa: ["Europa (dados)", COR.ciano] };
 const SUBS_MACRO_OFF = [["eua", "Estados Unidos"], ["euro", "Europa (Zona do Euro)"], ["china", "China"], ["global", "Global"], ["mercados", "Mercados"]];
@@ -1479,8 +1475,9 @@ const SUBS_MACRO_OFF = [["eua", "Estados Unidos"], ["euro", "Europa (Zona do Eur
 const ABAS_PAIS_OFF = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["emprego", "Emprego"], ["monetaria", "Política monetária"]];
 let ABA_PAIS_OFF = "atividade";
 
-function desenharPaisOff(pais, off, cab, abas) {
+function desenharPaisOff(pais, off, cab, abas, mundo = null) {
   const B = off.bls || {}, R = off.fred || {}, F = off.fed || {}, E = off.bce || {}, Z = off.eurostat || {};
+  const C = (mundo && mundo.china) || {};
   const u = (x) => ultimo(x);
   const mes = (x) => (u(x).data ? `${MESES[Number(u(x).data.slice(5, 7)) - 1]}/${u(x).data.slice(2, 4)}` : "");
   const tri = (x) => (u(x).data ? `${Math.ceil(Number(u(x).data.slice(5, 7)) / 3)}º tri/${u(x).data.slice(0, 4)}` : "");
@@ -1488,7 +1485,33 @@ function desenharPaisOff(pais, off, cab, abas) {
   const meta = (x, v, nome) => ({ nome, valores: x && x.datas ? x.datas.map((d) => [d, v]) : [], tipo: "line", cor: COR.cinza, tracejado: true });
   const semFred = pais === "eua" && !off.fred;
   // cada aba: { fonte, cartoes, graficos: [{ id, t, info, largo, op }] }
-  const D = pais === "eua" ? {
+  const D = pais === "china" ? {
+    atividade: { fonte: "OCDE (dados do NBS)",
+      cartoes: [cartao("PIB contra um ano antes", pctPronto(u(C.pib_12m).valor, 1), tri(C.pib_12m)), cartao("PIB tri/tri (dessaz.)", pctPronto(u(C.pib_tri).valor, 1), tri(C.pib_tri)),
+        cartao("Exportações 12m", pctPronto(u(C.exportacoes_12m).valor, 1), `em dólares · ${mes(C.exportacoes_12m)}`), cartao("Importações 12m", pctPronto(u(C.importacoes_12m).valor, 1), mes(C.importacoes_12m)),
+        cartao("Indicador antecedente", u(C.antecedente).valor != null ? num(u(C.antecedente).valor, 1) : "—", `OCDE · 100 = tendência · ${mes(C.antecedente)}`)],
+      graficos: [
+        { t: "PIB", info: "pib_china", op: t(10, { eixoDir: "pctPronto", series: [
+          { nome: "Tri/tri (dessaz.)", valores: Pares(C.pib_tri), cor: COR.azul }, { nome: "Contra o mesmo tri do ano anterior", valores: Pares(C.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] }) },
+        { t: "Comércio exterior: exportações e importações (12 meses, em dólares)", info: "comercio_china", op: t(10, { series: [
+          { nome: "Exportações", valores: Pares(C.exportacoes_12m), tipo: "line", cor: COR.verde }, { nome: "Importações", valores: Pares(C.importacoes_12m), tipo: "line", cor: COR.vermelho }] }) },
+        { t: "Indicador antecedente e confiança", info: "antecedente_china", largo: true, op: t(10, { eixoEsq: "numero", eixoDir: "numero", series: [
+          { nome: "Indicador antecedente (OCDE, 100 = tendência)", valores: Pares(C.antecedente), tipo: "line", cor: COR.ambar },
+          { nome: "Confiança do consumidor", valores: Pares(C.confianca_consumidor), tipo: "line", eixo: "dir", cor: COR.azul },
+          { nome: "Confiança das empresas (saldo)", valores: Pares(C.confianca_empresas), tipo: "line", eixo: "dir", cor: COR.verde, tracejado: true }] }) }] },
+    inflacao: { fonte: "OCDE (dados do NBS)",
+      cartoes: [cartao("CPI 12 meses", pctPronto(u(C.cpi_12m).valor, 1), `meta do governo ~3% · ${mes(C.cpi_12m)}`), cartao("CPI no mês", pctPronto(u(C.cpi_mensal).valor, 1), mes(C.cpi_mensal))],
+      graficos: [{ t: "Inflação ao consumidor (CPI)", info: "cpi_china", largo: true, op: t(10, { eixoDir: "pctPronto", series: [
+        { nome: "Mensal", valores: Pares(C.cpi_mensal), cor: COR.azul }, { nome: "12 meses", valores: Pares(C.cpi_12m), tipo: "line", eixo: "dir", cor: COR.vermelho }] }) }] },
+    monetaria: { fonte: "OCDE",
+      cartoes: [cartao("Juros curtos (3 meses)", pctPronto(u(C.juros_curto).valor), `interbancário · ${mes(C.juros_curto)}`), cartao("Juros longos (10 anos)", pctPronto(u(C.juros_longo).valor), mes(C.juros_longo)),
+        cartao("Câmbio", u(C.cambio).valor != null ? `¥ ${num(u(C.cambio).valor, 2)}` : "—", `yuans por dólar · ${mes(C.cambio)}`)],
+      graficos: [
+        { t: "Juros: curto (interbancário 3 meses) e longo (10 anos)", info: "juros_china", op: t(10, { series: [
+          { nome: "Curto prazo (3 meses)", valores: Pares(C.juros_curto), tipo: "line", cor: COR.ambar }, { nome: "Longo prazo (10 anos)", valores: Pares(C.juros_longo), tipo: "line", cor: COR.azul }] }) },
+        { t: "Câmbio: yuans por dólar", info: "cambio_china", op: t(10, { eixoEsq: "preco", series: [
+          { nome: "CNY por US$", valores: Pares(C.cambio), tipo: "line", cor: COR.verde }] }) }] },
+  } : pais === "eua" ? {
     atividade: { fonte: "FRED (BEA, Fed, Census, Universidade de Michigan)",
       cartoes: [cartao("PIB tri/tri anualizado", pctPronto(u(R.pib_tri_anual).valor, 1), tri(R.pib_tri_anual)),
         cartao("PIB contra um ano antes", pctPronto(u(R.pib_12m).valor, 1), tri(R.pib_12m)),
@@ -1575,9 +1598,12 @@ function desenharPaisOff(pais, off, cab, abas) {
   };
   if (!D[ABA_PAIS_OFF]) ABA_PAIS_OFF = "atividade";
   const a = D[ABA_PAIS_OFF];
-  const nomePais = pais === "eua" ? "Estados Unidos" : "Europa (Zona do Euro)";
+  const nomePais = { eua: "Estados Unidos", euro: "Europa (Zona do Euro)", china: "China" }[pais];
+  const abasPais = ABAS_PAIS_OFF.filter(([k]) => D[k]);
   app.innerHTML = `${cab("Mundo · Macro", `${nomePais}: ${a.fonte} (APIs oficiais)`)}${abas}
-    <div class="seletor seletor-editoria" id="sub-pais" style="margin:-4px 0 12px">${ABAS_PAIS_OFF.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_PAIS_OFF ? "ativo" : ""}">${n}</button>`).join("")}</div>
+    <div class="seletor seletor-editoria" id="sub-pais" style="margin:-4px 0 12px">${abasPais.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_PAIS_OFF ? "ativo" : ""}">${n}</button>`).join("")}</div>
+    ${pais === "china" ? `<div class="nota" style="margin:-6px 0 10px">Produção industrial, varejo e desemprego da China ficam de fora: não há fonte oficial gratuita e em dia
+      (a série de produção da OCDE para a China é instável e o espelho do NBS no DBnomics parou em fev/2026).</div>` : ""}
     ${semFred && ["atividade", "inflacao"].includes(ABA_PAIS_OFF) ? `<div class="aviso">Aguardando a primeira coleta do FRED (chave cadastrada; os dados entram na próxima atualização).</div>` : ""}
     <div class="grade-cartoes">${a.cartoes.join("")}</div>
     <div class="grade">${a.graficos.map((g, i) => painelG(`gp-${i}`, g.t, g.info, "", g.largo ? "largo" : "")).join("")}</div>`;
@@ -1586,9 +1612,128 @@ function desenharPaisOff(pais, off, cab, abas) {
     const b = ev.target.closest("button"); if (!b) return;
     ABA_PAIS_OFF = b.dataset.k;
     limparGraficos();
-    desenharPaisOff(pais, off, cab, abas);
+    desenharPaisOff(pais, off, cab, abas, mundo);
   });
 }
+
+// ---------- Mundo → Macro → Global (FMI, World Economic Outlook) ----------
+let IND_GLOBAL = "NGDP_RPCH";
+function desenharGlobal(mundo, cab, abas) {
+  const G = mundo.global || {};
+  const inds = G.indicadores || {}, paises = G.paises || {};
+  if (!inds[IND_GLOBAL]) IND_GLOBAL = Object.keys(inds)[0];
+  const ind = inds[IND_GLOBAL];
+  const ano = G.ano_corrente || new Date().getFullYear();
+  const anosTab = [ano - 2, ano - 1, ano, ano + 1, ano + 2];
+  const destaque = [["BRA", COR.verde], ["USA", COR.azul], ["EURO", COR.roxo], ["CHN", COR.vermelho], ["WEOWORLD", COR.ambar]];
+  const anos = [...new Set(Object.values(ind.valores).flatMap((v) => Object.keys(v)))].sort();
+  const regioes = ["WEOWORLD", "ADVEC", "OEMDC"];
+  const linhas = Object.keys(paises).filter((c) => ind.valores[c]);
+  app.innerHTML = `${cab("Mundo · Macro", "Global: FMI — World Economic Outlook (projeções revistas em abril e outubro)")}${abas}
+    <div class="seletor seletor-editoria" id="ind-global" style="margin:-4px 0 12px">${Object.entries(inds).map(([k, v]) => `<button data-k="${k}" class="${k === IND_GLOBAL ? "ativo" : ""}">${esc(v.nome)}</button>`).join("")}</div>
+    <div class="grade">
+      ${painelG("gg-linhas", `${esc(ind.nome)} — Brasil, EUA, Zona do Euro, China e Mundo`, "global_fmi", `<div class="nota">A partir de ${ano} (inclusive), projeções do FMI.</div>`, "largo")}
+      <div class="painel largo" data-info="global_fmi"><h2>${esc(ind.nome)} por país</h2><div class="rolagem"><table class="tabela">
+        <tr><th style="text-align:left">País / região</th>${anosTab.map((a) => `<th>${a}${a >= ano ? '<br><span class="sub">projeção</span>' : ""}</th>`).join("")}</tr>
+        ${linhas.map((c) => `<tr class="${regioes.includes(c) ? "subtotal" : ""}"><td style="text-align:left">${esc(paises[c])}</td>
+          ${anosTab.map((a) => { const v = ind.valores[c][String(a)]; return `<td class="${a >= ano ? "sub" : ""}">${v == null ? "—" : num(v, 1)}</td>`; }).join("")}</tr>`).join("")}
+      </table></div><div class="nota">Fonte: FMI, World Economic Outlook (DataMapper). Zona do Euro, Mundo e grupos de países são agregados do próprio FMI.</div></div>
+    </div>`;
+  grafico(document.getElementById("gg-linhas"), { rotulos: anos, eixoEsq: "pctPronto", janela: 40, series: destaque.filter(([c]) => ind.valores[c]).map(([c, cor]) => ({
+    nome: paises[c], valores: anos.map((a) => ind.valores[c][a] ?? null), tipo: "line", cor, ...(c === "WEOWORLD" ? { tracejado: true } : {}) })) });
+  document.getElementById("ind-global").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    IND_GLOBAL = b.dataset.k; limparGraficos(); desenharGlobal(mundo, cab, abas);
+  });
+}
+
+// ---------- Mundo → Macro → Mercados (FRED diário + Banco Mundial mensal) ----------
+const ABAS_MERCADOS = [["acoes", "Ações e risco"], ["energia", "Petróleo e energia"], ["metais", "Metais e minério"], ["agricolas", "Agrícolas"], ["dolar", "Dólar e crédito"]];
+let ABA_MERCADOS = "acoes";
+const ESCOLHA_COMMODITY = {};
+function desenharMercados(mundo, cab, abas) {
+  const M = mundo.mercados || {}, K = mundo.commodities || {};
+  const u = (x) => ultimo(x);
+  const varia = (s, dias) => { const p = Pares(s); if (p.length < 2) return null; const fim = p[p.length - 1];
+    const lim = new Date(`${fim[0]}T12:00:00`); lim.setDate(lim.getDate() - dias); const iso = lim.toISOString().slice(0, 10);
+    const b = [...p].reverse().find(([d]) => d <= iso); return b ? fim[1] / b[1] - 1 : null; };
+  const vtxt = (v) => (v == null ? "—" : `<span class="${classeSinal(v)}">${num(v * 100, 1)}%</span>`);
+  const t = (anos, extra) => ({ xTempo: true, inicioTempo: desde(anos), deslizante: true, ...extra });
+  const semFred = !mundo.mercados;
+  const grupo = (g) => Object.entries(K).filter(([, v]) => v.grupo === g);
+  // tabela + gráfico com botões para uma família de commodities do Banco Mundial
+  const blocoCommodities = (g, titulo) => {
+    const itens = grupo(g);
+    if (!itens.length) return { html: `<p class="sub">Commodities indisponíveis.</p>`, desenhar: () => {} };
+    const escolhida = ESCOLHA_COMMODITY[g] && K[ESCOLHA_COMMODITY[g]] ? ESCOLHA_COMMODITY[g] : itens[0][0];
+    return {
+      html: `<div class="painel largo" data-info="commodities"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">${titulo} — preço mensal</h2>
+          <div class="seletor" id="sel-comm-${g}">${itens.map(([k, v]) => `<button data-k="${k}" class="${k === escolhida ? "ativo" : ""}">${esc(v.nome)}</button>`).join("")}</div></div>
+          <div class="grafico alto" id="gk-${g}"></div></div>
+        <div class="painel largo" data-info="commodities"><h2>${titulo} — último preço e variação</h2><div class="rolagem"><table class="tabela">
+          <tr><th style="text-align:left">Produto</th><th>Unidade</th><th>Mês</th><th>Preço</th><th>1 mês</th><th>12 meses</th><th>5 anos</th></tr>
+          ${itens.map(([, v]) => `<tr><td style="text-align:left">${esc(v.nome)}</td><td class="sub">${esc(v.unidade)}</td><td>${mesAno(u(v).data)}</td><td>${num(u(v).valor, 2)}</td>
+            <td>${vtxt(varia(v, 31))}</td><td>${vtxt(varia(v, 365))}</td><td>${vtxt(varia(v, 5 * 365))}</td></tr>`).join("")}
+        </table></div><div class="nota">Médias mensais em dólares — Banco Mundial, Commodity Price Data ("Pink Sheet"), atualizado no início de cada mês.</div></div>`,
+      desenhar: () => {
+        const v = K[escolhida];
+        grafico(document.getElementById(`gk-${g}`), t(10, { eixoEsq: "preco", series: [{ nome: `${v.nome} (${v.unidade})`, valores: Pares(v), tipo: "line", cor: COR.ambar }] }));
+        document.getElementById(`sel-comm-${g}`).addEventListener("click", (ev) => {
+          const b = ev.target.closest("button"); if (!b) return;
+          ESCOLHA_COMMODITY[g] = b.dataset.k; limparGraficos(); desenharMercados(mundo, cab, abas);
+        });
+      },
+    };
+  };
+  const cartaoM = (rot, s, fmt, sub) => cartao(rot, u(s).valor != null ? fmt(u(s).valor) : "—", sub ?? `${dataBR(u(s).data)} · 12m ${varia(s, 365) == null ? "—" : `${num(varia(s, 365) * 100, 1)}%`}`);
+  let corpo = "", depois = () => {};
+  if (ABA_MERCADOS === "acoes") {
+    corpo = `<div class="grade-cartoes">${cartaoM("S&P 500", M.sp500, (v) => num(v, 0))}${cartaoM("Nasdaq", M.nasdaq, (v) => num(v, 0))}${cartaoM("VIX", M.vix, (v) => num(v, 1), "volatilidade esperada do S&P 500")}</div>
+      <div class="grade">${painelG("gm-acoes", "S&P 500 e Nasdaq", "acoes_eua")}${painelG("gm-vix", "VIX — volatilidade implícita do S&P 500", "vix")}</div>
+      <div class="nota">Fechamento diário. O FRED só publica os últimos 10 anos do S&P 500 (licença da S&P Dow Jones Indices).</div>`;
+    depois = () => {
+      grafico(document.getElementById("gm-acoes"), t(5, { eixoEsq: "numero", eixoDir: "numero", series: [
+        { nome: "S&P 500", valores: Pares(M.sp500), tipo: "line", cor: COR.azul }, { nome: "Nasdaq Composite (eixo direito)", valores: Pares(M.nasdaq), tipo: "line", eixo: "dir", cor: COR.ambar }] }));
+      grafico(document.getElementById("gm-vix"), t(5, { eixoEsq: "numero", series: [{ nome: "VIX", valores: Pares(M.vix), tipo: "line", cor: COR.vermelho }] }));
+    };
+  } else if (ABA_MERCADOS === "energia") {
+    const bloco = blocoCommodities("energia", "Energia");
+    corpo = `<div class="grade-cartoes">${cartaoM("Brent", M.brent, (v) => `US$ ${num(v, 2)}`)}${cartaoM("WTI", M.wti, (v) => `US$ ${num(v, 2)}`)}
+      ${K.gas_europa ? cartao("Gás natural Europa", `US$ ${num(u(K.gas_europa).valor, 2)}`, `por MMBtu · ${mesAno(u(K.gas_europa).data)}`) : ""}</div>
+      <div class="grade">${painelG("gm-petroleo", "Petróleo Brent e WTI — diário (US$/barril)", "petroleo", "", "largo")}${bloco.html}</div>`;
+    depois = () => {
+      grafico(document.getElementById("gm-petroleo"), t(3, { eixoEsq: "preco", series: [
+        { nome: "Brent", valores: Pares(M.brent), tipo: "line", cor: COR.ambar }, { nome: "WTI", valores: Pares(M.wti), tipo: "line", cor: COR.azul }] }));
+      bloco.desenhar();
+    };
+  } else if (ABA_MERCADOS === "dolar") {
+    corpo = `<div class="grade-cartoes">${cartaoM("Dólar global", M.dolar, (v) => num(v, 1), "índice amplo do Fed (jan/2006 = 100)")}
+      ${cartaoM("Spread high yield", M.hy, (v) => `${num(v, 2)} p.p.`, "sobre Treasuries")}${cartaoM("Spread grau de investimento", M.ig, (v) => `${num(v, 2)} p.p.`, "sobre Treasuries")}
+      ${cartaoM("Bitcoin", M.bitcoin, (v) => `US$ ${num(v, 0)}`)}</div>
+      <div class="grade">${painelG("gm-dolar", "Dólar global — índice amplo do Fed", "dolar_global")}${painelG("gm-spread", "Spreads de crédito corporativo dos EUA (p.p. sobre Treasuries)", "spreads_credito")}
+        ${painelG("gm-btc", "Bitcoin (US$)", "bitcoin", "", "largo")}</div>`;
+    depois = () => {
+      grafico(document.getElementById("gm-dolar"), t(10, { eixoEsq: "numero", series: [{ nome: "Índice amplo do dólar", valores: Pares(M.dolar), tipo: "line", cor: COR.verde }] }));
+      grafico(document.getElementById("gm-spread"), t(10, { eixoEsq: "pctPronto", series: [
+        { nome: "High yield", valores: Pares(M.hy), tipo: "line", cor: COR.vermelho }, { nome: "Grau de investimento", valores: Pares(M.ig), tipo: "line", cor: COR.azul }] }));
+      grafico(document.getElementById("gm-btc"), t(5, { eixoEsq: "numero", series: [{ nome: "Bitcoin", valores: Pares(M.bitcoin), tipo: "line", cor: COR.ambar }] }));
+    };
+  } else {
+    const bloco = blocoCommodities(ABA_MERCADOS, ABA_MERCADOS === "metais" ? "Metais e minério" : "Agrícolas");
+    corpo = `<div class="grade">${bloco.html}</div>`;
+    depois = bloco.desenhar;
+  }
+  app.innerHTML = `${cab("Mundo · Macro", "Mercados: FRED (diário) e Banco Mundial (mensal)")}${abas}
+    <div class="seletor seletor-editoria" id="sub-mercados" style="margin:-4px 0 12px">${ABAS_MERCADOS.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_MERCADOS ? "ativo" : ""}">${n}</button>`).join("")}</div>
+    ${semFred && ["acoes", "energia", "dolar"].includes(ABA_MERCADOS) ? `<div class="aviso">Aguardando a primeira coleta do FRED (os dados diários entram na próxima atualização).</div>` : ""}
+    ${corpo}`;
+  depois();
+  document.getElementById("sub-mercados").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    ABA_MERCADOS = b.dataset.k; limparGraficos(); desenharMercados(mundo, cab, abas);
+  });
+}
+const mesAno = (iso) => (iso ? `${MESES[Number(iso.slice(5, 7)) - 1]}/${iso.slice(2, 4)}` : "—");
 
 function emConstrucao(itens) {
   return `<div class="aviso">Em construção: a estrutura está pronta e os dados entram nas próximas etapas.</div>
@@ -1641,8 +1786,11 @@ async function paginaOffshore(secao, parametro) {
   if (secao === "macro") {
     const sub = SUBS_MACRO_OFF.some(([k]) => k === parametro) ? parametro : "eua";
     const abas = `<div class="abas">${SUBS_MACRO_OFF.map(([k, n]) => `<a href="#/off/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
-    if (PLANO_OFFSHORE[sub]) { app.innerHTML = `${cab("Mundo · Macro", "Atividade, inflação e emprego no exterior")}${abas}${emConstrucao(PLANO_OFFSHORE[sub][2])}`; return; }
-    desenharPaisOff(sub, off, cab, abas);
+    const mundo = ["china", "global", "mercados"].includes(sub) ? await dados("dados/mundo.json").catch(() => null) : null;
+    if (["china", "global", "mercados"].includes(sub) && !mundo) { app.innerHTML = `${cab("Mundo · Macro", "")}${abas}<p class="sub">Dados indisponíveis no momento.</p>`; return; }
+    if (sub === "global") { desenharGlobal(mundo, cab, abas); return; }
+    if (sub === "mercados") { desenharMercados(mundo, cab, abas); return; }
+    desenharPaisOff(sub, off, cab, abas, mundo);
     return;
   }
 
@@ -2247,7 +2395,7 @@ const PALETA_GRAF = ["#388bfd", "#f0b429", "#3fb950", "#a371f7", "#39c5cf", "#f8
 
 /* ============ Status dos dados ============ */
 const NOMES_ETAPAS = {
-  macro: "Macro (Banco Central, IBGE, FGV)", credito: "Crédito (Banco Central)", agenda: "Agenda (Banco Central, IBGE, FGV)", tesouro: "Tesouro Direto", curva_di: "Curva DI (B3)",
+  macro: "Macro (Banco Central, IBGE, FGV)", credito: "Crédito (Banco Central)", mundo: "Mundo — mercados, commodities, China e Global (FRED, Banco Mundial, OCDE, FMI)", agenda: "Agenda (Banco Central, IBGE, FGV)", tesouro: "Tesouro Direto", curva_di: "Curva DI (B3)",
   mercado: "Cotações e proventos (B3)", noticias: "Notícias", planilhas: "Planilhas de Macro e Juros", eventos: "Eventos (CVM)",
   ficha: "Ficha da empresa (FRE/FCA)", fre_textos: "Trechos do Formulário de Referência", resumos: "Resumos aprofundados",
   cvm_base: "Base de demonstrações (CVM)", empresas: "Empresas (JSON e Excel)", indice: "Índice de empresas",

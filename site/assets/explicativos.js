@@ -448,6 +448,91 @@ window.EXPLICATIVOS = {
       inflação (HICP) dos 12 meses anteriores: <code>(1 + juro) ÷ (1 + inflação) − 1</code>.</p>
       <p class="sub">Fonte: cálculo do site com dados do BCE e do Eurostat.</p>`,
   },
+  pib_china: {
+    titulo: "PIB da China",
+    html: `<p>Crescimento real do PIB chinês: contra o mesmo trimestre do ano anterior (o número que o governo divulga e compara com a meta
+      anual, ~5%) e tri/tri com ajuste sazonal. Os dados são do <b>NBS</b> (escritório de estatísticas da China), repassados à OCDE.</p>
+      <p class="sub">Fonte: OCDE, Key Short-Term Economic Indicators (dados do NBS).</p>`,
+  },
+  comercio_china: {
+    titulo: "Comércio exterior da China",
+    html: `<p>Variação em 12 meses do valor, em dólares, das exportações e importações de mercadorias — termômetro da demanda externa pela
+      indústria chinesa e da demanda chinesa por commodities (minério, petróleo, soja).</p>
+      <p class="sub">Fonte: OCDE, Key Short-Term Economic Indicators (dados da alfândega chinesa).</p>`,
+  },
+  antecedente_china: {
+    titulo: "Indicador antecedente e confiança — China",
+    html: `<p><b>Indicador antecedente composto (OCDE):</b> antecipa em 6 a 9 meses as viradas do ciclo; acima de 100 e subindo indica
+      crescimento acima da tendência. <b>Confiança:</b> pesquisas com consumidores (índice) e empresas (saldo de respostas).</p>
+      <p class="sub">Fonte: OCDE, Key Short-Term Economic Indicators.</p>`,
+  },
+  cpi_china: {
+    titulo: "Inflação ao consumidor da China",
+    html: `<p>Índice de preços ao consumidor (CPI) calculado pelo NBS. A meta informal do governo é de cerca de 3% ao ano; nos últimos anos a
+      China conviveu com inflação perto de zero (risco de deflação).</p>
+      <p class="sub">Fonte: OCDE, Key Short-Term Economic Indicators (dados do NBS).</p>`,
+  },
+  juros_china: {
+    titulo: "Juros na China",
+    html: `<p><b>Curto prazo:</b> taxa interbancária de 3 meses. <b>Longo prazo:</b> rendimento do título do governo de 10 anos.
+      O Banco do Povo da China usa várias taxas (LPR, 7-day reverse repo), que não têm série oficial gratuita em dia; estas mostram a direção
+      da política monetária.</p>
+      <p class="sub">Fonte: OCDE, Key Short-Term Economic Indicators.</p>`,
+  },
+  cambio_china: {
+    titulo: "Câmbio — yuan por dólar",
+    html: `<p>Média mensal de yuans (CNY) por dólar. Subindo = yuan se desvalorizando.</p>
+      <p class="sub">Fonte: OCDE, Key Short-Term Economic Indicators.</p>`,
+  },
+  global_fmi: {
+    titulo: "Indicadores globais (FMI)",
+    html: `<p>Dados anuais do <b>World Economic Outlook</b> do FMI para os principais países, com <b>projeções</b> para o ano corrente e os
+      próximos (revistas em abril e outubro). Crescimento do PIB real, inflação média do ano, desemprego, dívida bruta e resultado nominal do
+      governo (% do PIB) e saldo em conta corrente (% do PIB). Mundo, avançadas e emergentes são agregados do próprio FMI.</p>
+      <p class="sub">Fonte: FMI, World Economic Outlook (DataMapper API).</p>`,
+  },
+  acoes_eua: {
+    titulo: "Bolsas americanas",
+    html: `<p><b>S&P 500:</b> as 500 maiores empresas dos EUA. <b>Nasdaq Composite:</b> todas as ações da Nasdaq, com peso grande de tecnologia.
+      Pontos no fechamento diário, sem dividendos.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), séries SP500 (S&P Dow Jones Indices, só 10 anos) e NASDAQCOM.</p>`,
+  },
+  vix: {
+    titulo: "VIX",
+    html: `<p>Volatilidade que o mercado de opções espera para o S&P 500 nos próximos 30 dias (% ao ano). Acima de 30 costuma indicar estresse;
+      abaixo de 15, calmaria.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), série VIXCLS da Cboe.</p>`,
+  },
+  petroleo: {
+    titulo: "Petróleo Brent e WTI",
+    html: `<p><b>Brent:</b> referência do Mar do Norte, usada pela Petrobras e pela maior parte do mundo. <b>WTI:</b> referência dos EUA.
+      Preço à vista diário em dólares por barril.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), séries DCOILBRENTEU e DCOILWTICO da EIA (Departamento de Energia dos EUA).</p>`,
+  },
+  commodities: {
+    titulo: "Commodities (Banco Mundial)",
+    html: `<p>Preços médios mensais em dólares das principais commodities, compilados pelo <b>Banco Mundial</b> ("Pink Sheet"), com o mesmo
+      critério desde 1960. Úteis para acompanhar o que importa para as exportadoras da B3: minério de ferro (Vale), petróleo (Petrobras),
+      soja e milho (agronegócio), café e açúcar. Celulose não faz parte da base.</p>
+      <p class="sub">Fonte: Banco Mundial, Commodity Price Data (Pink Sheet), mensal.</p>`,
+  },
+  dolar_global: {
+    titulo: "Dólar global",
+    html: `<p>Índice amplo do dólar calculado pelo <b>Federal Reserve</b>: valor do dólar contra as moedas dos principais parceiros comerciais
+      dos EUA, ponderado pelo comércio (jan/2006 = 100). Subindo = dólar se fortalecendo no mundo.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), série DTWEXBGS do Federal Reserve.</p>`,
+  },
+  spreads_credito: {
+    titulo: "Spreads de crédito",
+    html: `<p>Prêmio, em pontos percentuais, que as empresas americanas pagam acima dos Treasuries: <b>high yield</b> (empresas com nota abaixo de
+      grau de investimento) e <b>grau de investimento</b>. Abrem em momentos de estresse e fecham quando o apetite por risco aumenta.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), índices ICE BofA (BAMLH0A0HYM2 e BAMLC0A0CM).</p>`,
+  },
+  bitcoin: {
+    titulo: "Bitcoin",
+    html: `<p>Preço do bitcoin em dólares na Coinbase, diário.</p>
+      <p class="sub">Fonte: FRED (Fed de St. Louis), série CBBTCUSD da Coinbase.</p>`,
+  },
   cpi_eua: {
     titulo: "CPI — inflação ao consumidor dos EUA",
     html: `<p>Índice de preços ao consumidor urbano (CPI-U), calculado pelo <b>BLS</b>. O <b>núcleo</b> exclui alimentos e energia.

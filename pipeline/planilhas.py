@@ -160,7 +160,8 @@ def gerar_offshore():
                      "Fontes oficiais: Tesouro dos EUA (Treasuries), Fed de Nova York (EFFR, SOFR, meta dos Fed Funds), BLS (CPI, desemprego, payroll),",
                      "FRED do Fed de St. Louis (PIB, PCE, produção industrial, varejo e confiança do consumidor dos EUA),",
                      "BCE (taxas de depósito e de refinanciamento, €STR, curva AAA da Zona do Euro) e Eurostat (HICP, desemprego, PIB,",
-                     "produção industrial e varejo da Zona do Euro). Taxas em % a.a."])
+                     "produção industrial e varejo da Zona do Euro). Taxas em % a.a.",
+                     "Mercados (FRED, diário), commodities (Banco Mundial, Pink Sheet, mensal), China (OCDE, dados do NBS) e Global (FMI, World Economic Outlook, com projeções)."])
         H = T.get("historico", {})
         tabela({f"Treasury {k} (%)": v for k, v in H.items()}).to_excel(w, sheet_name="Treasuries (diário)")
         linhas = [{"Curva": nome, "Data": pd.Timestamp(c["data"]), "Prazo": p["prazo"], "Anos": p["anos"], "Taxa (% a.a.)": p["taxa"]}
@@ -189,6 +190,21 @@ def gerar_offshore():
                 "Produção industrial 12 meses (%)": Z.get("producao_12m"), "Produção industrial mensal (%)": Z.get("producao_mensal"),
                 "Varejo (volume) 12 meses (%)": Z.get("varejo_12m"), "Varejo (volume) mensal (%)": Z.get("varejo_mensal")}
                ).to_excel(w, sheet_name="Zona do Euro (Eurostat)")
+        # Mercados, commodities, China e Global (pipeline.mundo)
+        arq_m = DIR_DADOS_SITE / "mundo.json"
+        if arq_m.exists():
+            mu = json.loads(arq_m.read_text(encoding="utf-8"))
+            if mu.get("mercados"):
+                tabela({f"{v['nome']}": v for k, v in mu["mercados"].items() if isinstance(v, dict)}).to_excel(w, sheet_name="Mercados (FRED, diário)")
+            if mu.get("commodities"):
+                tabela({f"{v['nome']} ({v['unidade']})": v for v in mu["commodities"].values()}).to_excel(w, sheet_name="Commodities (Banco Mundial)")
+            if mu.get("china"):
+                tabela({v["nome"]: v for v in mu["china"].values()}).to_excel(w, sheet_name="China (OCDE)")
+            g = mu.get("global") or {}
+            linhas = [{"Indicador": ind["nome"], "País": g["paises"].get(c, c), "Ano": int(a), "Valor": v}
+                      for ind in g.get("indicadores", {}).values() for c, anos in ind["valores"].items() for a, v in anos.items()]
+            if linhas:
+                pd.DataFrame(linhas).pivot_table(index=["Indicador", "País"], columns="Ano", values="Valor").to_excel(w, sheet_name="Global (FMI WEO)")
         _ajustar_colunas(w)
     return destino
 

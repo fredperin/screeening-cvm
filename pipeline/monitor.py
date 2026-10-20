@@ -270,6 +270,26 @@ def checar_offshore():
     return f"{len(limites)} séries em dia (Tesouro dos EUA, Fed, BLS, FRED, BCE, Eurostat)"
 
 
+def checar_mundo():
+    """Mercados (FRED), commodities (Banco Mundial), China (OCDE) e Global (FMI), gerados por pipeline.mundo."""
+    arq = DIR_DADOS_SITE / "mundo.json"
+    assert arq.exists(), "mundo.json não foi gerado"
+    m = json.loads(arq.read_text(encoding="utf-8"))
+    problemas = list(m.get("falhas", []))
+    limites = [("S&P 500 (FRED)", (m.get("mercados") or {}).get("sp500"), 6), ("Brent (FRED)", (m.get("mercados") or {}).get("brent"), 10),
+               ("minério de ferro (Banco Mundial)", (m.get("commodities") or {}).get("minerio"), 75),
+               ("CPI China (OCDE)", (m.get("china") or {}).get("cpi_12m"), 75), ("PIB China (OCDE)", (m.get("china") or {}).get("pib_12m"), 200)]
+    for nome, s, max_dias in limites:
+        if not s or not s.get("datas"):
+            problemas.append(f"{nome}: série ausente")
+        elif _dias(s["datas"][-1]) > max_dias:
+            problemas.append(f"{nome}: último dado em {s['datas'][-1]}")
+    if not (m.get("global") or {}).get("indicadores"):
+        problemas.append("FMI: indicadores ausentes")
+    assert not problemas, " | ".join(problemas)
+    return "mercados, commodities, China e Global em dia"
+
+
 def checar_credito():
     """Estatísticas de crédito do BC (pipeline.credito): sem falhas e com o último mês dentro da defasagem normal (~30 dias)."""
     arq = DIR_DADOS_SITE / "credito.json"
@@ -309,6 +329,7 @@ CHECAGENS = {
     "Banco Central — Focus": checar_focus,
     "Macro — séries completas e em dia": checar_macro,
     "Banco Central — estatísticas de crédito": checar_credito,
+    "Mundo — mercados, commodities, China e Global": checar_mundo,
     "Offshore — Tesouro dos EUA, Fed, BLS, BCE, Eurostat": checar_offshore,
     "Tesouro Direto (oficial)": checar_tesouro,
     "Tesouro Direto — tempo real (não oficial)": checar_tesouro_tempo_real,
