@@ -377,7 +377,7 @@ async function paginaEmpresas() {
   app.innerHTML = `
     <div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas · clique para abrir</div></div>
     </div>
-    <div class="grade" style="margin-bottom:14px">
+    <div class="grade grade-3" style="margin-bottom:14px">
       <div class="painel"><h2>Últimas divulgações</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Empresa</th><th>Período</th><th>Receita</th><th>Var. a/a</th><th>Lucro</th><th>Var. a/a</th></tr>
         ${recentes.map((e) => `<tr class="clicavel" onclick="location.hash='#/on/empresa/${esc(e.id)}'">
@@ -1408,13 +1408,19 @@ const NOMES_ETAPAS = {
 };
 
 async function paginaStatus() {
-  const [st, saude, agenda] = await Promise.all([dados("dados/status.json").catch(() => null), dados("dados/saude.json").catch(() => null),
-    dados("dados/agenda.json").catch(() => null)]);
+  const [st, saude, agenda, obs] = await Promise.all([dados("dados/status.json").catch(() => null), dados("dados/saude.json").catch(() => null),
+    dados("dados/agenda.json").catch(() => null), dados("dados/observacoes.json").catch(() => null)]);
   const marca = (ok) => `<span class="${ok ? "pos" : "neg"}">${ok ? "✔" : "✖"}</span>`;
   const quando = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—");
   app.innerHTML = `
     <div class="cabecalho"><div><h1>Status dos dados</h1><div class="sub">Resultado da última atualização automática e das checagens do monitor de fontes</div></div>
       <a class="botao" href="https://github.com/fredperin/screeening-cvm/actions" target="_blank" rel="noopener">Execuções no GitHub</a></div>
+    <div class="painel" style="margin-bottom:10px"><h2>Observações em aberto</h2>${(() => {
+      const ab = (obs && obs.abertas) || [];
+      return ab.length ? `<table class="tabela"><tr><th>Fonte</th><th style="text-align:left">Problema</th><th>Desde</th></tr>
+        ${ab.map((o) => `<tr><td>${esc(o.fonte)}</td><td style="white-space:normal;text-align:left" class="neg">${esc(o.detalhe)}</td><td>${quando(o.desde)}</td></tr>`).join("")}</table>`
+        : `<p class="pos" style="margin:0">Nenhuma — todas as fontes passaram na última verificação.</p>`;
+    })()}</div>
     <div class="grade">
       <div class="painel"><h2>Atualização — ${st ? quando(st.atualizado_em) : "—"}</h2>${st ? `<table class="tabela">
         <tr><th>Etapa</th><th></th><th>Tempo / erro</th></tr>
@@ -1434,5 +1440,22 @@ async function paginaStatus() {
       no GitHub se algo falhar. Para uma verificação detalhada, peça ao Claude: "rode o auditor de atualização".</div>`;
 }
 
+/* ============ Observações: problemas de dados em aberto ============ */
+// Vêm do monitor (atualização diária) e do Tesouro em tempo real (3x ao dia); cada item some quando o problema é resolvido
+async function carregarObservacoes() {
+  const [obs, tes] = await Promise.all([dados("dados/observacoes.json").catch(() => null), dados("dados/tesouro.json").catch(() => null)]);
+  const itens = ((obs && obs.abertas) || []).map((o) => ({ fonte: o.fonte, detalhe: o.detalhe, desde: o.desde }));
+  if (tes && tes.falha_tempo_real) itens.push({ fonte: "Tesouro Direto — tempo real (não oficial)", detalhe: tes.falha_tempo_real, desde: tes.gerado_em });
+  const area = document.getElementById("observacoes");
+  if (!itens.length) { area.hidden = true; return; }
+  const quando = (iso) => (iso ? new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—");
+  area.innerHTML = `<details><summary>⚠ Observações sobre os dados (${itens.length}) — o site segue com os últimos dados bons dessas fontes</summary>
+    <ul>${itens.map((o) => `<li><b>${esc(o.fonte)}</b> <span class="sub">· desde ${quando(o.desde)}</span><br><span class="sub">${esc(o.detalhe.slice(0, 260))}</span></li>`).join("")}</ul>
+    <div class="sub">Cada observação sai daqui sozinha quando a fonte volta ao normal. Detalhes em <a href="#/status">Status dos dados</a>
+      ${obs ? `· última verificação ${quando(obs.verificado_em)}` : ""}.</div></details>`;
+  area.hidden = false;
+}
+
 /* ============ início ============ */
 iniciarBusca().then(rotear);
+carregarObservacoes();

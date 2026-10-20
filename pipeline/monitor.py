@@ -11,7 +11,7 @@ Uso: py -m pipeline.monitor
 import base64
 import json
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 import requests
 
@@ -19,6 +19,8 @@ from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO
 
 CABECALHO = {"User-Agent": "Mozilla/5.0"}
 ARQ_ALERTA = DIR_INTERMEDIARIO / "alerta.md"
+FUSO_BR = timezone(timedelta(hours=-3))
+ARQ_OBSERVACOES = DIR_INTERMEDIARIO / "observacoes.json"  # guarda desde quando cada problema está aberto
 
 
 def _b64(obj):
@@ -295,6 +297,21 @@ CHECAGENS = {
 }
 
 
+def gravar_observacoes(falhas):
+    """Observações do site: um item por checagem com falha; some quando a checagem volta a passar."""
+    agora = datetime.now(FUSO_BR).isoformat(timespec="minutes")
+    try:
+        anteriores = {o["fonte"]: o for o in json.loads(ARQ_OBSERVACOES.read_text(encoding="utf-8"))["abertas"]}
+    except (OSError, ValueError, KeyError):
+        anteriores = {}
+    abertas = [{"fonte": nome, "detalhe": r["detalhe"], "desde": anteriores.get(nome, {}).get("desde", agora)}
+               for nome, r in falhas.items()]
+    resolvidas = sorted(set(anteriores) - set(falhas))
+    conteudo = json.dumps({"verificado_em": agora, "abertas": abertas, "resolvidas_agora": resolvidas}, ensure_ascii=False, indent=1)
+    ARQ_OBSERVACOES.write_text(conteudo, encoding="utf-8")
+    (DIR_DADOS_SITE / "observacoes.json").write_text(conteudo, encoding="utf-8")
+
+
 def main():
     import time
     resultados = {}
@@ -312,10 +329,11 @@ def main():
         print(f"{marca} {nome}: {resultados[nome]['detalhe']}")
 
     (DIR_DADOS_SITE / "saude.json").write_text(json.dumps(
-        {"verificado_em": datetime.now().isoformat(timespec="seconds"), "fontes": resultados},
+        {"verificado_em": datetime.now(FUSO_BR).isoformat(timespec="seconds"), "fontes": resultados},
         ensure_ascii=False, indent=1), encoding="utf-8")
 
     falhas = {n: r for n, r in resultados.items() if not r["ok"]}
+    gravar_observacoes(falhas)
     if falhas:
         linhas = [f"O monitor da R.V. Mapp encontrou {len(falhas)} problema(s) em {date.today():%d/%m/%Y}:", ""]
         linhas += [f"- **{n}**: {r['detalhe']}" for n, r in falhas.items()]
