@@ -186,6 +186,7 @@ SERIES_MACRO = {
     "ibcbr": ("M", 110, (50, 250)), "ibcbr_dessaz": ("M", 110, (50, 250)),
     "pib_indice": ("T", 250, (50, 400)), "pib_indice_obs": ("T", 250, (50, 400)),
     "pib_anual": ("A", 800, (-10, 15)), "pib_nominal": ("A", 800, (1e11, 1e14)),
+    "desemprego": ("M", 100, (2, 20)),
     "selic_meta": ("D", 6, (1, 30)), "cdi": ("D", 6, (1, 30)), "usd": ("D", 6, (1, 15)), "eur": ("D", 6, (1, 15)),
 }
 PASSO_MESES = {"M": 1, "T": 3, "A": 12}

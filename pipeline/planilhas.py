@@ -19,6 +19,7 @@ ABAS_MACRO = {
     "PIB trimestral": ["pib_tri", "pib_12m", "pib_indice", "pib_indice_obs"],
     "PIB anual": ["pib_anual", "pib_nominal"],
     "IBC-Br": ["ibcbr_mensal", "ibcbr_12m", "ibcbr", "ibcbr_dessaz"],
+    "Desemprego": ["desemprego"],
     "Selic e juro real": ["selic_meta", "juro_real"],
     "CDI e câmbio (diário)": ["cdi", "usd", "eur"],
 }

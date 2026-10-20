@@ -251,11 +251,12 @@ async function iniciarBusca() {
 // Mesmas seções, na mesma ordem, nos dois lados: #/on/<seção>/<detalhe> e #/off/<seção>/<detalhe>
 const SECOES = [["", "Início"], ["noticias", "Notícias e agenda"], ["macro", "Macro"], ["juros", "Juros"], ["empresas", "Empresas"], ["downloads", "Downloads"]];
 const ROTAS = {
-  on: { "": paginaInicio, noticias: paginaNoticias, macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
+  on: { "": paginaInicio, noticias: () => paginaNoticias("on"), macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
   off: Object.fromEntries(SECOES.map(([k]) => [k, (p) => paginaOffshore(k, p)])),
 };
-const SECOES_CONS = [["", "Juros"], ["inflacao", "Inflação"], ["atividade", "Atividade e emprego"]];
-ROTAS.cons = Object.fromEntries(SECOES_CONS.map(([k]) => [k, () => paginaConsolidado(k)]));
+const SECOES_CONS = [["", "Juros"], ["inflacao", "Inflação"], ["atividade", "Atividade e emprego"], ["noticias", "Notícias e agenda"]];
+ROTAS.cons = Object.fromEntries(SECOES_CONS.map(([k]) => [k, () => (k === "noticias" ? paginaNoticias("cons") : paginaConsolidado(k))]));
+ROTAS.off.noticias = () => paginaNoticias("off");
 const ROTAS_ANTIGAS = { agenda: "noticias" };  // endereços de antes da divisão Onshore/Offshore
 
 function desenharNav(lado, secao) {
@@ -307,23 +308,20 @@ function cartao(rotulo, valor, det = "") {
 }
 
 async function paginaInicio() {
-  const [macro, tesouro, di, mercado, fatos, agenda] = await Promise.all([
+  const [macro, tesouro, di, agenda, noticias] = await Promise.all([
     dados("dados/macro.json").catch(() => null), dados("dados/tesouro.json").catch(() => null),
-    dados("dados/curva_di.json").catch(() => null), dados("dados/mercado.json").catch(() => null),
-    dados("dados/eventos_recentes.json").catch(() => null), dados("dados/agenda.json").catch(() => null),
+    dados("dados/curva_di.json").catch(() => null), dados("dados/agenda.json").catch(() => null),
+    dados("dados/noticias.json").catch(() => null),
   ]);
   const s = macro ? macro.series : {};
   const selic = ultimo(s.selic_meta), ipca = ultimo(s.ipca_12m), cdi = ultimo(s.cdi), usd = ultimo(s.usd), real = ultimo(s.juro_real);
   const ipcaLongo = tesouro ? tesouro.curvas.hoje.ipca.slice(-1)[0] : null;
-
-  const recentes = [...INDICE].filter((e) => e.ultimo_periodo).sort((a, b) => b.ultimo_periodo.localeCompare(a.ultimo_periodo) || a.nome.localeCompare(b.nome)).slice(0, 15);
-  const proximos = mercado ? mercado.empresas.flatMap((e) => (e.proximos_proventos || []).map((p) => ({ ...p, id: e.id }))) : [];
-  const hojeIso = new Date().toISOString().slice(0, 10);
-  const chave = (p) => (p.data_com >= hojeIso ? p.data_com : p.pagamento || "");
-  proximos.sort((a, b) => chave(a).localeCompare(chave(b)));
+  const mercado = ((noticias && noticias.itens) || []).filter((n) => n.tipo === "mercado");
 
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Onshore · painel</h1><div class="sub">Macro, juros e empresas da lista selecionada</div></div></div>
+    <div class="cabecalho"><div><h1>Onshore · painel</h1><div class="sub">Agenda, indicadores e notícias do Brasil</div></div></div>
+    <div class="painel secao-topo"><h2>Agenda — próximos 14 dias</h2>${tabelaAgenda(agenda, 14)}
+      <div class="nota"><a href="#/on/noticias">Ver agenda completa</a></div></div>
     <div class="grade-cartoes">
       ${cartao("Selic meta", pctPronto(selic.valor), dataBR(selic.data))}
       ${cartao("IPCA 12 meses", pctPronto(ipca.valor), ipca.data ? ipca.data.slice(0, 7) : "")}
@@ -335,6 +333,51 @@ async function paginaInicio() {
     <div class="grade">
       <div class="painel" data-info="curva_di"><h2>Curva DI x Pré — hoje vs. 1 ano</h2><div class="grafico" id="g-di"></div></div>
       <div class="painel" data-info="selic"><h2>Selic meta e IPCA 12m</h2><div class="grafico" id="g-juros"></div></div>
+    </div>
+    <div class="painel secao"><h2>Notícias de mercado</h2>${listaNoticias(mercado, 40)}
+      <div class="nota">Manchetes de Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney, com link para o jornal. <a href="#/on/noticias">Ver todas</a></div></div>`;
+
+  if (di && di.curvas.hoje) {
+    const serieCurva = (c) => c.pre.filter((p) => p.anos <= 10).map((p) => [p.anos, p.taxa]);
+    grafico(document.getElementById("g-di"), {
+      xNome: "anos", eixoEsq: "pctPronto",
+      series: [
+        { nome: `Hoje (${dataBR(di.curvas.hoje.data)})`, valores: serieCurva(di.curvas.hoje), tipo: "line", cor: COR.ambar },
+        ...(di.curvas["1 ano"] ? [{ nome: `1 ano (${dataBR(di.curvas["1 ano"].data)})`, valores: serieCurva(di.curvas["1 ano"]), tipo: "line", cor: COR.cinza, tracejado: true }] : []),
+      ],
+    });
+  }
+  if (macro) {
+    const desde5 = `${new Date().getFullYear() - 5}-01-01`;
+    const pares = (serie) => serie.datas.map((d, i) => [d, serie.valores[i]]).filter((p) => p[0] >= desde5);
+    grafico(document.getElementById("g-juros"), {
+      xTempo: true, eixoEsq: "pctPronto", degrau: true,
+      series: [
+        { nome: "Selic meta", valores: pares(s.selic_meta), tipo: "line", cor: COR.ambar },
+        { nome: "IPCA 12m", valores: pares(s.ipca_12m), tipo: "line", cor: COR.vermelho },
+      ],
+    });
+  }
+}
+
+/* ============ Empresas (lista) ============ */
+async function paginaEmpresas() {
+  const [mercado, fatos] = await Promise.all([dados("dados/mercado.json").catch(() => ({ empresas: [] })), dados("dados/eventos_recentes.json").catch(() => null)]);
+  const recentes = [...INDICE].filter((e) => e.ultimo_periodo).sort((a, b) => b.ultimo_periodo.localeCompare(a.ultimo_periodo) || a.nome.localeCompare(b.nome)).slice(0, 15);
+  const proximos = mercado.empresas.flatMap((e) => (e.proximos_proventos || []).map((p) => ({ ...p, id: e.id })));
+  const hojeIso = new Date().toISOString().slice(0, 10);
+  const chave = (p) => (p.data_com >= hojeIso ? p.data_com : p.pagamento || "");
+  proximos.sort((a, b) => chave(a).localeCompare(chave(b)));
+  const mapa = Object.fromEntries(mercado.empresas.map((m) => [m.id, m]));
+  const linhas = INDICE.map((e) => {
+    const m = mapa[e.id] || {};
+    const mc = m.market_cap;
+    return { ...e, mc, pl: mc && e.lucro_ltm > 0 ? mc / e.lucro_ltm : null, dy: m.dy_12m };
+  });
+  app.innerHTML = `
+    <div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas · clique para abrir</div></div>
+    </div>
+    <div class="grade" style="margin-bottom:14px">
       <div class="painel"><h2>Últimas divulgações</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Empresa</th><th>Período</th><th>Receita</th><th>Var. a/a</th><th>Lucro</th><th>Var. a/a</th></tr>
         ${recentes.map((e) => `<tr class="clicavel" onclick="location.hash='#/on/empresa/${esc(e.id)}'">
@@ -342,8 +385,6 @@ async function paginaInicio() {
           <td>${reais(e.receita_tri)}</td><td class="${classeSinal(e.cresc_receita_tri)}">${pct(e.cresc_receita_tri)}</td>
           <td>${reais(e.lucro_tri)}</td><td class="${classeSinal(e.cresc_lucro_tri)}">${pct(e.cresc_lucro_tri)}</td></tr>`).join("")}
       </table></div></div>
-      <div class="painel"><h2>Agenda — próximos 14 dias</h2>${tabelaAgenda(agenda, 14)}
-        <div class="nota"><a href="#/on/noticias">Ver agenda completa</a></div></div>
       <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Data</th><th>Papel</th><th style="text-align:left">Assunto</th></tr>
         ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 40).map((e) => `<tr><td>${dataBR(e.data)}</td>
@@ -357,43 +398,8 @@ async function paginaInicio() {
           <td>${esc(p.id)} <span class="sub">${esc(p.classe)}</span></td><td>${esc(p.tipo)}</td><td>${dataBR(p.data_com)}</td>
           <td>${dataBR(p.pagamento)}</td><td>${num(p.valor, 4)}</td></tr>`).join("") : `<tr><td colspan="5" class="sub">Nenhum provento com data-com ou pagamento futuro anunciado.</td></tr>`}
       </table></div></div>
-    </div>`;
-
-  if (di && di.curvas.hoje) {
-    const serieCurva = (c) => c.pre.filter((p) => p.anos <= 10).map((p) => [p.anos, p.taxa]);
-    grafico(document.getElementById("g-di"), {
-      xNome: "anos", eixoEsq: "pctPronto",
-      series: [
-        { nome: `Hoje (${dataBR(di.curvas.hoje.data)})`, valores: serieCurva(di.curvas.hoje), tipo: "line", cor: COR.ambar },
-        ...(di.curvas["1 ano"] ? [{ nome: `1 ano (${dataBR(di.curvas["1 ano"].data)})`, valores: serieCurva(di.curvas["1 ano"]), tipo: "line", cor: COR.cinza, tracejado: true }] : []),
-      ],
-    });
-  }
-  if (macro) {
-    const desde = `${new Date().getFullYear() - 5}-01-01`;
-    const pares = (serie) => serie.datas.map((d, i) => [d, serie.valores[i]]).filter((p) => p[0] >= desde);
-    grafico(document.getElementById("g-juros"), {
-      xTempo: true, eixoEsq: "pctPronto", degrau: true,
-      series: [
-        { nome: "Selic meta", valores: pares(s.selic_meta), tipo: "line", cor: COR.ambar },
-        { nome: "IPCA 12m", valores: pares(s.ipca_12m), tipo: "line", cor: COR.vermelho },
-      ],
-    });
-  }
-}
-
-/* ============ Empresas (lista) ============ */
-async function paginaEmpresas() {
-  const mercado = await dados("dados/mercado.json").catch(() => ({ empresas: [] }));
-  const mapa = Object.fromEntries(mercado.empresas.map((m) => [m.id, m]));
-  const linhas = INDICE.map((e) => {
-    const m = mapa[e.id] || {};
-    const mc = m.market_cap;
-    return { ...e, mc, pl: mc && e.lucro_ltm > 0 ? mc / e.lucro_ltm : null, dy: m.dy_12m };
-  });
-  app.innerHTML = `
-    <div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas · clique para abrir</div></div>
-      <input class="filtro" id="filtro" placeholder="filtrar por nome, ticker ou setor"></div>
+    </div>
+    <div class="cabecalho"><h2 style="margin:0">Todas as empresas</h2><input class="filtro" id="filtro" placeholder="filtrar por nome, ticker ou setor"></div>
     <div class="painel"><div class="rolagem"><table class="tabela" id="tab">
       <thead><tr><th>Papel</th><th>Empresa</th><th>Setor</th><th>Market cap</th><th>Receita LTM</th><th>Lucro LTM</th>
       <th>Margem líq.</th><th>ROE</th><th>DL/EBITDA</th><th>DL/EBITDA c/ IFRS16</th><th>P/L</th><th>DY 12m</th></tr></thead><tbody></tbody></table></div></div>`;
@@ -740,7 +746,8 @@ function redesenharDividendos(primeira = false) {
 /* ============ Macro ============ */
 let JANELA_MACRO = 10;
 const SUBS_MACRO = [["inflacao", "Inflação"], ["atividade", "Atividade"], ["monetaria", "Política monetária"], ["cambio", "Câmbio"], ["expectativas", "Expectativas (Focus)"]];
-const NOMES_FOCUS = { ipca: "IPCA (%)", selic: "Selic fim de ano (% a.a.)", cambio: "Câmbio fim de ano (R$/US$)", pib: "PIB (%)" };
+const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
+const ESCOLHA_GRAFICO = {};  // opção escolhida em cada gráfico com botões (fica ao trocar de janela)
 const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinza], ["nucleo_ex3", "EX3", COR.roxo],
   ["nucleo_ms", "MS", COR.ciano], ["nucleo_dp", "DP", COR.verde], ["nucleo_p55", "P55", "#db61a2"]];
 
@@ -758,7 +765,8 @@ async function paginaMacro(sub) {
       cartao("IGP-M 12 meses", pctPronto(u("igpm_12m").valor), mes("igpm_12m")), cartao("INCC 12 meses", pctPronto(u("incc_12m").valor), mes("incc_12m"))],
     atividade: [cartao("PIB tri/tri (dessaz.)", pctPronto(u("pib_tri").valor), u("pib_tri").data ? `${Math.ceil(Number(u("pib_tri").data.slice(5, 7)) / 3)}º tri/${u("pib_tri").data.slice(0, 4)}` : ""),
       cartao("PIB 4 trimestres", pctPronto(u("pib_12m").valor), "acumulado"), cartao("PIB anual", pctPronto(u("pib_anual").valor), u("pib_anual").data ? u("pib_anual").data.slice(0, 4) : ""),
-      cartao("IBC-Br m/m (dessaz.)", pctPronto(u("ibcbr_mensal").valor), mes("ibcbr_mensal")), cartao("IBC-Br 12 meses", pctPronto(u("ibcbr_12m").valor), mes("ibcbr_12m"))],
+      cartao("IBC-Br m/m (dessaz.)", pctPronto(u("ibcbr_mensal").valor), mes("ibcbr_mensal")), cartao("IBC-Br 12 meses", pctPronto(u("ibcbr_12m").valor), mes("ibcbr_12m")),
+      cartao("Desemprego", pctPronto(u("desemprego").valor, 1), u("desemprego").data ? `trimestre até ${mes("desemprego")}` : "")],
     monetaria: [cartao("Selic meta", pctPronto(u("selic_meta").valor), dataBR(u("selic_meta").data)), cartao("CDI", pctPronto(u("cdi").valor), dataBR(u("cdi").data)),
       cartao("Juro real ex-post", pctPronto(u("juro_real").valor), "Selic ÷ IPCA 12m")],
     cambio: [cartao("Dólar PTAX", `R$ ${num(u("usd").valor, 4)}`, dataBR(u("usd").data)), cartao("Euro PTAX", `R$ ${num(u("eur").valor, 4)}`, dataBR(u("eur").data))],
@@ -785,64 +793,84 @@ async function paginaMacro(sub) {
 
 function desenharMacro(S, F, sub) {
   limparGraficos();
-  // Histórico completo em todos os gráficos; os botões só escolhem a janela inicial (dá para dar zoom para trás)
+  // Histórico completo em todos os gráficos; os botões de janela só escolhem o início (dá para dar zoom para trás)
   const inicio = (anos) => { if (anos >= 99) return null; const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
   const corte = inicio(JANELA_MACRO);
   const P = (s) => (s ? s.datas.map((d, i) => [d, s.valores[i]]) : []);
-  const inflacao = (k, nome) => ({ series: [
+  const ACUM = { "12 meses": "12m", "3 meses anualizado": "mm3" };
+  const rotuloAcum = { "12m": "12 meses", mm3: "3 meses anualizado" };
+  // um índice: barras com a variação do mês e linha com o acumulado escolhido no botão
+  const indice = (k) => Object.fromEntries(Object.entries(ACUM).map(([rot, suf]) => [rot, { eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
     { nome: "Mensal", valores: P(S[k]), cor: COR.azul },
-    { nome: "12 meses", valores: P(S[`${k}_12m`]), tipo: "line", eixo: "dir", cor: COR.vermelho },
-    { nome: "3 meses anualizado", valores: P(S[`${k}_mm3`]), tipo: "line", eixo: "dir", cor: COR.ambar, tracejado: true }], eixoEsq: "pctPronto", eixoDir: "pctPronto" });
+    { nome: rot, valores: P(S[`${k}_${suf}`]), tipo: "line", eixo: "dir", cor: suf === "12m" ? COR.vermelho : COR.ambar }] }]));
+  const comparativo = Object.fromEntries(Object.entries(ACUM).map(([rot, suf]) => [rot, { eixoEsq: "pctPronto", series: [
+    { nome: `IPCA ${rotuloAcum[suf]}`, valores: P(S[`ipca_${suf}`]), tipo: "line", cor: COR.vermelho },
+    { nome: `IGP-M ${rotuloAcum[suf]}`, valores: P(S[`igpm_${suf}`]), tipo: "line", cor: COR.azul },
+    { nome: `INCC-DI ${rotuloAcum[suf]}`, valores: P(S[`incc_${suf}`]), tipo: "line", cor: COR.verde }] }]));
+  const nucleos = Object.fromEntries(Object.entries(ACUM).map(([rot, suf]) => [rot, { eixoEsq: "pctPronto", series: [
+    { nome: "Média dos 5 núcleos", valores: P(S[`nucleos_media_${suf}`]), tipo: "line", cor: COR.ambar },
+    ...NUCLEOS.map(([k, n, c]) => ({ nome: n, valores: P(S[`${k}_${suf}`]), tipo: "line", cor: c })),
+    { nome: "IPCA cheio", valores: P(S[`ipca_${suf}`]), tipo: "line", cor: COR.vermelho, tracejado: true }] }]));
   const anos = S.pib_anual ? S.pib_anual.datas.map((d) => d.slice(0, 4)) : [];
   const nominal = S.pib_nominal ? Object.fromEntries(S.pib_nominal.datas.map((d, i) => [d.slice(0, 4), S.pib_nominal.valores[i]])) : {};
-  // [título, explicativo, opções, classe extra]
+  // cada item: { t: título, info, op: opções do gráfico | alt: { rótulo do botão: opções }, largo, focus }
   const defs = {
     inflacao: [
-      ["IPCA", "ipca", inflacao("ipca")],
-      ["Núcleos do IPCA — acumulado em 12 meses", "nucleos", { eixoEsq: "pctPronto", series: [
-        { nome: "Média dos 5 núcleos", valores: P(S.nucleos_media_12m), tipo: "line", cor: COR.ambar },
-        ...NUCLEOS.map(([k, n, c]) => ({ nome: n, valores: P(S[`${k}_12m`]), tipo: "line", cor: c })),
-        { nome: "IPCA cheio", valores: P(S.ipca_12m), tipo: "line", cor: COR.vermelho, tracejado: true }] }],
-      ["Núcleos do IPCA — 3 meses anualizado", "nucleos", { eixoEsq: "pctPronto", series: [
-        { nome: "Média dos 5 núcleos", valores: P(S.nucleos_media_mm3), tipo: "line", cor: COR.ambar },
-        ...NUCLEOS.map(([k, n, c]) => ({ nome: n, valores: P(S[`${k}_mm3`]), tipo: "line", cor: c })),
-        { nome: "IPCA cheio", valores: P(S.ipca_mm3), tipo: "line", cor: COR.vermelho, tracejado: true }] }],
-      ["IGP-M", "igpm", inflacao("igpm")],
-      ["INCC-DI (custo da construção)", "incc", inflacao("incc")],
-      ["Inflação em 12 meses: IPCA, IGP-M e INCC", "ipca", { eixoEsq: "pctPronto", series: [
-        { nome: "IPCA", valores: P(S.ipca_12m), tipo: "line", cor: COR.vermelho }, { nome: "IGP-M", valores: P(S.igpm_12m), tipo: "line", cor: COR.azul },
-        { nome: "INCC-DI", valores: P(S.incc_12m), tipo: "line", cor: COR.verde }] }],
+      { t: "Inflação: IPCA, IGP-M e INCC", info: "ipca", alt: comparativo, largo: true },
+      { t: "IPCA", info: "ipca", alt: indice("ipca") },
+      { t: "Núcleos do IPCA", info: "nucleos", alt: nucleos },
+      { t: "IGP-M", info: "igpm", alt: indice("igpm") },
+      { t: "INCC-DI (custo da construção)", info: "incc", alt: indice("incc") },
     ],
     atividade: [
-      ["PIB trimestral", "pib_tri", { series: [{ nome: "Trimestral (dessaz., tri/tri)", valores: P(S.pib_tri), cor: COR.azul }, { nome: "Acumulado em 4 trimestres", valores: P(S.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto" }],
-      ["PIB anual (anos fechados)", "pib_anual", { xTempo: false, rotulos: anos, eixoEsq: "pctPronto", eixoDir: "reais", janela: 30, series: [
-        { nome: "Crescimento real", valores: S.pib_anual ? S.pib_anual.valores : [], cor: COR.azul },
-        { nome: "PIB nominal (R$ correntes)", valores: anos.map((a) => nominal[a] ?? null), tipo: "line", eixo: "dir", cor: COR.ambar }] }],
-      ["IBC-Br (prévia mensal do PIB)", "ibcbr", { series: [{ nome: "Mensal (dessaz., m/m)", valores: P(S.ibcbr_mensal), cor: COR.azul }, { nome: "Acumulado em 12 meses", valores: P(S.ibcbr_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto", inicio: inicio(Math.min(JANELA_MACRO, 3)) }],
+      { t: "IBC-Br (prévia mensal do PIB)", info: "ibcbr", op: { series: [{ nome: "Mensal (dessaz., m/m)", valores: P(S.ibcbr_mensal), cor: COR.azul }, { nome: "Acumulado em 12 meses", valores: P(S.ibcbr_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto", inicio: inicio(Math.min(JANELA_MACRO, 3)) } },
+      { t: "PIB trimestral", info: "pib_tri", op: { series: [{ nome: "Trimestral (dessaz., tri/tri)", valores: P(S.pib_tri), cor: COR.azul }, { nome: "Acumulado em 4 trimestres", valores: P(S.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto" } },
+      { t: "PIB anual (anos fechados)", info: "pib_anual", op: { xTempo: false, rotulos: anos, eixoEsq: "reais", eixoDir: "pctPronto", janela: 30, series: [
+        { nome: "PIB nominal (R$ correntes)", valores: anos.map((a) => nominal[a] ?? null), cor: COR.azul },
+        { nome: "Crescimento real", valores: S.pib_anual ? S.pib_anual.valores : [], tipo: "line", eixo: "dir", cor: COR.ambar }] } },
+      { t: "Desemprego (PNAD Contínua, trimestre móvel)", info: "desemprego_br", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Taxa de desocupação", valores: P(S.desemprego), tipo: "line", cor: COR.vermelho }] } },
     ],
     monetaria: [
-      ["Selic meta e CDI", "selic", { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "CDI", valores: P(S.cdi), tipo: "line", cor: COR.ciano }], eixoEsq: "pctPronto", degrau: true }],
-      ["Juro real ex-post (Selic ÷ IPCA 12m)", "juro_real", { series: [{ nome: "Juro real", valores: P(S.juro_real), tipo: "line", cor: COR.verde }], eixoEsq: "pctPronto" }],
-      ["Selic meta e IPCA 12 meses", "selic", { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "IPCA 12m", valores: P(S.ipca_12m), tipo: "line", cor: COR.vermelho }, { nome: "Média dos núcleos 12m", valores: P(S.nucleos_media_12m), tipo: "line", cor: COR.roxo, tracejado: true }], eixoEsq: "pctPronto", degrau: true }],
+      { t: "Selic meta e IPCA 12 meses", info: "selic", largo: true, op: { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "IPCA 12m", valores: P(S.ipca_12m), tipo: "line", cor: COR.vermelho }, { nome: "Média dos núcleos 12m", valores: P(S.nucleos_media_12m), tipo: "line", cor: COR.roxo, tracejado: true }], eixoEsq: "pctPronto", degrau: true } },
+      { t: "Juro real ex-post (Selic ÷ IPCA 12m)", info: "juro_real", largo: true, op: { series: [{ nome: "Juro real", valores: P(S.juro_real), tipo: "line", cor: COR.verde }], eixoEsq: "pctPronto" } },
+      { t: "Selic meta e CDI", info: "selic", largo: true, op: { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "CDI", valores: P(S.cdi), tipo: "line", cor: COR.ciano }], eixoEsq: "pctPronto", degrau: true } },
     ],
     cambio: [
-      ["Câmbio PTAX", "cambio", { series: [{ nome: "Dólar", valores: P(S.usd), tipo: "line", cor: COR.verde }, { nome: "Euro", valores: P(S.eur), tipo: "line", cor: COR.roxo }], eixoEsq: "preco" }, "largo"],
+      { t: "Câmbio PTAX", info: "cambio", largo: true, op: { series: [{ nome: "Dólar", valores: P(S.usd), tipo: "line", cor: COR.verde }, { nome: "Euro", valores: P(S.eur), tipo: "line", cor: COR.roxo }], eixoEsq: "preco" } },
     ],
-    expectativas: Object.keys(NOMES_FOCUS).map((k) => [NOMES_FOCUS[k], "focus", { focus: k }]),
+    expectativas: Object.keys(NOMES_FOCUS).map((k) => ({ t: NOMES_FOCUS[k], info: "focus", focus: k })),
   }[sub];
   const area = document.getElementById("graficos-macro");
-  area.innerHTML = defs.map((d, i) => `<div class="painel${d[3] ? ` ${d[3]}` : ""}" data-info="${d[1]}"><h2>${d[0]}</h2><div class="grafico${d[3] ? " alto" : ""}" id="gm-${i}"></div></div>`).join("");
-  defs.forEach((d, i) => {
-    const el = document.getElementById(`gm-${i}`);
-    if (d[2].focus) {
-      const k = d[2].focus, anosF = Object.keys(F[k] || {}).sort();
-      grafico(el, { xTempo: true, eixoEsq: k === "cambio" ? "preco" : "pctPronto",
-        series: anosF.map((a, j) => ({ nome: a, valores: F[k][a].datas.map((x, n) => [x, F[k][a].valores[n]]), tipo: "line", cor: PALETA_DATAS[j % PALETA_DATAS.length] })) });
+  area.innerHTML = defs.map((d, i) => {
+    const titulo = d.alt
+      ? `<div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">${d.t}</h2><div class="seletor" data-alt="${i}">
+          ${Object.keys(d.alt).map((k) => `<button data-k="${k}" class="${k === (ESCOLHA_GRAFICO[d.t] || Object.keys(d.alt)[0]) ? "ativo" : ""}">${k}</button>`).join("")}</div></div>`
+      : `<h2>${d.t}</h2>`;
+    return `<div class="painel${d.largo ? " largo" : ""}" data-info="${d.info}">${titulo}<div class="grafico" id="gm-${i}"></div></div>`;
+  }).join("");
+  const desenhar = (i) => {
+    const d = defs[i], el = document.getElementById(`gm-${i}`);
+    const antigo = echarts.getInstanceByDom(el);
+    if (antigo) { graficos.splice(graficos.indexOf(antigo), 1); antigo.dispose(); }
+    if (d.focus) {
+      const anosF = Object.keys(F[d.focus] || {}).sort();
+      grafico(el, { xTempo: true, eixoEsq: d.focus === "cambio" ? "preco" : "pctPronto",
+        series: anosF.map((a, j) => ({ nome: a, valores: F[d.focus][a].datas.map((x, n) => [x, F[d.focus][a].valores[n]]), tipo: "line", cor: PALETA_DATAS[j % PALETA_DATAS.length] })) });
       return;
     }
-    const { inicio: ini, xTempo = true, ...opcoes } = d[2];
-    grafico(el, xTempo ? { xTempo: true, inicioTempo: (ini !== undefined ? ini : corte) || "1990-01-01", deslizante: true, ...opcoes } : opcoes);
-  });
+    const opcoes = d.alt ? d.alt[ESCOLHA_GRAFICO[d.t] || Object.keys(d.alt)[0]] : d.op;
+    const { inicio: ini, xTempo = true, ...resto } = opcoes;
+    grafico(el, xTempo ? { xTempo: true, inicioTempo: (ini !== undefined ? ini : corte) || "1990-01-01", deslizante: true, ...resto } : resto);
+  };
+  defs.forEach((_, i) => desenhar(i));
+  area.querySelectorAll("[data-alt]").forEach((sel) => sel.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    const i = Number(sel.dataset.alt);
+    ESCOLHA_GRAFICO[defs[i].t] = b.dataset.k;
+    sel.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenhar(i);
+  }));
 }
 
 /* ============ Juros ============ */
@@ -867,38 +895,33 @@ function interpolar(pontos, anos) {
   const a = pontos[k - 1], b = pontos[k];
   return a.taxa + ((anos - a.anos) / (b.anos - a.anos)) * (b.taxa - a.taxa);
 }
-// Tesouro Direto em tempo real (não oficial): painel separado, nunca misturado aos dados oficiais
-function painelTempoReal(tes) {
+let REF_TITULOS = "oficial";
+
+// Tabela de títulos: mesma estrutura nas duas referências (oficial = data base do Tesouro Transparente; tempo real = não oficial)
+function tabelaTitulos(tes, modo) {
   const tr = tes.tempo_real;
-  if (!tr) return `<div class="painel largo tempo-real" data-info="tesouro_tempo_real"><h2>Tesouro Direto agora <span class="selo">tempo real · não oficial</span></h2>
-    <p class="sub">${tes.falha_tempo_real ? `Indisponível no momento (${esc(tes.falha_tempo_real.slice(0, 160))}).`
-      : "Sem preço mais novo que a referência oficial (fora do horário de negociação, ou o oficial já está em dia)."} Os dados oficiais abaixo seguem válidos.</p></div>`;
   const oficial = Object.fromEntries(tes.titulos.map((t) => [`${t.tipo}|${t.vencimento}`, t]));
-  const [dia, hora] = [tr.precificado_em.slice(0, 10), tr.precificado_em.slice(11, 16)];
-  return `<div class="painel largo tempo-real" data-info="tesouro_tempo_real">
-    <h2>Tesouro Direto agora — preços de ${dataBR(dia)} às ${hora} <span class="selo">tempo real · não oficial</span></h2>
-    <div class="grade"><div class="grafico alto" id="gj-agora"></div>
-      <div class="rolagem rolagem-y"><table class="tabela"><tr><th>Título</th><th>Vencimento</th><th>Taxa agora</th><th>vs. oficial</th><th>PU agora</th><th>Hora</th></tr>
-        ${tr.titulos.map((t) => { const o = oficial[`${t.tipo}|${t.vencimento}`]; const dif = o ? (t.taxa_compra - o.taxa_compra) * 100 : null;
-          return `<tr><td>${esc(t.tipo.replace("Tesouro ", ""))}</td><td>${dataBR(t.vencimento)}</td><td>${num(t.taxa_compra, 2)}%</td>
-            <td class="${dif == null ? "" : dif > 0 ? "neg" : "pos"}">${dif == null ? "—" : `${dif > 0 ? "+" : ""}${num(dif, 0)} bp`}</td>
-            <td>R$ ${num(t.pu_compra, 2)}</td><td class="sub">${esc((t.precificado_em || "").slice(11, 16))}</td></tr>`; }).join("")}</table></div></div>
-    <div class="nota">Fonte: site do Tesouro Direto — as taxas pelas quais o Tesouro Direto está vendendo agora, repreçadas ao longo do dia.
-      <b>Não oficial:</b> lidas de um endereço interno do site, sem documentação nem garantia; cada taxa passa por travas (preço positivo e no máximo
-      1 ponto de diferença da última taxa oficial) antes de ser publicada. Atualizado 3 vezes por dia útil. "vs. oficial" compara com a referência
-      oficial de ${dataBR(tes.data_base)}.</div></div>`;
+  const lista = modo === "agora" && tr ? tr.titulos : tes.titulos;
+  return GRUPOS_TESOURO.filter(([tipo]) => lista.some((t) => t.tipo === tipo)).map(([tipo, nome]) => `
+    <div><div class="sub" style="margin:4px 0 6px;color:var(--ambar)">${esc(nome)}</div><table class="tabela">
+      <tr><th>Vencimento</th><th>Taxa compra</th><th>${modo === "agora" ? "vs. oficial" : "Var. 1 sem."}</th><th>PU compra</th>${modo === "agora" ? "<th>Hora</th>" : ""}</tr>
+      ${lista.filter((t) => t.tipo === tipo).map((t) => {
+        const o = oficial[`${t.tipo}|${t.vencimento}`];
+        const v = modo === "agora" ? (o ? t.taxa_compra - o.taxa_compra : null) : variacaoSemana(tes, t);
+        return `<tr class="clicavel" data-id="${esc(t.id)}"><td>${dataBR(t.vencimento)}</td><td>${num(t.taxa_compra, 2)}%</td>
+          <td class="${v == null ? "" : v > 0 ? "neg" : "pos"}">${v == null ? "—" : `${v > 0 ? "+" : ""}${num(v * 100, 0)} bp`}</td><td>R$ ${num(t.pu_compra, 2)}</td>
+          ${modo === "agora" ? `<td class="sub">${esc((t.precificado_em || "").slice(11, 16))}</td>` : ""}</tr>`; }).join("")}
+    </table></div>`).join("");
 }
 
-function desenharTempoReal(tes) {
-  const tr = tes.tempo_real, el = document.getElementById("gj-agora");
-  if (!tr || !el) return;
-  const pts = (lista) => (lista || []).map((p) => [p.anos, p.taxa]);
-  const of = tes.curvas.hoje || {};
-  grafico(el, { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: [
-    { nome: "Prefixado agora", valores: pts(tr.curva.prefixado), tipo: "line", cor: COR.ambar },
-    { nome: `Prefixado oficial ${dataBR(of.data)}`, valores: pts(of.prefixado), tipo: "line", cor: COR.ambar, tracejado: true },
-    { nome: "IPCA+ agora", valores: pts(tr.curva.ipca), tipo: "line", cor: COR.ciano },
-    { nome: `IPCA+ oficial ${dataBR(of.data)}`, valores: pts(of.ipca), tipo: "line", cor: COR.ciano, tracejado: true }] });
+function notaTitulos(tes, modo) {
+  const tr = tes.tempo_real;
+  return modo === "agora" && tr
+    ? `<b>Tempo real · não oficial:</b> taxas que o site do Tesouro Direto pratica agora (preços de ${dataBR(tr.precificado_em.slice(0, 10))} às ${tr.precificado_em.slice(11, 16)}),
+       lidas de um endereço interno do site, sem documentação nem garantia, e conferidas contra a última taxa oficial antes de publicar.
+       "vs. oficial" compara com a data base de ${dataBR(tes.data_base)}. Atualizado 3 vezes por dia útil.`
+    : `<b>Oficial:</b> taxa e preço de compra da manhã de ${dataBR(tes.data_base)} nos dados abertos do Tesouro Nacional (Tesouro Transparente),
+       publicados com 1 a 2 dias úteis de atraso. Variação em pontos-base contra a curva de 1 semana antes.`;
 }
 
 async function paginaJuros() {
@@ -910,22 +933,17 @@ async function paginaJuros() {
     <div class="grade">
       <div data-info="curva_di" class="painel"><h2>Curva DI x Pré (B3)</h2><div class="grafico alto" id="gj-di"></div></div>
       <div data-info="di_ipca" class="painel"><h2>Curva DI x IPCA, juro real (B3) · a partir de 3 meses</h2><div class="grafico alto" id="gj-dic"></div></div>
-      ${painelTempoReal(tes)}
-      <div data-info="tesouro_pre" class="painel"><h2>Tesouro prefixado — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-pre"></div></div>
-      <div data-info="tesouro_ipca" class="painel"><h2>Tesouro IPCA+ (juro real) — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-ipca"></div></div>
-      <div data-info="inflacao_implicita" class="painel"><h2>Inflação implícita (prefixado × IPCA+) — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-impl"></div></div>
-      <div data-info="vertices" class="painel"><h2>Taxas DI por prazo (B3)</h2><div class="rolagem" id="tab-vertices"></div>
+      <div data-info="tesouro_ipca" class="painel largo"><h2>Tesouro IPCA+ (juro real) — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-ipca"></div></div>
+      <div data-info="tesouro_pre" class="painel largo"><h2>Tesouro prefixado — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-pre"></div></div>
+      <div data-info="inflacao_implicita" class="painel largo"><h2>Inflação implícita (prefixado × IPCA+) — oficial · ref. ${dataBR(tes.data_base)}</h2><div class="grafico alto" id="gj-impl"></div></div>
+      <div data-info="vertices" class="painel largo"><h2>Taxas DI por prazo (B3)</h2><div class="rolagem" id="tab-vertices"></div>
         <div class="nota">Interpolação linear da curva DI nos prazos (anos de 252 dias úteis). DI x IPCA = juro real.</div></div>
-      <div data-info="titulos" class="painel largo"><h2>Títulos — Tesouro Direto oficial · referência ${dataBR(tes.data_base)}</h2><div class="grade" id="tab-tit">
-        ${GRUPOS_TESOURO.filter(([tipo]) => tes.titulos.some((t) => t.tipo === tipo)).map(([tipo, nome]) => `
-          <div><div class="sub" style="margin:4px 0 6px;color:var(--ambar)">${esc(nome)}</div><table class="tabela">
-            <tr><th>Vencimento</th><th>Taxa compra</th><th>Var. 1 sem.</th><th>PU compra</th></tr>
-            ${tes.titulos.filter((t) => t.tipo === tipo).map((t) => { const v = variacaoSemana(tes, t);
-              return `<tr class="clicavel" data-id="${esc(t.id)}"><td>${dataBR(t.vencimento)}</td><td>${num(t.taxa_compra, 2)}%</td>
-                <td class="${v == null ? "" : v > 0 ? "neg" : "pos"}">${v == null ? "—" : `${v > 0 ? "+" : ""}${num(v * 100, 0)} bp`}</td><td>R$ ${num(t.pu_compra, 2)}</td></tr>`; }).join("")}
-          </table></div>`).join("")}
-      </div><div class="nota">Fonte oficial: Tesouro Transparente (dados abertos do Tesouro Nacional), taxa de compra da manhã de ${dataBR(tes.data_base)}.
-        Clique num título para ver o histórico oficial de taxa e preço. Variação em pontos-base (bp) contra a curva de 1 semana antes.</div></div>
+      <div data-info="titulos" class="painel largo"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Títulos do Tesouro Direto</h2>
+        <div class="seletor" id="ref-titulos"><button data-k="oficial">Oficial · data base ${dataBR(tes.data_base)}</button>
+          <button data-k="agora" ${tes.tempo_real ? "" : "disabled title=\"Sem preço do momento mais novo que a data base\""}>Tempo real · não oficial${tes.tempo_real ? ` · ${tes.tempo_real.precificado_em.slice(11, 16)}` : ""}</button></div></div>
+        <div class="grade" id="tab-tit"></div>
+        <div class="nota" id="nota-tit"></div>
+        <div class="nota">Clique num título para ver o histórico oficial de taxa e preço.</div></div>
       <div class="painel largo" id="painel-titulo" style="display:none"><h2 id="titulo-hist"></h2><div class="grafico alto" id="gj-hist"></div></div>
     </div>
     <div class="nota secao">A curva DI vem do arquivo "Taxas de Mercado para Swaps" da B3 (fim de dia). As curvas do Tesouro usam a taxa de compra
@@ -960,7 +978,16 @@ async function paginaJuros() {
       <tr><th>DI x IPCA</th>${datasDi.map(() => "<th></th>").join("")}</tr>${linhas("ipca")}</table>`;
   }
 
-  desenharTempoReal(tes);
+  const mostrarTitulos = (modo) => {
+    REF_TITULOS = modo === "agora" && tes.tempo_real ? "agora" : "oficial";
+    document.querySelectorAll("#ref-titulos button").forEach((x) => x.classList.toggle("ativo", x.dataset.k === REF_TITULOS));
+    document.getElementById("tab-tit").innerHTML = tabelaTitulos(tes, REF_TITULOS);
+    document.getElementById("nota-tit").innerHTML = notaTitulos(tes, REF_TITULOS);
+  };
+  document.getElementById("ref-titulos").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (b && !b.disabled) mostrarTitulos(b.dataset.k);
+  });
+  mostrarTitulos(REF_TITULOS);
 
   let gHist = null;
   document.getElementById("tab-tit").addEventListener("click", async (ev) => {
@@ -1014,42 +1041,60 @@ function listaNoticias(itens, maximo = 300) {
     ${itens.slice(0, maximo).map((n) => `<tr><td class="sub">${dataHoraBR(n.data)}</td>
       <td style="text-align:left;white-space:normal"><a href="${esc(n.link)}" target="_blank" rel="noopener">${esc(n.titulo)}</a>
         ${(n.empresas || []).map((id) => `<a class="etiqueta" href="#/on/empresa/${esc(id)}">${esc(id)}</a>`).join("")}</td>
-      <td class="sub">${esc(n.fonte)}</td></tr>`).join("")}</table></div>`;
+      <td class="sub">${esc(n.fonte)}${n.tipo === "mercado" ? "" : ' <span class="etiqueta">oficial</span>'}</td></tr>`).join("")}</table></div>`;
 }
 
-async function paginaNoticias() {
-  const [noticias, agenda] = await Promise.all([dados("dados/noticias.json").catch(() => null), dados("dados/agenda.json").catch(() => null)]);
-  const itens = noticias ? noticias.itens : [];
-  const fontes = [...new Set(itens.map((n) => n.fonte))].sort();
-  let fonte = "todas", filtro = "todos", janela = 30;
+// lado: "on" (Brasil), "off" (exterior) ou "cons" (os dois)
+async function paginaNoticias(lado = "on") {
+  const quer = (l) => lado === "cons" || lado === l;
+  const [nOn, aOn, nOff, aOff] = await Promise.all([
+    quer("on") ? dados("dados/noticias.json").catch(() => null) : null, quer("on") ? dados("dados/agenda.json").catch(() => null) : null,
+    quer("off") ? dados("dados/noticias_offshore.json").catch(() => null) : null, quer("off") ? dados("dados/agenda_offshore.json").catch(() => null) : null,
+  ]);
+  const marcar = (n, origem) => ((n && n.itens) || []).map((i) => ({ ...i, origem, tipo: i.tipo || "oficial" }));
+  const itens = [...marcar(nOn, "Brasil"), ...marcar(nOff, "Exterior")].sort((a, b) => b.data.localeCompare(a.data));
+  const agenda = { eventos: [...((aOn && aOn.eventos) || []), ...((aOff && aOff.eventos) || [])].sort((a, b) => a.data.localeCompare(b.data)) };
+  const categorias = { ...(quer("on") ? CATEGORIAS_AGENDA : {}), ...(quer("off") ? CATEGORIAS_OFF : {}) };
+  const fontes = (tipo) => [...new Set(itens.filter((n) => n.tipo === tipo).map((n) => n.fonte))].sort();
+  const filtros = [["todas", "Todas"], ...(lado === "cons" ? [["origem:Brasil", "Brasil"], ["origem:Exterior", "Exterior"]] : []),
+    ["tipo:mercado", "Mercado"], ["tipo:oficial", "Oficiais"]];
+  let filtro = "tipo:mercado", janela = 30, categoria = "todos";
+  const titulo = { on: "Notícias e agenda", off: "Offshore · Notícias e agenda", cons: "Consolidado · Notícias e agenda" }[lado];
+  const jornais = { on: "Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney", off: "WSJ, Financial Times, CNBC, MarketWatch, The Guardian e BBC",
+    cons: "jornais do Brasil e do exterior" }[lado];
+  const oficiais = { on: "Banco Central, IBGE, CVM e Agência Brasil", off: "Federal Reserve e BCE", cons: "Banco Central, IBGE, CVM, Agência Brasil, Fed e BCE" }[lado];
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Notícias e agenda</h1><div class="sub">Manchetes de fontes oficiais e públicas e o calendário de divulgações ·
-      notícias atualizadas em ${noticias ? dataHoraBR(noticias.gerado_em) : "—"} · agenda em ${agenda ? dataBR(agenda.gerado_em) : "—"}</div></div></div>
+    <div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">Notícias de mercado (${jornais}) e oficiais (${oficiais}) · só a manchete, com link para a fonte</div></div></div>
     <div class="grade grade-noticias">
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
-        <div class="seletor" id="filtro-fonte"><button data-k="todas" class="ativo">Todas</button>${fontes.map((f) => `<button data-k="${esc(f)}">${esc(f)}</button>`).join("")}</div></div>
+        <div class="seletor" id="filtro-fonte">${filtros.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}
+          ${[...fontes("mercado"), ...fontes("oficial")].map((f) => `<button data-k="fonte:${esc(f)}">${esc(f)}</button>`).join("")}</div></div>
         <div id="lista-noticias"></div>
-        <div class="nota">Só o título e o link para a matéria original. Fontes: Banco Central (notícias e comunicados do Copom), IBGE (Agência de Notícias),
-          CVM e Agência Brasil (economia). Últimos 45 dias. Etiquetas: empresas da lista citadas na manchete.</div></div>
+        <div class="nota">Mercado: últimos 7 dias. Oficiais: últimas semanas. O texto completo fica no site de cada fonte (alguns jornais exigem assinatura).
+          Etiquetas: empresas da lista citadas na manchete.</div></div>
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Agenda</h2>
         <div class="seletor" id="janela-ag">${[[14, "2 sem."], [30, "1 mês"], [90, "3 meses"], [400, "Tudo"]].map(([d, r]) => `<button data-d="${d}" class="${d === janela ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
         <div class="seletor" id="filtro-ag" style="margin-bottom:8px">
           <button data-k="todos" class="ativo">Todos</button>
-          ${Object.entries(CATEGORIAS_AGENDA).map(([k, [n, c]]) => `<button data-k="${k}"><span style="color:${c}">●</span> ${n}</button>`).join("")}
+          ${Object.entries(categorias).map(([k, [n, c]]) => `<button data-k="${k}"><span style="color:${c}">●</span> ${n}</button>`).join("")}
         </div>
         <div id="tab-agenda"></div>
-        <div class="nota">Datas oficiais do Banco Central, IBGE e FGV; podem mudar. A decisão do Copom sai ao fim do segundo dia de reunião,
-          e a ata na terça da semana seguinte. O calendário da FGV (IGP-M) cobre o mês corrente.</div></div>
+        <div class="nota">Datas oficiais${quer("on") ? " do Banco Central, IBGE e FGV" : ""}${lado === "cons" ? " e" : ""}${quer("off") ? " das páginas do Fed e do BCE" : ""}; podem mudar.</div></div>
     </div>`;
-  const desenharNoticias = () => (document.getElementById("lista-noticias").innerHTML = listaNoticias(itens.filter((n) => fonte === "todas" || n.fonte === fonte)));
-  const desenharAgenda = () => (document.getElementById("tab-agenda").innerHTML = tabelaAgenda(agenda, janela, filtro));
+  const passa = (n) => {
+    if (filtro === "todas") return true;
+    const [campo, valor] = filtro.split(":");
+    return n[campo] === valor;
+  };
+  const desenharNoticias = () => (document.getElementById("lista-noticias").innerHTML = listaNoticias(itens.filter(passa)));
+  const desenharAgenda = () => (document.getElementById("tab-agenda").innerHTML = tabelaAgenda(agenda, janela, categoria));
   const seletor = (id, aoEscolher) => document.getElementById(id).addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
     document.querySelectorAll(`#${id} button`).forEach((x) => x.classList.toggle("ativo", x === b));
     aoEscolher(b);
   });
-  seletor("filtro-fonte", (b) => { fonte = b.dataset.k; desenharNoticias(); });
-  seletor("filtro-ag", (b) => { filtro = b.dataset.k; desenharAgenda(); });
+  seletor("filtro-fonte", (b) => { filtro = b.dataset.k; desenharNoticias(); });
+  seletor("filtro-ag", (b) => { categoria = b.dataset.k; desenharAgenda(); });
   seletor("janela-ag", (b) => { janela = Number(b.dataset.d); desenharAgenda(); });
   desenharNoticias();
   desenharAgenda();
@@ -1142,32 +1187,6 @@ async function paginaOffshore(secao, parametro) {
   const mes = (s) => (u(s).data ? `${MESES[Number(u(s).data.slice(5, 7)) - 1]}/${u(s).data.slice(2, 4)}` : "");
   const ust10 = T.historico ? u(T.historico["10 anos"]) : {};
 
-  if (secao === "noticias") {
-    const [noticias, agenda] = await Promise.all([dados("dados/noticias_offshore.json").catch(() => null), dados("dados/agenda_offshore.json").catch(() => null)]);
-    const itens = noticias ? noticias.itens : [];
-    let fonte = "todas", janela = 90;
-    app.innerHTML = `${cab("Offshore · Notícias e agenda", "Comunicados do Federal Reserve e do Banco Central Europeu e as próximas decisões de juros")}
-      <div class="grade grade-noticias">
-        <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
-          <div class="seletor" id="filtro-fonte"><button data-k="todas" class="ativo">Todas</button><button data-k="Federal Reserve">Federal Reserve</button><button data-k="BCE">BCE</button></div></div>
-          <div id="lista-noticias"></div>
-          <div class="nota">Só o título e o link para o comunicado original (RSS oficiais do Fed e do BCE). Últimos 60 dias.</div></div>
-        <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Agenda</h2>
-          <div class="seletor" id="janela-ag">${[[30, "1 mês"], [90, "3 meses"], [400, "Tudo"]].map(([d, r]) => `<button data-d="${d}" class="${d === janela ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
-          <div id="tab-agenda"></div>
-          <div class="nota">Datas das páginas oficiais do Fed e do BCE. A decisão do FOMC sai às 15h de Washington (16h de Brasília no horário de verão americano);
-            a do BCE às 14h15 de Frankfurt. As datas de divulgação de CPI, payroll e PIB dos EUA entram quando houver a chave gratuita do FRED.</div></div>
-      </div>`;
-    const desenharN = () => (document.getElementById("lista-noticias").innerHTML = listaNoticias(itens.filter((n) => fonte === "todas" || n.fonte === fonte)));
-    const desenharA = () => (document.getElementById("tab-agenda").innerHTML = tabelaAgenda(agenda, janela));
-    document.getElementById("filtro-fonte").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b) return;
-      document.querySelectorAll("#filtro-fonte button").forEach((x) => x.classList.toggle("ativo", x === b)); fonte = b.dataset.k; desenharN(); });
-    document.getElementById("janela-ag").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (!b) return;
-      document.querySelectorAll("#janela-ag button").forEach((x) => x.classList.toggle("ativo", x === b)); janela = Number(b.dataset.d); desenharA(); });
-    desenharN(); desenharA();
-    return;
-  }
-
   if (secao === "macro") {
     const sub = SUBS_MACRO_OFF.some(([k]) => k === parametro) ? parametro : "eua";
     const abas = `<div class="abas">${SUBS_MACRO_OFF.map(([k, n]) => `<a href="#/off/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
@@ -1245,7 +1264,9 @@ async function paginaOffshore(secao, parametro) {
   // Início do Offshore
   const [agenda, noticias] = await Promise.all([dados("dados/agenda_offshore.json").catch(() => null), dados("dados/noticias_offshore.json").catch(() => null)]);
   const mMin = u(F.meta_min), mMax = u(F.meta_max);
-  app.innerHTML = `${cab("Offshore · painel", "Juros, inflação e emprego nos EUA e na Zona do Euro")}
+  const mercadoOff = ((noticias && noticias.itens) || []).filter((n) => n.tipo === "mercado");
+  app.innerHTML = `${cab("Offshore · painel", "Agenda, indicadores e notícias dos EUA e da Zona do Euro")}
+    <div class="painel secao-topo"><h2>Próximas decisões de juros</h2>${tabelaAgenda(agenda, 120)}<div class="nota"><a href="#/off/noticias">Ver agenda e notícias</a></div></div>
     <div class="grade-cartoes">
       ${cartao("Fed Funds (meta)", mMin.valor != null ? `${num(mMin.valor, 2)}–${num(mMax.valor, 2)}%` : "—", `efetiva ${pctPronto(u(F.effr).valor)}`)}
       ${cartao("Treasury 10 anos", pctPronto(ust10.valor), dataBR(ust10.data))}
@@ -1257,9 +1278,9 @@ async function paginaOffshore(secao, parametro) {
     <div class="grade">
       ${painelG("gi-ust", "Curva de Treasuries — hoje vs. 1 ano", "ust_curva")}
       ${painelG("gi-juros", "Juros básicos: Fed Funds x BCE (depósito)", "fed_funds")}
-      <div class="painel"><h2>Próximas decisões de juros</h2>${tabelaAgenda(agenda, 120)}<div class="nota"><a href="#/off/noticias">Ver agenda e notícias</a></div></div>
-      <div class="painel"><h2>Últimos comunicados (Fed e BCE)</h2>${listaNoticias((noticias && noticias.itens) || [], 25)}</div>
     </div>
+    <div class="painel secao"><h2>Notícias de mercado</h2>${listaNoticias(mercadoOff, 40)}
+      <div class="nota">Manchetes de WSJ, Financial Times, CNBC, MarketWatch, The Guardian e BBC, com link para o jornal. <a href="#/off/noticias">Ver todas</a></div></div>
     ${off.falhas && off.falhas.length ? `<div class="nota secao">Fontes com falha na última atualização (mostrando a versão anterior): ${esc(off.falhas.join("; "))}</div>` : ""}`;
   const N = T.nominal || {};
   grafico(document.getElementById("gi-ust"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(

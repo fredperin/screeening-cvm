@@ -226,6 +226,15 @@ def eurostat():
 
 # ---------------- Notícias e agenda do exterior ----------------
 FEEDS = {"Federal Reserve": "https://www.federalreserve.gov/feeds/press_all.xml", "BCE": "https://www.ecb.europa.eu/rss/press.html"}
+# notícias de mercado do exterior: RSS públicos, só manchete e link
+FEEDS_MERCADO = {
+    "WSJ": "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",
+    "Financial Times": "https://www.ft.com/markets?format=rss",
+    "CNBC": "https://www.cnbc.com/id/100003114/device/rss/rss.html",
+    "MarketWatch": "https://feeds.content.dowjones.io/public/rss/mw_topstories",
+    "The Guardian": "https://www.theguardian.com/business/rss",
+    "BBC": "https://feeds.bbci.co.uk/news/business/rss.xml",
+}
 NAVEGADOR = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128 Safari/537.36"}
 MESES_EN = {m: i for i, m in enumerate(["January", "February", "March", "April", "May", "June", "July", "August", "September",
                                          "October", "November", "December"], 1)}
@@ -235,13 +244,14 @@ MESES_EN.update({m[:3]: i for m, i in list(MESES_EN.items())})
 def noticias():
     from pipeline.noticias import ler_feed
     itens, falhas = [], []
-    for fonte, url in FEEDS.items():
-        try:
-            itens += ler_feed(fonte, url)
-        except Exception as e:
-            falhas.append(f"{fonte}: {e!r}"[:200])
-    limite = (date.today() - timedelta(days=60)).isoformat()
-    itens = sorted({i["link"]: i for i in itens if i["data"][:10] >= limite}.values(), key=lambda i: i["data"], reverse=True)[:200]
+    for tipo, feeds in (("oficial", FEEDS), ("mercado", FEEDS_MERCADO)):
+        for fonte, url in feeds.items():
+            try:
+                itens += ler_feed(fonte, url, tipo)
+            except Exception as e:
+                falhas.append(f"{fonte}: {e!r}"[:200])
+    limites = {"oficial": (date.today() - timedelta(days=60)).isoformat(), "mercado": (date.today() - timedelta(days=7)).isoformat()}
+    itens = sorted({i["link"]: i for i in itens if i["data"][:10] >= limites[i["tipo"]]}.values(), key=lambda i: i["data"], reverse=True)[:500]
     return itens, falhas
 
 

@@ -54,7 +54,8 @@ window.EXPLICATIVOS = {
       <h4>Cuidado</h4>
       <p>É calculada <b>sem ajuste sazonal</b>. Meses com sazonalidade forte (educação e IPTU no início do ano, alimentos na
         entressafra, reajustes concentrados) inflam ou reduzem a leitura. Compare com o mesmo período de anos anteriores, ou
-        prefira os núcleos, que já tiram parte desse efeito.</p>`,
+        prefira os núcleos, que já tiram parte desse efeito.</p>
+      <p class="sub">Fonte: Cálculo do site a partir das séries mensais do IBGE (IPCA) e da FGV (IGP-M, INCC), via SGS do Banco Central.</p>`,
   },
   igpm: {
     titulo: "IGP-M — Índice Geral de Preços do Mercado",
@@ -107,6 +108,14 @@ window.EXPLICATIVOS = {
       </ul>
       <p class="sub">Fonte: IBGE, séries 7326 e 1207 do SGS do Banco Central.</p>`,
   },
+  desemprego_br: {
+    titulo: "Desemprego (PNAD Contínua)",
+    html: `<p>Taxa de desocupação das pessoas de 14 anos ou mais, medida pelo <b>IBGE</b> na PNAD Contínua, pesquisa com domicílios
+      em todo o país (padrão da OIT: quem procurou trabalho e não encontrou).</p>
+      <p><b>Trimestre móvel:</b> cada ponto é a média de três meses (por exemplo, jul-ago-set), datado pelo último mês. Por isso a série
+        é suave e não mostra um mês isolado. Não tem ajuste sazonal: compare com o mesmo trimestre de anos anteriores.</p>
+      <p class="sub">Fonte: IBGE — PNAD Contínua, tabela 6381 do SIDRA (reserva: série 24369 do SGS do Banco Central).</p>`,
+  },
   ibcbr: {
     titulo: "IBC-Br — Índice de Atividade Econômica do Banco Central",
     html: `<p>Indicador <b>mensal</b> criado pelo Banco Central para acompanhar a atividade antes de o PIB sair. Usa dados de
@@ -132,7 +141,8 @@ window.EXPLICATIVOS = {
     titulo: "Juro real ex-post",
     html: `<p>Quanto a Selic rende <b>acima da inflação</b> que já aconteceu: <code>(1 + Selic meta) ÷ (1 + IPCA 12 meses) − 1</code>.</p>
       <p>É "ex-post" porque usa a inflação passada. O juro real que o Banco Central olha para calibrar a política é o
-        <b>ex-ante</b> (juro futuro contra a inflação esperada), que aparece na seção Juros na curva DI x IPCA e no Tesouro IPCA+.</p>`,
+        <b>ex-ante</b> (juro futuro contra a inflação esperada), que aparece na seção Juros na curva DI x IPCA e no Tesouro IPCA+.</p>
+      <p class="sub">Fonte: Cálculo do site com a Selic meta (SGS 432) e o IPCA 12 meses (IBGE, SGS 433).</p>`,
   },
   cambio: {
     titulo: "Câmbio PTAX",
@@ -182,39 +192,37 @@ window.EXPLICATIVOS = {
     html: `<p>A inflação que <b>iguala</b> o retorno de um prefixado e de um IPCA+ de mesmo prazo:
       <code>(1 + taxa prefixada) ÷ (1 + taxa real) − 1</code>. Também chamada de breakeven.</p>
       <p>Não é exatamente a expectativa de inflação: inclui um prêmio pelo risco de a inflação surpreender e diferenças de liquidez
-        entre os títulos. A curva prefixada é interpolada nos vencimentos do IPCA+, sem extrapolar.</p>`,
-  },
-  tesouro_tempo_real: {
-    titulo: "Tesouro Direto em tempo real (não oficial)",
-    html: `<p>Taxas e preços que o <b>site do Tesouro Direto</b> está praticando agora: o Tesouro abre o dia com preços
-      e os repreça ao longo do pregão quando o mercado se move. São as taxas pelas quais um investidor compraria o título naquele momento.</p>
-      <h4>Por que "não oficial"</h4>
-      <ul>
-        <li>Os números são do próprio Tesouro Direto, mas são lidos de um endereço interno do site, <b>sem documentação nem garantia</b>
-          de que continue igual. Se o Tesouro mudar o site, a leitura pode parar.</li>
-        <li>Para evitar um número errado, cada taxa só é publicada se o preço for positivo e a taxa estiver a no máximo 1 ponto percentual
-          da última taxa oficial do mesmo título. O que não passa é descartado e gera alerta.</li>
-        <li>Atualizado 3 vezes por dia útil (por volta de 10h15, 13h15 e 17h15; o agendamento do GitHub pode atrasar).</li>
-      </ul>
-      <h4>Oficial</h4>
-      <p>Os painéis "oficial" usam os <b>dados abertos do Tesouro Transparente</b> (Tesouro Nacional): um registro por dia útil, com a taxa
-        da manhã, publicado com 1 a 2 dias úteis de atraso — por isso mostram sempre a data de referência. O histórico de cada título
-        e as planilhas usam só os dados oficiais.</p>`,
+        entre os títulos. A curva prefixada é interpolada nos vencimentos do IPCA+, sem extrapolar.</p>
+      <p class="sub">Fonte: Cálculo do site com as taxas oficiais do Tesouro Direto (Tesouro Transparente).</p>`,
   },
   vertices: {
     titulo: "Taxas DI por prazo",
     html: `<p>Taxas da curva DI (prefixada e real) em prazos fixos, interpoladas linearmente entre os vértices negociados.
-      Facilita comparar a mesma maturidade em datas diferentes.</p>`,
+      Facilita comparar a mesma maturidade em datas diferentes.</p>
+      <p class="sub">Fonte: B3, arquivo "Taxas de Mercado para Swaps"; interpolação do site.</p>`,
   },
   titulos: {
-    titulo: "Títulos à venda no Tesouro Direto",
-    html: `<ul>
+    titulo: "Títulos do Tesouro Direto",
+    html: `<h4>Os títulos</h4>
+      <ul>
         <li><b>Prefixado (LTN)</b> e <b>Prefixado com juros semestrais (NTN-F):</b> taxa fixa definida na compra.</li>
         <li><b>IPCA+ (NTN-B Principal)</b> e <b>IPCA+ com juros semestrais (NTN-B):</b> IPCA mais uma taxa real.</li>
-        <li><b>Selic (LFT):</b> acompanha a Selic.</li>
-        <li><b>Renda+ e Educa+:</b> IPCA+ com pagamento em parcelas mensais a partir de uma data.</li>
+        <li><b>Selic (LFT):</b> acompanha a Selic; a taxa mostrada é o ágio ou deságio sobre ela.</li>
+        <li><b>Renda+ e Educa+:</b> IPCA+ com pagamento em parcelas mensais a partir de uma data (aposentadoria ou estudos).</li>
+        <li><b>IGP-M+ com juros semestrais (NTN-C):</b> IGP-M mais uma taxa real.</li>
       </ul>
-      <p>PU = preço unitário. A variação semanal está em pontos-base (1 bp = 0,01 ponto percentual): taxa subindo = preço caindo.</p>`,
+      <p>PU = preço unitário. Variação em pontos-base (1 bp = 0,01 ponto percentual): taxa subindo = preço caindo.</p>
+      <h4>O botão de referência</h4>
+      <ul>
+        <li><b>Oficial (data base):</b> taxa e preço de compra da manhã da data de referência, nos dados abertos do Tesouro Nacional.
+          Publicados com 1 a 2 dias úteis de atraso — por isso a data aparece no botão. A variação compara com a curva de 1 semana antes.</li>
+        <li><b>Tempo real (não oficial):</b> as taxas que o site do Tesouro Direto pratica agora, repreçadas ao longo do dia.
+          Lidas de um endereço interno do site, sem documentação nem garantia; cada taxa só é publicada se o preço for positivo e
+          ficar a no máximo 1 ponto percentual da última taxa oficial. Atualizado 3 vezes por dia útil. "vs. oficial" compara com a data base.</li>
+      </ul>
+      <p>O histórico que abre ao clicar num título é sempre o oficial.</p>
+      <p class="sub">Fontes: oficial — Tesouro Nacional, dados abertos do Tesouro Transparente (Preço e Taxa do Tesouro Direto);
+        tempo real — site do Tesouro Direto (não oficial).</p>`,
   },
   ust_curva: {
     titulo: "Curva de Treasuries (EUA)",
@@ -233,7 +241,8 @@ window.EXPLICATIVOS = {
   ust_hist: {
     titulo: "Treasuries ao longo do tempo",
     html: `<p>Histórico diário dos prazos de 2, 10 e 30 anos e do 10 anos real (TIPS). A <b>inclinação 10a − 2a</b> é a diferença entre
-      o 10 e o 2 anos: negativa = curva invertida.</p><p class="sub">Fonte: Tesouro dos EUA.</p>`,
+      o 10 e o 2 anos: negativa = curva invertida.</p>
+      <p class="sub">Fonte: U.S. Department of the Treasury — Daily Treasury Par Yield Curve Rates.</p>`,
   },
   fed_funds: {
     titulo: "Fed Funds e SOFR",
@@ -304,7 +313,8 @@ window.EXPLICATIVOS = {
     html: `<p>Para cada país, a taxa básica vigente no fim do mês descontada da inflação acumulada em 12 meses:
       <code>(1 + taxa básica) ÷ (1 + inflação 12m) − 1</code>. Mostra quão apertada está a política monetária em cada lugar,
       olhando para a inflação que já aconteceu.</p>
-      <p class="sub">Brasil: Selic e IPCA. EUA: teto dos Fed Funds e CPI. Zona do Euro: depósito do BCE e HICP.</p>`,
+      <p class="sub">Brasil: Selic e IPCA. EUA: teto dos Fed Funds e CPI. Zona do Euro: depósito do BCE e HICP.</p>
+      <p class="sub">Fonte: Cálculo do site com Banco Central (Selic, IPCA), Fed de Nova York (Fed Funds), BLS (CPI), BCE (depósito) e Eurostat (HICP).</p>`,
   },
   curvas_mundo: {
     titulo: "Curvas de juros comparadas",
@@ -313,7 +323,8 @@ window.EXPLICATIVOS = {
         <li><b>EUA:</b> curva par de Treasuries do Tesouro americano (até 30 anos).</li>
         <li><b>Zona do Euro:</b> curva à vista dos títulos AAA estimada pelo BCE (até 30 anos).</li>
       </ul>
-      <p>As três são nominais, cada uma na sua moeda. As datas de referência aparecem na legenda.</p>`,
+      <p>As três são nominais, cada uma na sua moeda. As datas de referência aparecem na legenda.</p>
+      <p class="sub">Fonte: B3 (DI x Pré), U.S. Department of the Treasury (Treasuries) e Banco Central Europeu (curva AAA).</p>`,
   },
   inflacao_mundo: {
     titulo: "Inflação comparada",
@@ -322,47 +333,56 @@ window.EXPLICATIVOS = {
         <li><b>EUA:</b> CPI (BLS). O Fed persegue 2% medido pelo PCE, que costuma ficar um pouco abaixo do CPI; núcleo sem alimentos e energia.</li>
         <li><b>Zona do Euro:</b> HICP (Eurostat), meta de 2% do BCE; núcleo sem energia, alimentos, álcool e fumo.</li>
       </ul>
-      <p>"Distância da meta" = inflação em 12 meses menos a meta de cada banco central (para os EUA, 2% aplicado ao CPI, como aproximação).</p>`,
+      <p>"Distância da meta" = inflação em 12 meses menos a meta de cada banco central (para os EUA, 2% aplicado ao CPI, como aproximação).</p>
+      <p class="sub">Fonte: IBGE e Banco Central (IPCA e núcleos), U.S. Bureau of Labor Statistics (CPI) e Eurostat (HICP).</p>`,
   },
   pib_mundo: {
     titulo: "PIB comparado",
     html: `<p>Crescimento real contra um ano antes. Brasil: acumulado em 4 trimestres contra os 4 anteriores (IBGE).
-      Zona do Euro: trimestre contra o mesmo trimestre do ano anterior (Eurostat). EUA entram quando houver a chave do FRED.</p>`,
+      Zona do Euro: trimestre contra o mesmo trimestre do ano anterior (Eurostat). EUA entram quando houver a chave do FRED.</p>
+      <p class="sub">Fonte: IBGE (via SGS do Banco Central) e Eurostat (namq_10_gdp).</p>`,
   },
   desemprego_mundo: {
     titulo: "Desemprego comparado",
     html: `<p>Taxas com ajuste sazonal: EUA (BLS) e Zona do Euro (Eurostat). O desemprego do Brasil (PNAD Contínua, IBGE) entra em seguida.
-      As metodologias são próximas (padrão da OIT), mas não idênticas.</p>`,
+      As metodologias são próximas (padrão da OIT), mas não idênticas.</p>
+      <p class="sub">Fonte: U.S. Bureau of Labor Statistics (LNS14000000), Eurostat (une_rt_m) e IBGE (PNAD Contínua, tabela 6381).</p>`,
   },
   receita: {
     titulo: "Receita líquida",
     html: `<p>Vendas de produtos e serviços já descontados impostos sobre vendas, devoluções e abatimentos (linha 3.01 da DRE
-      entregue à CVM). A linha mostra o crescimento contra o mesmo período do ano anterior.</p>`,
+      entregue à CVM). A linha mostra o crescimento contra o mesmo período do ano anterior.</p>
+      <p class="sub">Fonte: CVM — demonstrações financeiras (ITR e DFP) entregues pela empresa.</p>`,
   },
   lucro_bruto: {
     titulo: "Lucro bruto e margem bruta",
     html: `<p>Receita líquida menos o custo dos produtos ou serviços vendidos. Margem bruta = lucro bruto ÷ receita.
-      Bancos e seguradoras não têm essa linha no mesmo formato.</p>`,
+      Bancos e seguradoras não têm essa linha no mesmo formato.</p>
+      <p class="sub">Fonte: CVM — demonstrações financeiras (ITR e DFP).</p>`,
   },
   ebitda: {
     titulo: "EBITDA",
     html: `<p>Lucro antes de juros, impostos, depreciação e amortização: <code>EBIT + D&amp;A</code>. Aproxima a geração de caixa
       operacional antes de investimentos e capital de giro.</p>
       <p>A D&amp;A não é conta padronizada da CVM: é somada a partir das linhas da DFC cuja descrição fala em depreciação,
-        amortização ou exaustão (as linhas usadas aparecem nas notas da página). Sem essas linhas, EBITDA = EBIT.</p>`,
+        amortização ou exaustão (as linhas usadas aparecem nas notas da página). Sem essas linhas, EBITDA = EBIT.</p>
+      <p class="sub">Fonte: CVM — DRE e DFC (ITR e DFP); D&amp;A somada pelo site a partir das descrições da DFC.</p>`,
   },
   ebit: {
     titulo: "EBIT",
-    html: `<p>Resultado antes do resultado financeiro e dos tributos sobre o lucro (linha 3.05 da DRE). Margem EBIT = EBIT ÷ receita.</p>`,
+    html: `<p>Resultado antes do resultado financeiro e dos tributos sobre o lucro (linha 3.05 da DRE). Margem EBIT = EBIT ÷ receita.</p>
+      <p class="sub">Fonte: CVM — demonstrações financeiras (ITR e DFP).</p>`,
   },
   lucro_liquido: {
     titulo: "Lucro líquido",
-    html: `<p>Resultado final do período (consolidado) depois de resultado financeiro e impostos. Margem líquida = lucro líquido ÷ receita.</p>`,
+    html: `<p>Resultado final do período (consolidado) depois de resultado financeiro e impostos. Margem líquida = lucro líquido ÷ receita.</p>
+      <p class="sub">Fonte: CVM — demonstrações financeiras (ITR e DFP).</p>`,
   },
   resultado_financeiro: {
     titulo: "Resultado financeiro",
     html: `<p>Receitas financeiras (rendimento do caixa, variação cambial ativa) menos despesas financeiras (juros da dívida,
-      variação cambial passiva, encargos de arrendamento). As barras ficam empilhadas no mesmo ponto; a linha é o saldo.</p>`,
+      variação cambial passiva, encargos de arrendamento). As barras ficam empilhadas no mesmo ponto; a linha é o saldo.</p>
+      <p class="sub">Fonte: CVM — demonstrações financeiras (ITR e DFP).</p>`,
   },
   retorno: {
     titulo: "ROE e ROIC (últimos 12 meses)",
@@ -370,7 +390,8 @@ window.EXPLICATIVOS = {
         <li><b>ROE:</b> lucro líquido dos últimos 12 meses ÷ patrimônio líquido no fim do período.</li>
         <li><b>ROIC:</b> EBIT dos últimos 12 meses × (1 − 34%) ÷ (dívida líquida + patrimônio líquido) no fim do período.
           A alíquota de 34% (IR + CSLL) é uma simplificação.</li>
-      </ul>`,
+      </ul>
+      <p class="sub">Fonte: Cálculo do site com as demonstrações da CVM (ITR e DFP).</p>`,
   },
   fluxo_caixa: {
     titulo: "Fluxo de caixa (DFC)",
@@ -380,7 +401,8 @@ window.EXPLICATIVOS = {
         <li><b>FCFi:</b> caixa de financiamentos: captações, amortizações, dividendos e recompras.</li>
         <li><b>Soma:</b> FCO + FCI + FCFi = variação do caixa no período (antes da variação cambial sobre o caixa).</li>
       </ul>
-      <p>FCF (fluxo de caixa livre), usado nos indicadores = FCO − capex.</p>`,
+      <p>FCF (fluxo de caixa livre), usado nos indicadores = FCO − capex.</p>
+      <p class="sub">Fonte: CVM — Demonstração dos Fluxos de Caixa (ITR e DFP).</p>`,
   },
   endividamento: {
     titulo: "Endividamento",
@@ -390,18 +412,21 @@ window.EXPLICATIVOS = {
           pela descrição das linhas do balanço.</li>
         <li><b>Dívida líquida:</b> dívida bruta − (caixa + aplicações financeiras).</li>
         <li><b>Dív. líquida / EBITDA:</b> quantos anos de EBITDA (últimos 12 meses) pagariam a dívida líquida.</li>
-      </ul>`,
+      </ul>
+      <p class="sub">Fonte: CVM — balanço patrimonial (ITR e DFP); EBITDA calculado pelo site.</p>`,
   },
   dividendos_dfc: {
     titulo: "Dividendos e JCP pagos (DFC) e payout",
     html: `<p>Caixa <b>efetivamente pago</b> a acionistas no ano, pelas linhas da DFC de dividendos e juros sobre capital próprio.
       Payout = pagos no ano ÷ lucro líquido do ano. Como o pagamento costuma ocorrer no ano seguinte ao lucro, o payout de um
-      ano isolado pode passar de 100%.</p>`,
+      ano isolado pode passar de 100%.</p>
+      <p class="sub">Fonte: CVM — Demonstração dos Fluxos de Caixa (DFP).</p>`,
   },
   proventos_acao: {
     titulo: "Proventos por ação e dividend yield",
     html: `<p>Dividendos e JCP <b>anunciados</b> por ação, somados pelo ano da data-com (fonte B3). O DY de cada ano soma,
-      provento a provento, o valor ÷ preço de fechamento na data-com.</p>`,
+      provento a provento, o valor ÷ preço de fechamento na data-com.</p>
+      <p class="sub">Fonte: B3 — proventos em dinheiro e preço de fechamento na data-com.</p>`,
   },
   cotacao: {
     titulo: "Cotação semanal",

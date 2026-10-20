@@ -126,6 +126,26 @@ def baixar_focus(indicador, todos_os_anos=False):
     return saida
 
 
+URL_SIDRA_DESEMPREGO = "https://apisidra.ibge.gov.br/values/t/6381/n1/all/v/4099/p/all"
+SGS_DESEMPREGO = 24369  # reserva: a mesma taxa da PNAD Contínua, republicada pelo Banco Central
+
+
+def baixar_desemprego():
+    """Taxa de desocupação da PNAD Contínua (trimestre móvel), direto do IBGE; o Banco Central fica de reserva.
+
+    Cada ponto é datado pelo último mês do trimestre móvel (ex.: jul-ago-set/2026 -> 2026-09-01)."""
+    try:
+        linhas = requests.get(URL_SIDRA_DESEMPREGO, timeout=90).json()[1:]
+        serie = pd.Series({pd.Timestamp(int(l["D3C"][:4]), int(l["D3C"][4:]), 1): float(l["V"])
+                           for l in linhas if l.get("V") not in (None, "", "...", "-")}).sort_index()
+        if len(serie) < 100:
+            raise ValueError(f"IBGE devolveu só {len(serie)} pontos")
+        return serie, "IBGE"
+    except Exception as e:
+        print("   ⚠️ desemprego pelo IBGE falhou, usando o Banco Central:", repr(e)[:120])
+        return baixar_sgs(SGS_DESEMPREGO), "Banco Central (SGS 24369)"
+
+
 def _regrediu(nova, antiga, compactada=False):
     """Série baixada menor que a publicada antes (começo, fim ou pontos a menos) indica resposta incompleta da API."""
     if not antiga or not antiga["datas"]:
@@ -158,6 +178,18 @@ def gerar():
             falhas.append(f"{chave}: {e}")
             antiga = anteriores[chave]
             brutas[chave] = pd.Series(antiga["valores"], index=pd.to_datetime(antiga["datas"]), dtype=float)
+    try:
+        nova, fonte_desemprego = baixar_desemprego()
+        problema = _regrediu(nova, anteriores.get("desemprego"))
+        if problema:
+            raise RuntimeError(problema)
+        brutas["desemprego"] = nova
+    except Exception as e:
+        if "desemprego" not in anteriores:
+            raise
+        falhas.append(f"desemprego: {e}")
+        antiga, fonte_desemprego = anteriores["desemprego"], "versão anterior"
+        brutas["desemprego"] = pd.Series(antiga["valores"], index=pd.to_datetime(antiga["datas"]), dtype=float)
     for f in falhas:
         print("   ⚠️ mantida a versão anterior —", f)
     # A Selic meta só muda nas reuniões do Copom: guarda só os pontos de mudança (gráfico em degraus)
@@ -166,6 +198,7 @@ def gerar():
     saida = {chave: _empacotar(brutas[chave], nome, un) for chave, (_, nome, un) in SERIES.items()}
 
     saida["ipca_12m"] = _empacotar(acumulado_12m(brutas["ipca"]).dropna(), "IPCA acumulado em 12 meses", "%")
+    saida["desemprego"] = _empacotar(brutas["desemprego"], f"Taxa de desocupação (PNAD Contínua, trimestre móvel) — {fonte_desemprego}", "%")
     saida["igpm_12m"] = _empacotar(acumulado_12m(brutas["igpm"]).dropna(), "IGP-M acumulado em 12 meses", "%")
     saida["incc_12m"] = _empacotar(acumulado_12m(brutas["incc"]).dropna(), "INCC-DI acumulado em 12 meses", "%")
 
