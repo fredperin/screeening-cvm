@@ -448,6 +448,34 @@ window.EXPLICATIVOS = {
       inflação (HICP) dos 12 meses anteriores: <code>(1 + juro) ÷ (1 + inflação) − 1</code>.</p>
       <p class="sub">Fonte: cálculo do site com dados do BCE e do Eurostat.</p>`,
   },
+  empresas_mundo: {
+    titulo: "Empresas do S&P 500",
+    html: `<p>As cerca de 500 maiores empresas listadas nos EUA, pela carteira diária do <b>SPY</b> (fundo da State Street que replica o S&P 500 —
+      a lista oficial do índice é paga). Demonstrações e indicadores vêm dos dados XBRL que cada empresa entrega à <b>SEC</b> nos relatórios 10-K
+      (anual) e 10-Q (trimestral); cotações do Yahoo Finance (não oficial). Valores em US$; indicadores pelos últimos 12 meses.</p>
+      <p class="sub">Fontes: SEC EDGAR (companyfacts e submissions), State Street SPDR (carteira do SPY), Yahoo Finance.</p>`,
+  },
+  documentos_sec: {
+    titulo: "Documentos entregues à SEC",
+    html: `<p><b>8-K:</b> comunicado de fato relevante, com os itens informados pela empresa (ex.: 2.02 = resultado do período, 1.01 = contrato
+      relevante, 5.02 = mudança de diretores, 8.01 = outros eventos). <b>10-K:</b> relatório anual auditado. <b>10-Q:</b> relatório trimestral.
+      <b>DEF 14A:</b> convocação da assembleia anual.</p>
+      <p class="sub">Fonte: SEC EDGAR (submissions), com link para cada documento.</p>`,
+  },
+  demonstracoes_sec: {
+    titulo: "Demonstrações como divulgadas à SEC",
+    html: `<p>Demonstração do resultado, balanço e fluxo de caixa do último 10-K (anual, com 3 anos de resultado e 2 de balanço) ou do último 10-Q
+      (trimestral, com o trimestre e o acumulado do ano), exatamente com as linhas, os nomes e a abertura que a empresa divulgou — em inglês, pelo
+      plano de contas americano (US-GAAP). A análise vertical (AV) usa a receita total na DRE e o ativo total no balanço.</p>
+      <p class="sub">Fonte: SEC EDGAR — tabelas que a SEC gera a partir do XBRL de cada relatório ("Financial Report").</p>`,
+  },
+  dividendos_mundo: {
+    titulo: "Dividendos e recompras",
+    html: `<p>Nos EUA, boa parte do retorno ao acionista vem de <b>recompras de ações</b>, além dos dividendos. As barras somam os dois, pelo caixa
+      efetivamente pago no exercício (demonstração do fluxo de caixa); a linha mostra o payout (dividendos ÷ lucro). O dividendo por ação é o
+      declarado no exercício.</p>
+      <p class="sub">Fonte: SEC EDGAR (XBRL dos 10-K).</p>`,
+  },
   pib_china: {
     titulo: "PIB da China",
     html: `<p>Crescimento real do PIB chinês: contra o mesmo trimestre do ano anterior (o número que o governo divulga e compara com a meta

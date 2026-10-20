@@ -290,6 +290,23 @@ def checar_mundo():
     return "mercados, commodities, China e Global em dia"
 
 
+def checar_empresas_mundo():
+    """Empresas do S&P 500 (pipeline.empresas_mundo): tabelão gerado, quase todas as empresas e cotações do último pregão."""
+    arq = DIR_DADOS_SITE / "mundo_empresas.json"
+    assert arq.exists(), "mundo_empresas.json não foi gerado"
+    m = json.loads(arq.read_text(encoding="utf-8"))
+    problemas = []
+    if len(m["empresas"]) < 450:
+        problemas.append(f"só {len(m['empresas'])} empresas do S&P 500 com dados")
+    com_preco = sum(1 for e in m["empresas"] if e.get("preco"))
+    if com_preco < len(m["empresas"]) * 0.9:
+        problemas.append(f"cotação em só {com_preco} de {len(m['empresas'])} empresas (Yahoo)")
+    if _dias(m["gerado_em"]) > 4:
+        problemas.append(f"tabelão gerado em {m['gerado_em']}")
+    assert not problemas, " | ".join(problemas)
+    return f"{len(m['empresas'])} empresas; {com_preco} com cotação"
+
+
 def checar_credito():
     """Estatísticas de crédito do BC (pipeline.credito): sem falhas e com o último mês dentro da defasagem normal (~30 dias)."""
     arq = DIR_DADOS_SITE / "credito.json"
@@ -330,6 +347,7 @@ CHECAGENS = {
     "Macro — séries completas e em dia": checar_macro,
     "Banco Central — estatísticas de crédito": checar_credito,
     "Mundo — mercados, commodities, China e Global": checar_mundo,
+    "Mundo — empresas do S&P 500 (SEC)": checar_empresas_mundo,
     "Offshore — Tesouro dos EUA, Fed, BLS, BCE, Eurostat": checar_offshore,
     "Tesouro Direto (oficial)": checar_tesouro,
     "Tesouro Direto — tempo real (não oficial)": checar_tesouro_tempo_real,

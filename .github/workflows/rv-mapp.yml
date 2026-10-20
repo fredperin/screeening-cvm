@@ -58,6 +58,7 @@ jobs:
           # chaves gratuitas cadastradas pelo usuário em Settings → Secrets → Actions (vazias = fonte desligada)
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
 
       # Agentes automáticos (sem IA): saúde das fontes e anomalias nos dados gerados
       - name: Monitorar fontes
