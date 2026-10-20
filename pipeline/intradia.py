@@ -11,7 +11,7 @@ import json
 import sys
 from datetime import datetime, timezone
 
-from pipeline import DIR_DADOS_SITE
+from pipeline import DIR_DADOS_SITE, sem_segredos
 
 
 def main():
@@ -23,7 +23,7 @@ def main():
         tesouro.gerar(baixar_arquivo=not tesouro.ARQ.exists())
         planilhas.gerar_juros()
     except Exception as e:
-        erro = repr(e)[:500]
+        erro = sem_segredos(repr(e))[:500]
         print("❌", erro)
 
     # registra no status.json da atualização diária, para aparecer na página Status dos dados

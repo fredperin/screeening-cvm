@@ -24,7 +24,7 @@ from datetime import date, datetime, timedelta, timezone
 import pandas as pd
 import requests
 
-from pipeline import DIR_DADOS_SITE
+from pipeline import DIR_DADOS_SITE, sem_segredos
 
 CABECALHO = {"User-Agent": "Mozilla/5.0 (Bloomberg de Pobre; uso pessoal)"}
 FUSO_BR = timezone(timedelta(hours=-3))
@@ -138,7 +138,8 @@ def bls():
             corpo["registrationkey"] = chave
         r = requests.post(url, json=corpo, headers=CABECALHO, timeout=90).json()
         if r.get("status") != "REQUEST_SUCCEEDED":
-            raise RuntimeError(f"BLS: {r.get('status')} {r.get('message')}")
+            # a mensagem do BLS repete a chave ("The key:XXXX provided by the User is invalid"): só o status vai para o registro
+            raise RuntimeError(f"BLS: {r.get('status')}" + (" — chave recusada pelo BLS (inválida ou não ativada)" if chave and "key" in str(r.get("message")).lower() else ""))
         for s in r["Results"]["series"]:
             pontos = {pd.Timestamp(int(x["year"]), int(x["period"][1:]), 1): float(x["value"])
                       for x in s["data"] if x["period"].startswith("M") and x["period"] != "M13" and x["value"] not in ("-", "")}
@@ -459,6 +460,7 @@ def gerar_noticias_agenda():
     eventos = sorted({(e["data"], e["evento"]): e for e in eventos if e["data"] >= hoje}.values(), key=lambda e: e["data"])
     agora = datetime.now(FUSO_BR).isoformat(timespec="minutes")
     da_agenda = ("FOMC", "reuniões", "agenda")
+    falhas = [sem_segredos(f) for f in falhas]
     (DIR_DADOS_SITE / "noticias_offshore.json").write_text(json.dumps({"gerado_em": agora, "itens": itens, "falhas": [f for f in falhas if not any(k in f for k in da_agenda)]},
                                                                      ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     (DIR_DADOS_SITE / "agenda_offshore.json").write_text(json.dumps({"gerado_em": date.today().isoformat(), "eventos": eventos,
@@ -486,6 +488,7 @@ def gerar():
         falhas += gerar_noticias_agenda()
     except Exception as e:
         falhas.append(f"notícias e agenda: {e!r}"[:300])
+    falhas = [sem_segredos(f) for f in falhas]
     ARQ.write_text(json.dumps({"gerado_em": datetime.now(FUSO_BR).isoformat(timespec="minutes"), **saida, "falhas": falhas},
                               ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     print(f"✅ offshore: {', '.join(saida)}; falhas: {falhas or 'nenhuma'} ({ARQ.stat().st_size // 1024} KB)")

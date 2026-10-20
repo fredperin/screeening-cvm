@@ -64,6 +64,15 @@ jobs:
         env:
           PYTHONUTF8: "1"
 
+      - name: Ocultar chaves de acesso
+        if: steps.diaria.outputs.seguir == 'sim'
+        run: python -m pipeline.limpar_segredos
+        env:
+          PYTHONUTF8: "1"
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+
       - if: steps.diaria.outputs.seguir == 'sim'
         run: sed -i "s/__VERSAO__/i${{ github.run_number }}/g" site/index.html
 

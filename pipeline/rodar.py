@@ -18,7 +18,7 @@ import sys
 import traceback
 from datetime import date, datetime, timedelta, timezone
 
-from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO
+from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO, sem_segredos
 
 
 def _etapa(nome, funcao, status):
@@ -30,7 +30,7 @@ def _etapa(nome, funcao, status):
         return resultado
     except Exception as e:
         traceback.print_exc()
-        status[nome] = {"ok": False, "erro": repr(e)[:500]}
+        status[nome] = {"ok": False, "erro": sem_segredos(repr(e))[:500]}
         return None
 
 

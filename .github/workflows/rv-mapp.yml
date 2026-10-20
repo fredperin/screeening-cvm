@@ -74,6 +74,16 @@ jobs:
         env:
           PYTHONUTF8: "1"
 
+      # Última barreira: nenhuma chave de acesso pode ir para o site nem para o alerta (algumas APIs repetem a chave no erro)
+      - name: Ocultar chaves de acesso
+        if: always()
+        run: python -m pipeline.limpar_segredos
+        env:
+          PYTHONUTF8: "1"
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+
       # Problema -> abre (ou comenta) uma issue com o rótulo rv-mapp-alerta, que chega por e-mail.
       # Tudo normal -> fecha a issue aberta, se houver.
       - name: Alerta no GitHub

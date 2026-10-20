@@ -15,7 +15,7 @@ from datetime import date, datetime, timedelta, timezone
 
 import requests
 
-from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO
+from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO, sem_segredos
 
 CABECALHO = {"User-Agent": "Mozilla/5.0"}
 ARQ_ALERTA = DIR_INTERMEDIARIO / "alerta.md"
@@ -340,10 +340,10 @@ def main():
         # até 3 tentativas: oscilação momentânea de uma API não deve virar alerta
         for tentativa in range(3):
             try:
-                resultados[nome] = {"ok": True, "detalhe": funcao()}
+                resultados[nome] = {"ok": True, "detalhe": sem_segredos(funcao())}
                 break
             except Exception as e:
-                resultados[nome] = {"ok": False, "detalhe": str(e)[:300] or repr(e)}
+                resultados[nome] = {"ok": False, "detalhe": sem_segredos(str(e)[:300] or repr(e))}
                 if tentativa < 2:
                     time.sleep(15)
         marca = "✅" if resultados[nome]["ok"] else "❌"
