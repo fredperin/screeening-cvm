@@ -55,6 +55,9 @@ jobs:
         run: python -m pipeline.rodar ${{ inputs.tudo && '--tudo' || '' }}
         env:
           PYTHONUTF8: "1"
+          # chaves gratuitas cadastradas pelo usuário em Settings → Secrets → Actions (vazias = fonte desligada)
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+          BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
 
       # Agentes automáticos (sem IA): saúde das fontes e anomalias nos dados gerados
       - name: Monitorar fontes
