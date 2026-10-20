@@ -1085,16 +1085,15 @@ async function paginaNoticias(lado = "on") {
   const jornais = { on: "Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney", off: "WSJ, Financial Times, CNBC, MarketWatch, The Guardian e BBC",
     cons: "jornais do Brasil e do exterior" }[lado];
   const oficiais = { on: "Banco Central, IBGE, CVM e Agência Brasil", off: "Federal Reserve e BCE", cons: "Banco Central, IBGE, CVM, Agência Brasil, Fed e BCE" }[lado];
-  app.innerHTML = `
-    <div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">Notícias de mercado (${jornais}) e oficiais (${oficiais}) · só a manchete, com link para a fonte</div></div></div>
-    ${lado === "on" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
-    <div class="grade grade-noticias">
+  // Onshore: agenda em cima e notícias embaixo, cada uma na largura toda e mais alta; Offshore e Consolidado: lado a lado
+  const painelNoticias = `
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
         <div class="seletor" id="filtro-fonte">${filtros.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}
           ${[...fontes("mercado"), ...fontes("oficial")].map((f) => `<button data-k="fonte:${esc(f)}">${esc(f)}</button>`).join("")}</div></div>
         <div id="lista-noticias"></div>
         <div class="nota">Mercado: últimos 7 dias. Oficiais: últimas semanas. O texto completo fica no site de cada fonte (alguns jornais exigem assinatura).
-          Etiquetas: empresas da lista citadas na manchete.</div></div>
+          Etiquetas: empresas da lista citadas na manchete.</div></div>`;
+  const painelAgenda = `
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Agenda</h2>
         <div class="seletor" id="janela-ag">${[[14, "2 sem."], [30, "1 mês"], [90, "3 meses"], [400, "Tudo"]].map(([d, r]) => `<button data-d="${d}" class="${d === janela ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
         <div class="seletor" id="filtro-ag" style="margin-bottom:8px">
@@ -1102,8 +1101,11 @@ async function paginaNoticias(lado = "on") {
           ${Object.entries(categorias).map(([k, [n, c]]) => `<button data-k="${k}"><span style="color:${c}">●</span> ${n}</button>`).join("")}
         </div>
         <div id="tab-agenda"></div>
-        <div class="nota">Datas oficiais${quer("on") ? " do Banco Central, IBGE e FGV" : ""}${lado === "cons" ? " e" : ""}${quer("off") ? " das páginas do Fed e do BCE" : ""}; podem mudar.</div></div>
-    </div>`;
+        <div class="nota">Datas oficiais${quer("on") ? " do Banco Central, IBGE e FGV" : ""}${lado === "cons" ? " e" : ""}${quer("off") ? " das páginas do Fed e do BCE" : ""}; podem mudar.</div></div>`;
+  app.innerHTML = `
+    <div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">Notícias de mercado (${jornais}) e oficiais (${oficiais}) · só a manchete, com link para a fonte</div></div></div>
+    ${lado === "on" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
+    ${lado === "on" ? `<div class="grade grade-empilhada">${painelAgenda}${painelNoticias}</div>` : `<div class="grade grade-noticias">${painelNoticias}${painelAgenda}</div>`}`;
   const passa = (n) => {
     if (filtro === "todas") return true;
     const [campo, valor] = filtro.split(":");

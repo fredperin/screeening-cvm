@@ -162,6 +162,8 @@ body.sem-rolagem { overflow: hidden; }
 /* ---- notícias, offshore, avisos ---- */
 .grade-noticias { grid-template-columns: 3fr 2fr; }
 .grade-noticias .rolagem-y { max-height: 70vh; }
+.grade.grade-empilhada { grid-template-columns: 1fr; }
+.grade-empilhada .rolagem-y { max-height: 78vh; min-height: 45vh; }
 .etiqueta { display: inline-block; font-size: 10px; border: 1px solid var(--borda); border-radius: 3px; padding: 0 4px; margin-left: 4px; }
 .painel.em-construcao { border-style: dashed; }
 .painel.aviso-4966 { border-color: var(--ambar); margin-bottom: 10px; }
