@@ -79,14 +79,15 @@ def _get(url, params=None, tentativas=4):
             time.sleep(2 * (i + 1))
 
 
-def baixar_sgs(codigo):
-    """Série completa desde 2000, em janelas de 10 anos (limite da API para séries diárias)."""
+def baixar_sgs(codigo, inicio=INICIO, janela=10):
+    """Série completa desde `inicio` (2000), em janelas de `janela` anos (10 = limite da API para séries diárias;
+    séries mensais aceitam janelas maiores, o que reduz o número de consultas)."""
     partes, hoje = [], date.today()
-    for ano in range(INICIO, hoje.year + 1, 10):
-        ini, fim = date(ano, 1, 1), min(date(ano + 9, 12, 31), hoje)
+    for ano in range(inicio, hoje.year + 1, janela):
+        ini, fim = date(ano, 1, 1), min(date(ano + janela - 1, 12, 31), hoje)
         # A API às vezes devolve {"erro":{}} ou HTML para uma janela válida e guarda essa resposta em cache
         # para a mesma URL: cada nova tentativa usa outra data final (datas futuras são aceitas)
-        finais = [date(ano + 9, 12, 31), fim, fim - timedelta(days=1), date(ano + 9, 12, 30), fim - timedelta(days=2)]
+        finais = [date(ano + janela - 1, 12, 31), fim, fim - timedelta(days=1), date(ano + janela - 1, 12, 30), fim - timedelta(days=2)]
         for tentativa, final in enumerate(finais):
             try:
                 dados = _get(URL_SGS.format(codigo=codigo, ini=ini.strftime("%d/%m/%Y"), fim=final.strftime("%d/%m/%Y")),

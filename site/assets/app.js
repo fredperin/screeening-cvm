@@ -929,7 +929,9 @@ function desenharDreBalancoResumido(emp) {
 
 /* ============ Macro ============ */
 let JANELA_MACRO = 10;
-const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["expectativas", "Expectativas (Focus)"], ["cambio", "Câmbio"]];
+const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["credito", "Crédito"], ["expectativas", "Expectativas (Focus)"], ["cambio", "Câmbio"]];
+const SUBS_CREDITO = [["total", "Total"], ["pj", "Pessoa jurídica"], ["pf", "Pessoa física"]];
+let ABA_CREDITO = "total";
 const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
 const ESCOLHA_GRAFICO = {};  // opção escolhida em cada gráfico com botões (fica ao trocar de janela)
 const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinza], ["nucleo_ex3", "EX3", COR.roxo],
@@ -937,8 +939,8 @@ const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinz
 
 async function paginaMacro(sub) {
   if (!SUBS_MACRO.some(([k]) => k === sub)) sub = SUBS_MACRO[0][0];
-  const macro = await dados("dados/macro.json");
-  const S = macro.series, F = macro.focus;
+  const [macro, cred] = await Promise.all([dados("dados/macro.json"), sub === "credito" ? dados("dados/credito.json").catch(() => null) : null]);
+  const S = cred ? { ...macro.series, ...cred.series } : macro.series, F = macro.focus;
   const u = (k) => ultimo(S[k]);
   const mes = (k) => (u(k).data ? `${MESES[Number(u(k).data.slice(5, 7)) - 1]}/${u(k).data.slice(2, 4)}` : "");
   const focusAno = (k) => { const a = String(new Date().getFullYear()); const f = F[k] && F[k][a]; return f ? f.valores[f.valores.length - 1] : null; };
@@ -961,28 +963,37 @@ async function paginaMacro(sub) {
       cartao("Juros nominais 12m", pctPronto(u("nfsp_juros").valor, 2), "% do PIB"),
       cartao("Resultado nominal 12m", pctPronto(u("nfsp_nominal").valor == null ? null : -u("nfsp_nominal").valor, 2), "% do PIB"),
       cartao("Dívida federal pós-fixada (Selic)", pctPronto(u("dmf_selic").valor, 1), `do estoque · ${mes("dmf_selic")}`)],
+    credito: cred ? cartoesCredito(S, u, mes) : [],
     expectativas: [cartao(`IPCA ${new Date().getFullYear()}`, pctPronto(focusAno("ipca")), "mediana Focus"), cartao(`Selic fim de ${new Date().getFullYear()}`, pctPronto(focusAno("selic")), "mediana Focus"),
       cartao(`Câmbio fim de ${new Date().getFullYear()}`, focusAno("cambio") ? `R$ ${num(focusAno("cambio"), 2)}` : "—", "mediana Focus"), cartao(`PIB ${new Date().getFullYear()}`, pctPronto(focusAno("pib")), "mediana Focus")],
   }[sub];
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS e Estatísticas Fiscais), IBGE, FGV e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
+    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS, Estatísticas Fiscais e de Crédito), IBGE, FGV e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${sub === "expectativas" ? "" : `<div class="seletor" id="janela">${[[1, "1A"], [5, "5A"], [10, "10A"], [99, "Máx"]].map(([a, r]) => `<button data-a="${a}" class="${a === JANELA_MACRO ? "ativo" : ""}">${r}</button>`).join("")}</div>`}
         <a class="botao" href="downloads/macro.xlsx" download>Baixar planilha de Macro</a></div></div>
     <div class="abas">${SUBS_MACRO.map(([k, n]) => `<a href="#/on/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>
+    ${sub === "credito" ? `<div class="seletor seletor-editoria" id="sub-credito" style="margin:-4px 0 12px">${SUBS_CREDITO.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_CREDITO ? "ativo" : ""}">${n}</button>`).join("")}</div>
+      ${cred ? "" : `<p class="sub">Estatísticas de crédito indisponíveis no momento.</p>`}` : ""}
     <div class="grade-cartoes">${cartoes.join("")}</div>
     <div class="grade" id="graficos-macro"></div>`;
+  const subCred = document.getElementById("sub-credito");
+  if (subCred) subCred.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    ABA_CREDITO = b.dataset.k;
+    paginaMacro("credito");
+  });
   const janela = document.getElementById("janela");
   if (janela) janela.addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
     JANELA_MACRO = Number(b.dataset.a);
     document.querySelectorAll("#janela button").forEach((x) => x.classList.toggle("ativo", x === b));
-    desenharMacro(S, F, sub);
+    desenharMacro(S, F, sub, cred);
   });
-  desenharMacro(S, F, sub);
+  desenharMacro(S, F, sub, cred);
 }
 
-function desenharMacro(S, F, sub) {
+function desenharMacro(S, F, sub, cred = null) {
   limparGraficos();
   // Histórico completo em todos os gráficos; os botões de janela só escolhem o início (dá para dar zoom para trás)
   const inicio = (anos) => { if (anos >= 99) return null; const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
@@ -1004,6 +1015,71 @@ function desenharMacro(S, F, sub) {
     { nome: "IPCA cheio", valores: P(S[`ipca_${suf}`]), tipo: "line", cor: COR.vermelho, tracejado: true }] }]));
   const anos = S.pib_anual ? S.pib_anual.datas.map((d) => d.slice(0, 4)) : [];
   const nominal = S.pib_nominal ? Object.fromEntries(S.pib_nominal.datas.map((d, i) => [d.slice(0, 4), S.pib_nominal.valores[i]])) : {};
+  // Crédito (Banco Central): saldos e concessões vêm em R$ milhões
+  const M = (s) => P(s).map(([d, v]) => [d, v == null ? null : v * 1e6]);
+  // Selic meta vigente no fim de cada mês da série de referência (a Selic guarda só as datas de mudança)
+  const selicNoMes = (ref) => {
+    if (!ref || !S.selic_meta) return [];
+    const mud = P(S.selic_meta);
+    return ref.datas.map((d) => { const fim = `${d.slice(0, 7)}-31`; let v = null; for (const [x, y] of mud) { if (x <= fim) v = y; else break; } return [d, v]; });
+  };
+  const defsCredito = (g) => {
+    const x = g === "total" ? "" : `_${g}`;            // sufixo das chaves: saldo_pj, taxa_pf...
+    const k = (base) => (g === "total" ? `${base}_total` : `${base}_${g}`);
+    const quem = { total: "", pj: " · pessoa jurídica", pf: " · pessoa física" }[g];
+    const lista = [
+      { t: `Saldo da carteira de crédito${quem}`, info: "credito_saldo", op: { eixoEsq: "reais", eixoDir: "pctPronto", series: [
+        { nome: "Recursos livres", valores: M(S[g === "total" ? "saldo_livres" : `saldo${x}_livres`]), cor: COR.azul, pilha: "saldo" },
+        { nome: "Recursos direcionados", valores: M(S[g === "total" ? "saldo_dir" : `saldo${x}_dir`]), cor: COR.roxo, pilha: "saldo" },
+        { nome: "Crescimento em 12 meses", valores: P(S[`${k("saldo")}_12m`]), tipo: "line", eixo: "dir", cor: COR.ambar }] } },
+      { t: `Crédito em % do PIB${quem}`, info: "credito_pib", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Total", valores: P(S[k("pib")]), tipo: "line", cor: COR.ambar },
+        { nome: "Recursos livres", valores: P(S[g === "total" ? "pib_livres" : `pib${x}_livres`]), tipo: "line", cor: COR.azul },
+        { nome: "Recursos direcionados", valores: P(S[g === "total" ? "pib_dir" : `pib${x}_dir`]), tipo: "line", cor: COR.roxo }] } },
+      { t: `Concessões (crédito novo no mês, dessazonalizado)${quem}`, info: "credito_concessoes", op: { eixoEsq: "reais", series: [
+        { nome: "Total", valores: M(S[`${k("conc")}_sa`]), tipo: "line", cor: COR.ambar },
+        { nome: "Recursos livres", valores: M(S[g === "total" ? "conc_livres_sa" : `conc${x}_livres_sa`]), tipo: "line", cor: COR.azul },
+        { nome: "Recursos direcionados", valores: M(S[g === "total" ? "conc_dir_sa" : `conc${x}_dir_sa`]), tipo: "line", cor: COR.roxo }] } },
+      { t: `Juros, spread e custo do crédito${quem}`, info: "credito_juros", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Taxa média (crédito novo)", valores: P(S[k("taxa")]), tipo: "line", cor: COR.ambar },
+        { nome: "Taxa — livres", valores: P(S[g === "total" ? "taxa_livres" : `taxa${x}_livres`]), tipo: "line", cor: COR.azul },
+        { nome: "Taxa — direcionados", valores: P(S[g === "total" ? "taxa_dir" : `taxa${x}_dir`]), tipo: "line", cor: COR.roxo },
+        { nome: "Spread (p.p.)", valores: P(S[k("spread")]), tipo: "line", cor: COR.vermelho },
+        { nome: "ICC (custo da carteira)", valores: P(S[k("icc")]), tipo: "line", cor: COR.verde },
+        { nome: "Selic meta (fim do mês)", valores: selicNoMes(S[k("taxa")]), tipo: "line", cor: COR.cinza, tracejado: true }] } },
+      { t: `Inadimplência e atrasos${quem}`, info: "credito_inadimplencia", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Inadimplência (> 90 dias)", valores: P(S[k("inad")]), tipo: "line", cor: COR.vermelho },
+        { nome: "Inadimplência — livres", valores: P(S[g === "total" ? "inad_livres" : `inad${x}_livres`]), tipo: "line", cor: COR.azul },
+        { nome: "Inadimplência — direcionados", valores: P(S[g === "total" ? "inad_dir" : `inad${x}_dir`]), tipo: "line", cor: COR.roxo },
+        { nome: "Atraso de 15 a 90 dias", valores: P(S[k("atraso")]), tipo: "line", cor: COR.ambar, tracejado: true }] } },
+    ];
+    if (g === "total") {
+      lista.push({ t: "Pessoa física × pessoa jurídica: saldo", info: "credito_pfpj", op: { eixoEsq: "reais", series: [
+        { nome: "Pessoa física", valores: M(S.saldo_pf), tipo: "line", cor: COR.verde },
+        { nome: "Pessoa jurídica", valores: M(S.saldo_pj), tipo: "line", cor: COR.azul }] } });
+      return lista;
+    }
+    lista.push({ t: `Prazo médio da carteira (meses)${quem}`, info: "credito_prazo", op: { eixoEsq: "numero", series: [
+      { nome: "Total", valores: P(S[`prazo${x}`]), tipo: "line", cor: COR.ambar },
+      { nome: "Recursos livres", valores: P(S[`prazo${x}_livres`]), tipo: "line", cor: COR.azul },
+      { nome: "Recursos direcionados", valores: P(S[`prazo${x}_dir`]), tipo: "line", cor: COR.roxo }] } });
+    if (g === "pf") {
+      lista.push({ t: "Endividamento das famílias (% da renda de 12 meses)", info: "credito_familias", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Endividamento total", valores: P(S.endiv), tipo: "line", cor: COR.ambar },
+        { nome: "Sem crédito habitacional", valores: P(S.endiv_sem_hab), tipo: "line", cor: COR.azul }] } });
+      lista.push({ t: "Comprometimento de renda com dívidas (% da renda mensal, dessaz.)", info: "credito_familias", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Serviço da dívida (juros + amortização)", valores: P(S.compr), tipo: "line", cor: COR.ambar },
+        { nome: "Juros", valores: P(S.compr_juros), cor: COR.vermelho, pilha: "c" },
+        { nome: "Amortização", valores: P(S.compr_amort), cor: COR.azul, pilha: "c" }] } });
+    }
+    // Modalidades: um gráfico com botões (saldo, juros, inadimplência), uma linha por modalidade
+    const mods = ((cred && cred.modalidades) || {})[g] || [];
+    const porMod = (campo, conv) => ({ eixoEsq: campo === "saldo" ? "reais" : "pctPronto", series: mods.map((m, j) => ({
+      nome: m.nome, valores: conv(S[`mod_${g}_${m.k}_${campo}`]), tipo: "line", cor: PALETA_GRAF[j % PALETA_GRAF.length] })) });
+    lista.push({ t: `Modalidades${quem}`, info: "credito_modalidades", largo: true, alt: {
+      "Saldo": porMod("saldo", M), "Taxa de juros": porMod("taxa", P), "Inadimplência": porMod("inad", P) } });
+    return lista;
+  };
   // contas públicas: NFSP com sinal invertido (resultado: superávit positivo) e soma de indexadores pequenos
   const neg = (s) => P(s).map(([d, v]) => [d, v == null ? null : -v]);
   const soma = (ks) => {
@@ -1033,6 +1109,7 @@ function desenharMacro(S, F, sub) {
       { t: "Selic meta, CDI e IPCA 12 meses", info: "selic", largo: true, op: { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "CDI", valores: P(S.cdi), tipo: "line", cor: COR.ciano }, { nome: "IPCA 12m", valores: P(S.ipca_12m), tipo: "line", cor: COR.vermelho }, { nome: "Média dos núcleos 12m", valores: P(S.nucleos_media_12m), tipo: "line", cor: COR.roxo, tracejado: true }], eixoEsq: "pctPronto", degrau: true } },
       { t: "Juro real ex-post (Selic ÷ IPCA 12m)", info: "juro_real", largo: true, op: { series: [{ nome: "Juro real", valores: P(S.juro_real), tipo: "line", cor: COR.verde }], eixoEsq: "pctPronto" } },
     ],
+    credito: cred ? defsCredito(ABA_CREDITO) : [],
     fiscal: [
       { t: "Dívida pública (% do PIB): bruta e líquida", info: "fiscal_divida", op: { eixoEsq: "pctPronto", series: [
         { nome: "Dívida bruta do governo geral (DBGG)", valores: P(S.dbgg), tipo: "line", cor: COR.vermelho },
@@ -1089,6 +1166,23 @@ function desenharMacro(S, F, sub) {
     sel.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
     desenhar(i);
   }));
+}
+
+// Cartões da aba Crédito (saldo em R$ milhões no SGS)
+function cartoesCredito(S, u, mes) {
+  const g = ABA_CREDITO, k = (b) => (g === "total" ? `${b}_total` : `${b}_${g}`);
+  const tri = (x) => (x == null ? "—" : reais(x * 1e6));
+  const base = [
+    cartao("Saldo da carteira", tri(u(k("saldo")).valor), `${mes(k("saldo"))} · ${pctPronto(u(`${k("saldo")}_12m`).valor, 1)} em 12 meses`),
+    cartao("Crédito / PIB", pctPronto(u(k("pib")).valor, 1), mes(k("pib"))),
+    cartao("Taxa média de juros", pctPronto(u(k("taxa")).valor, 1), "a.a. · crédito novo"),
+    cartao("Spread", `${num(u(k("spread")).valor, 1)} p.p.`, "taxa − custo de captação"),
+    cartao("Inadimplência", pctPronto(u(k("inad")).valor, 2), "atraso acima de 90 dias"),
+  ];
+  if (g === "pf") base.push(cartao("Endividamento das famílias", pctPronto(u("endiv").valor, 1), `% da renda · ${mes("endiv")}`),
+    cartao("Comprometimento de renda", pctPronto(u("compr").valor, 1), "com o serviço da dívida"));
+  else base.push(cartao("Concessões no mês", tri(u(`${k("conc")}_sa`).valor), "dessazonalizadas"));
+  return base;
 }
 
 /* ============ Juros ============ */
@@ -2063,7 +2157,7 @@ const PALETA_GRAF = ["#388bfd", "#f0b429", "#3fb950", "#a371f7", "#39c5cf", "#f8
 
 /* ============ Status dos dados ============ */
 const NOMES_ETAPAS = {
-  macro: "Macro (Banco Central, IBGE, FGV)", agenda: "Agenda (Banco Central, IBGE, FGV)", tesouro: "Tesouro Direto", curva_di: "Curva DI (B3)",
+  macro: "Macro (Banco Central, IBGE, FGV)", credito: "Crédito (Banco Central)", agenda: "Agenda (Banco Central, IBGE, FGV)", tesouro: "Tesouro Direto", curva_di: "Curva DI (B3)",
   mercado: "Cotações e proventos (B3)", noticias: "Notícias", planilhas: "Planilhas de Macro e Juros", eventos: "Eventos (CVM)",
   ficha: "Ficha da empresa (FRE/FCA)", fre_textos: "Trechos do Formulário de Referência", resumos: "Resumos aprofundados",
   cvm_base: "Base de demonstrações (CVM)", empresas: "Empresas (JSON e Excel)", indice: "Índice de empresas",

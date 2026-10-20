@@ -124,6 +124,67 @@ window.EXPLICATIVOS = {
       <b>análise vertical</b> em % do ativo total.</p>
       <p class="sub">Fonte: CVM — demonstrações financeiras padronizadas (DFP e ITR), consolidado.</p>`,
   },
+  credito_saldo: {
+    titulo: "Saldo da carteira de crédito",
+    html: `<p>Estoque de todos os empréstimos e financiamentos do sistema financeiro no fim de cada mês, separado em
+      <b>recursos livres</b> (taxas negociadas livremente: capital de giro, cartão, consignado, veículos) e <b>direcionados</b>
+      (regras do governo sobre taxa ou destino: imobiliário com poupança/FGTS, rural, BNDES, microcrédito).
+      A linha mostra o crescimento nominal em 12 meses.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Estatísticas monetárias e de crédito (Nota de Crédito), via SGS. Desde 2011.</p>`,
+  },
+  credito_pib: {
+    titulo: "Crédito em % do PIB",
+    html: `<p>Saldo da carteira dividido pelo PIB acumulado em 12 meses, a valores correntes: mede o tamanho do crédito
+      na economia (aprofundamento financeiro).</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Nota de Crédito, via SGS.</p>`,
+  },
+  credito_concessoes: {
+    titulo: "Concessões de crédito",
+    html: `<p>Valor dos empréstimos e financiamentos <b>novos</b> contratados no mês (fluxo, não estoque), com ajuste sazonal
+      do Banco Central — mostra o ritmo da oferta e da demanda por crédito antes de aparecer no saldo.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Nota de Crédito, concessões dessazonalizadas, via SGS.</p>`,
+  },
+  credito_juros: {
+    titulo: "Juros, spread e custo do crédito",
+    html: `<p><b>Taxa média:</b> juro médio das operações <b>contratadas no mês</b> (% a.a.). <b>Spread:</b> diferença entre essa taxa e
+      o custo de captação do banco (pontos percentuais) — inclui inadimplência esperada, impostos, despesas e lucro.
+      <b>ICC (Indicador de Custo do Crédito):</b> juro médio de <b>toda a carteira</b> em aberto, inclusive contratos antigos — reage mais
+      devagar à Selic. A Selic meta aparece tracejada como referência.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Nota de Crédito, via SGS.</p>`,
+  },
+  credito_inadimplencia: {
+    titulo: "Inadimplência e atrasos",
+    html: `<p><b>Inadimplência:</b> % da carteira com parcelas atrasadas há <b>mais de 90 dias</b>. <b>Atraso de 15 a 90 dias:</b> % da carteira
+      com atraso curto — costuma antecipar a inadimplência dos meses seguintes.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Nota de Crédito, via SGS.</p>`,
+  },
+  credito_prazo: {
+    titulo: "Prazo médio da carteira",
+    html: `<p>Prazo médio, em meses, das operações em aberto (do início ao vencimento), ponderado pelo saldo. Os direcionados
+      (imobiliário, BNDES) têm prazos bem maiores que os livres.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Nota de Crédito, via SGS.</p>`,
+  },
+  credito_familias: {
+    titulo: "Endividamento e comprometimento de renda das famílias",
+    html: `<p><b>Endividamento:</b> dívida das famílias com o sistema financeiro dividida pela renda disponível acumulada em 12 meses
+      (com e sem o crédito habitacional, que é de prazo longo). <b>Comprometimento de renda:</b> quanto da renda mensal vai para
+      pagar as dívidas (juros + amortização), com ajuste sazonal.</p>
+      <p>Saem com cerca de 2 meses de atraso, porque dependem da estimativa da renda das famílias.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Indicadores de endividamento e comprometimento de renda (RNDBF), via SGS.</p>`,
+  },
+  credito_modalidades: {
+    titulo: "Modalidades de crédito",
+    html: `<p>Saldo, taxa média de juros (crédito novo) e inadimplência (> 90 dias) das principais linhas. Use os botões para trocar
+      o indicador e clique na legenda para esconder ou mostrar uma modalidade (o cartão rotativo e o cheque especial têm juros muito
+      acima das demais e achatam o gráfico).</p>
+      <p>Algumas modalidades tiveram mudanças de regra no período (ex.: consignado, cartão de crédito), que podem gerar degraus nas séries.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Nota de Crédito, via SGS.</p>`,
+  },
+  credito_pfpj: {
+    titulo: "Pessoa física × pessoa jurídica",
+    html: `<p>Saldo da carteira de crédito das famílias e das empresas. Detalhes de cada um nas abas Pessoa física e Pessoa jurídica.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Nota de Crédito, via SGS.</p>`,
+  },
   fiscal_divida: {
     titulo: "Dívida pública: bruta (DBGG) e líquida (DLSP)",
     html: `<p><b>Dívida bruta do governo geral (DBGG):</b> tudo o que governo federal, INSS, estados e municípios devem

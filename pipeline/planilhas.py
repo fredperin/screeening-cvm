@@ -64,6 +64,7 @@ def gerar_macro():
                      "Média dos núcleos: média simples mensal de EX0, EX3, MS, DP e P55, calculada pelo site.",
                      "Política fiscal: NFSP (necessidade de financiamento do setor público) em 12 meses, % do PIB — positivo = déficit, negativo = superávit (no site o sinal aparece invertido, como resultado).",
                      "Dívida mobiliária federal: participação por indexador (posição em carteira); a do IPCA é calculada por diferença (100% − demais).",
+                     "Crédito: estatísticas de crédito do Banco Central (Nota de Crédito), desde 2011; saldos e concessões em R$ milhões, inadimplência = atraso acima de 90 dias.",
                      "Cada aba corresponde a um grupo de gráficos da seção Macro."])
         for aba, chaves in ABAS_MACRO.items():
             _tabela(S, chaves).to_excel(w, sheet_name=aba)
@@ -71,6 +72,18 @@ def gerar_macro():
                   for k, anos in macro["focus"].items() for ano, serie in anos.items()
                   for d, v in zip(serie["datas"], serie["valores"])]
         pd.DataFrame(linhas).to_excel(w, sheet_name="Focus", index=False)
+        # Crédito (pipeline.credito): uma aba por grupo, como na seção Macro → Crédito
+        arq_cred = DIR_DADOS_SITE / "credito.json"
+        if arq_cred.exists():
+            C = json.loads(arq_cred.read_text(encoding="utf-8"))["series"]
+            grupos = {"Crédito total": lambda k: not (k.startswith("mod_") or "_pj" in k or "_pf" in k or k.startswith(("endiv", "compr"))),
+                      "Crédito PJ": lambda k: "_pj" in k and not k.startswith("mod_"),
+                      "Crédito PF": lambda k: ("_pf" in k and not k.startswith("mod_")) or k.startswith(("endiv", "compr")),
+                      "Crédito modalidades": lambda k: k.startswith("mod_")}
+            for aba, filtro in grupos.items():
+                chaves = [k for k in C if filtro(k)]
+                if chaves:
+                    _tabela(C, chaves).to_excel(w, sheet_name=aba)
         _ajustar_colunas(w)
     return destino
 

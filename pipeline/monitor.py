@@ -268,6 +268,22 @@ def checar_offshore():
     return f"{len(limites)} séries em dia (Tesouro dos EUA, Fed, BLS, BCE, Eurostat)"
 
 
+def checar_credito():
+    """Estatísticas de crédito do BC (pipeline.credito): sem falhas e com o último mês dentro da defasagem normal (~30 dias)."""
+    arq = DIR_DADOS_SITE / "credito.json"
+    assert arq.exists(), "credito.json não foi gerado"
+    c = json.loads(arq.read_text(encoding="utf-8"))
+    problemas = [f"séries mantidas na versão anterior — {'; '.join(c['falhas'][:5])}"] if c.get("falhas") else []
+    for k in ("saldo_total", "conc_total", "taxa_total", "inad_total", "endiv"):
+        s = c["series"].get(k)
+        if not s or not s["datas"]:
+            problemas.append(f"{k}: série ausente")
+        elif _dias(s["datas"][-1]) > (130 if k == "endiv" else 100):
+            problemas.append(f"{k}: último dado em {s['datas'][-1]}")
+    assert not problemas, " | ".join(problemas)
+    return f"{len(c['series'])} séries; último mês {c['series']['saldo_total']['datas'][-1][:7]}"
+
+
 def checar_atualizacao():
     """Resultado da própria atualização (status.json gerado por pipeline.rodar)."""
     arq = DIR_DADOS_SITE / "status.json"
@@ -290,6 +306,7 @@ CHECAGENS = {
     "Banco Central — SGS": checar_bcb,
     "Banco Central — Focus": checar_focus,
     "Macro — séries completas e em dia": checar_macro,
+    "Banco Central — estatísticas de crédito": checar_credito,
     "Offshore — Tesouro dos EUA, Fed, BLS, BCE, Eurostat": checar_offshore,
     "Tesouro Direto (oficial)": checar_tesouro,
     "Tesouro Direto — tempo real (não oficial)": checar_tesouro_tempo_real,
