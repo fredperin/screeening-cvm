@@ -139,6 +139,21 @@ function decorarPaineis(raiz = app) {
   });
 }
 
+// Painel que fica sozinho na sua linha (numa grade de 2 colunas) ocupa a largura toda
+function ajustarGrades(raiz = app) {
+  raiz.querySelectorAll(".grade").forEach((g) => {
+    if (g.matches(".grade-3, .grade-empilhada, .grade-noticias")) return;
+    const itens = [...g.children].filter((el) => el.classList.contains("painel") && getComputedStyle(el).display !== "none");
+    let aberto = null;  // painel na 1ª coluna esperando par
+    itens.forEach((el) => {
+      el.classList.remove("sozinho");
+      if (el.classList.contains("largo")) { if (aberto) aberto.classList.add("sozinho"); aberto = null; return; }
+      aberto = aberto ? null : el;
+    });
+    if (aberto) aberto.classList.add("sozinho");
+  });
+}
+
 function redimensionar(painel) {
   requestAnimationFrame(() => painel.querySelectorAll(".grafico").forEach((el) => { const g = echarts.getInstanceByDom(el); if (g) g.resize(); }));
 }
@@ -295,7 +310,7 @@ async function executar(pagina, parametro) {
 }
 window.addEventListener("hashchange", rotear);
 // Painéis redesenhados depois (troca de aba, de visão etc.) também ganham os botões
-new MutationObserver(() => decorarPaineis()).observe(app, { childList: true, subtree: true });
+new MutationObserver(() => { decorarPaineis(); ajustarGrades(); }).observe(app, { childList: true, subtree: true });
 
 /* ============ Início ============ */
 function ultimo(serie) {
@@ -1080,7 +1095,9 @@ async function paginaNoticias(lado = "on") {
   const fontes = (tipo) => [...new Set(itens.filter((n) => n.tipo === tipo).map((n) => n.fonte))].sort();
   const filtros = [["todas", "Todas"], ...(lado === "cons" ? [["origem:Brasil", "Brasil"], ["origem:Exterior", "Exterior"]] : []),
     ["tipo:mercado", "Mercado"], ["tipo:oficial", "Oficiais"]];
-  let filtro = "tipo:mercado", janela = 30, categoria = "todos";
+  let filtro = "tipo:mercado", janela = 30, categoria = "todos", editoria = "todas";
+  const EDITORIAS = [["todas", "Todas"], ["politica", "Política"], ["economia", "Economia e finanças"], ["empresas", "Empresas"]];
+  const comEditoria = lado !== "off";
   const titulo = { on: "Notícias e agenda", off: "Offshore · Notícias e agenda", cons: "Consolidado · Notícias e agenda" }[lado];
   const jornais = { on: "Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney", off: "WSJ, Financial Times, CNBC, MarketWatch, The Guardian e BBC",
     cons: "jornais do Brasil e do exterior" }[lado];
@@ -1088,11 +1105,13 @@ async function paginaNoticias(lado = "on") {
   // Onshore: agenda em cima e notícias embaixo, cada uma na largura toda e mais alta; Offshore e Consolidado: lado a lado
   const painelNoticias = `
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Notícias</h2>
-        <div class="seletor" id="filtro-fonte">${filtros.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}
-          ${[...fontes("mercado"), ...fontes("oficial")].map((f) => `<button data-k="fonte:${esc(f)}">${esc(f)}</button>`).join("")}</div></div>
+        ${comEditoria ? `<div class="seletor seletor-editoria" id="filtro-editoria">${EDITORIAS.map(([k, r]) => `<button data-k="${k}" class="${k === editoria ? "ativo" : ""}">${r}</button>`).join("")}</div>` : ""}</div>
+        <div class="seletor" id="filtro-fonte" style="margin-bottom:8px">${filtros.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}
+          ${[...fontes("mercado"), ...fontes("oficial")].map((f) => `<button data-k="fonte:${esc(f)}">${esc(f)}</button>`).join("")}</div>
         <div id="lista-noticias"></div>
-        <div class="nota">Mercado: últimos 7 dias. Oficiais: últimas semanas. O texto completo fica no site de cada fonte (alguns jornais exigem assinatura).
-          Etiquetas: empresas da lista citadas na manchete.</div></div>`;
+        <div class="nota">Mercado: últimos 7 dias. Oficiais: últimas semanas. Sempre da mais recente para a mais antiga. O texto completo fica no site de cada
+          fonte (alguns jornais exigem assinatura). Editoria: a seção do jornal de onde veio a manchete; manchete de economia que cita uma empresa
+          da lista vai para Empresas. Etiquetas: empresas da lista citadas na manchete.</div></div>`;
   const painelAgenda = `
       <div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Agenda</h2>
         <div class="seletor" id="janela-ag">${[[14, "2 sem."], [30, "1 mês"], [90, "3 meses"], [400, "Tudo"]].map(([d, r]) => `<button data-d="${d}" class="${d === janela ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
@@ -1107,6 +1126,7 @@ async function paginaNoticias(lado = "on") {
     ${lado === "on" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
     ${lado === "on" ? `<div class="grade grade-empilhada">${painelAgenda}${painelNoticias}</div>` : `<div class="grade grade-noticias">${painelNoticias}${painelAgenda}</div>`}`;
   const passa = (n) => {
+    if (comEditoria && editoria !== "todas" && (n.categoria || "economia") !== editoria) return false;
     if (filtro === "todas") return true;
     const [campo, valor] = filtro.split(":");
     return n[campo] === valor;
@@ -1119,6 +1139,7 @@ async function paginaNoticias(lado = "on") {
     aoEscolher(b);
   });
   seletor("filtro-fonte", (b) => { filtro = b.dataset.k; desenharNoticias(); });
+  if (comEditoria) seletor("filtro-editoria", (b) => { editoria = b.dataset.k; desenharNoticias(); });
   seletor("filtro-ag", (b) => { categoria = b.dataset.k; desenharAgenda(); });
   seletor("janela-ag", (b) => { janela = Number(b.dataset.d); desenharAgenda(); });
   desenharNoticias();

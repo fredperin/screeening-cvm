@@ -3,11 +3,13 @@ Manchetes de fontes oficiais e públicas (só título, data e link para a matér
 
 Onshore, dois tipos:
 - oficiais: Banco Central (notícias e comunicados do Copom), IBGE (Agência de Notícias),
-  CVM e Agência Brasil (editoria de economia);
-- mercado: RSS públicos de Valor Econômico, Folha (Mercado), Estadão (Economia), Brazil Journal
-  e InfoMoney — só a manchete com link para o jornal (o texto continua no site de cada um).
-As manchetes que citam uma empresa do universo (pelo ticker ou pelo nome de pregão da B3)
-ficam ligadas a ela.
+  CVM e Agência Brasil (economia e política);
+- mercado: RSS públicos de jornais e sites de economia e política — só a manchete com link
+  para o jornal (o texto continua no site de cada um).
+Cada manchete recebe uma categoria — política, economia e finanças ou empresas — pela editoria
+de origem (o feed da seção ou a seção no endereço da matéria); manchete de economia que cita uma
+empresa da lista vai para empresas. As que citam uma empresa do universo (pelo ticker ou pelo nome
+de pregão da B3) ficam ligadas a ela.
 
 Saída: site/dados/noticias.json. Uso: py -m pipeline.noticias
 """
@@ -25,22 +27,50 @@ from pipeline import DIR_DADOS_SITE
 CABECALHO = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128 Safari/537.36"}
 DIAS = 45          # oficiais
 DIAS_MERCADO = 7   # jornais: volume alto, só a última semana
-MAXIMO = 700
+MAXIMO = 1500
 FUSO_BR = timezone(timedelta(hours=-3))
 
-FEEDS = {
-    "Banco Central": "https://www.bcb.gov.br/api/feed/sitebcb/sitefeeds/noticias",
-    "Banco Central — Copom": "https://www.bcb.gov.br/api/feed/sitebcb/sitefeeds/comunicadoscopom",
-    "CVM": "https://www.gov.br/cvm/pt-br/assuntos/noticias/{ano}/RSS",
-    "Agência Brasil": "https://agenciabrasil.ebc.com.br/rss/economia/feed.xml",
-}
-FEEDS_MERCADO = {
-    "Valor Econômico": "https://pox.globo.com/rss/valor/",
-    "Folha": "https://feeds.folha.uol.com.br/mercado/rss091.xml",
-    "Estadão": "https://www.estadao.com.br/arc/outboundfeeds/feeds/rss/sections/economia/",
-    "Brazil Journal": "https://braziljournal.com/feed/",
-    "InfoMoney": "https://www.infomoney.com.br/feed/",
-}
+# (fonte, endereço, categoria): "url" = categoria pela seção no endereço de cada matéria
+FEEDS = [
+    ("Banco Central", "https://www.bcb.gov.br/api/feed/sitebcb/sitefeeds/noticias", "economia"),
+    ("Banco Central — Copom", "https://www.bcb.gov.br/api/feed/sitebcb/sitefeeds/comunicadoscopom", "economia"),
+    ("CVM", "https://www.gov.br/cvm/pt-br/assuntos/noticias/{ano}/RSS", "economia"),
+    ("Agência Brasil", "https://agenciabrasil.ebc.com.br/rss/economia/feed.xml", "economia"),
+    ("Agência Brasil", "https://agenciabrasil.ebc.com.br/rss/politica/feed.xml", "politica"),
+]
+FEEDS_MERCADO = [
+    ("Valor Econômico", "https://pox.globo.com/rss/valor/", "url"),
+    ("Folha", "https://feeds.folha.uol.com.br/mercado/rss091.xml", "economia"),
+    ("Folha", "https://feeds.folha.uol.com.br/poder/rss091.xml", "politica"),
+    ("Estadão", "https://www.estadao.com.br/arc/outboundfeeds/feeds/rss/sections/economia/", "economia"),
+    ("Estadão", "https://www.estadao.com.br/arc/outboundfeeds/feeds/rss/sections/politica/", "politica"),
+    ("g1", "https://g1.globo.com/rss/g1/economia/", "economia"),
+    ("g1", "https://g1.globo.com/rss/g1/politica/", "politica"),
+    ("Poder360", "https://www.poder360.com.br/feed/", "url"),
+    ("InfoMoney", "https://www.infomoney.com.br/feed/", "url"),
+    ("Brazil Journal", "https://braziljournal.com/feed/", "empresas"),
+    ("NeoFeed", "https://neofeed.com.br/feed/", "url"),
+    ("Pipeline (Valor)", "https://pipelinevalor.globo.com/rss/pipelinevalor/", "url"),
+    ("Bloomberg Línea", "https://www.bloomberglinea.com.br/arc/outboundfeeds/rss/?outputType=xml", "url"),
+    ("Money Times", "https://www.moneytimes.com.br/feed/", "economia"),
+]
+DESCARTAR = ("patrocinado", "estilo-de-vida", "esport", "day-off", "video", "podcast", "carros", "horoscopo", "cultura", "viagem")
+
+
+def categoria_pela_url(link, padrao):
+    """Seção do endereço da matéria -> categoria (None = fora do escopo, ex.: conteúdo patrocinado, esportes)."""
+    secao = re.sub(r"^https?://[^/]+/", "", link).split("/")[0].lower()
+    if any(k in secao for k in DESCARTAR):
+        return None
+    if "economia" in secao or "financas" in secao or "mercado" in secao or "investir" in secao:
+        return "economia"
+    if "politica" in secao or "eleic" in secao or secao == "poder":
+        return "politica"
+    if any(k in secao for k in ("empresas", "negocios", "startups", "tech")):
+        return "empresas"
+    if secao in ("brasil", "mundo", "agronegocios", "legislacao", "internacional"):
+        return "economia"
+    return "politica" if padrao == "url" and "poder" in secao else (padrao if padrao != "url" else "economia")
 URL_IBGE = "https://servicodados.ibge.gov.br/api/v3/noticias/?qtd=60&tipo=noticia,release"
 
 # Ligação manchete -> empresa: ticker, nome de pregão da B3 sem sufixos e nomes pelos quais a imprensa chama a empresa
@@ -87,7 +117,7 @@ def _quando(s):
     return d.astimezone(FUSO_BR).isoformat(timespec="minutes")
 
 
-def ler_feed(fonte, url, tipo="oficial"):
+def ler_feed(fonte, url, tipo="oficial", categoria="economia"):
     """RSS 2.0, RSS 1.0 (RDF) ou Atom, lidos com expressões regulares (os formatos variam entre os sites)."""
     xml = requests.get(url, headers=CABECALHO, timeout=60).text
     itens = []
@@ -104,13 +134,17 @@ def ler_feed(fonte, url, tipo="oficial"):
         # o feed da CVM mistura pastas de anos antigos com as notícias
         if re.search(r"/noticias/(\d{4}(-\d)?|anexos)$", endereco) or len(titulo) < 12:
             continue
-        itens.append({"data": _quando(data.group(2)), "titulo": titulo, "link": endereco, "fonte": fonte, "tipo": tipo})
+        cat = categoria_pela_url(endereco, categoria) if categoria == "url" else categoria
+        if cat is None:
+            continue
+        itens.append({"data": _quando(data.group(2)), "titulo": titulo, "link": endereco, "fonte": fonte, "tipo": tipo, "categoria": cat})
     return itens
 
 
 def ler_ibge():
     dados = requests.get(URL_IBGE, headers=CABECALHO, timeout=60).json()
-    return [{"data": _quando(i["data_publicacao"]), "titulo": _texto(i["titulo"]), "link": i["link"], "fonte": "IBGE", "tipo": "oficial"}
+    return [{"data": _quando(i["data_publicacao"]), "titulo": _texto(i["titulo"]), "link": i["link"], "fonte": "IBGE", "tipo": "oficial",
+             "categoria": "economia"}
             for i in dados.get("items", [])]
 
 
@@ -150,20 +184,16 @@ def _cita(titulo, regras):
 def gerar():
     hoje = date.today()
     itens, falhas = [], []
-    for fonte, url in FEEDS.items():
-        try:
-            itens += ler_feed(fonte, url.format(ano=hoje.year))
-        except Exception as e:
-            falhas.append(f"{fonte}: {e!r}"[:200])
+    for tipo, feeds in (("oficial", FEEDS), ("mercado", FEEDS_MERCADO)):
+        for fonte, url, categoria in feeds:
+            try:
+                itens += ler_feed(fonte, url.format(ano=hoje.year), tipo, categoria)
+            except Exception as e:
+                falhas.append(f"{fonte} ({categoria}): {e!r}"[:200])
     try:
         itens += ler_ibge()
     except Exception as e:
         falhas.append(f"IBGE: {e!r}"[:200])
-    for fonte, url in FEEDS_MERCADO.items():
-        try:
-            itens += ler_feed(fonte, url, "mercado")
-        except Exception as e:
-            falhas.append(f"{fonte}: {e!r}"[:200])
 
     limites = {"oficial": (hoje - timedelta(days=DIAS)).isoformat(), "mercado": (hoje - timedelta(days=DIAS_MERCADO)).isoformat()}
     unicos = {i["link"]: i for i in itens if i["data"][:10] >= limites[i["tipo"]]}
@@ -172,13 +202,16 @@ def gerar():
     for i in itens:
         # nomes só valem com inicial maiúscula (evita "vale a pena"); os ambíguos, também não no começo da manchete
         i["empresas"] = [id_ for id_, regras in apelidos if _cita(i["titulo"], regras)]
+        if i["empresas"] and i["categoria"] == "economia":  # manchete de economia sobre uma empresa da lista
+            i["categoria"] = "empresas"
     (DIR_DADOS_SITE / "noticias.json").write_text(json.dumps(
         {"gerado_em": datetime.now(FUSO_BR).isoformat(timespec="minutes"), "itens": itens, "falhas": falhas},
         ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    por_fonte = {}
+    por_fonte, por_cat = {}, {}
     for i in itens:
         por_fonte[i["fonte"]] = por_fonte.get(i["fonte"], 0) + 1
-    print(f"✅ notícias: {len(itens)} manchetes {por_fonte}; falhas: {falhas or 'nenhuma'}")
+        por_cat[i["categoria"]] = por_cat.get(i["categoria"], 0) + 1
+    print(f"✅ notícias: {len(itens)} manchetes {por_cat} {por_fonte}; falhas: {falhas or 'nenhuma'}")
     if len(falhas) == len(FEEDS) + len(FEEDS_MERCADO) + 1:
         raise RuntimeError("nenhuma fonte de notícias respondeu")
     return len(itens)
