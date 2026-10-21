@@ -1,0 +1,2 @@
+# Agentes e skills do Claude Code: o cabeçalho (frontmatter) só é lido com quebra de linha LF
+.claude/** text eol=lf
