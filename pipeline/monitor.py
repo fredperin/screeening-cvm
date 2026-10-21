@@ -320,6 +320,13 @@ def checar_setor_externo():
             problemas.append(f"{nome}: série ausente")
         elif _dias(s["datas"][-1]) > max_dias:
             problemas.append(f"{nome}: último dado em {s['datas'][-1]}")
+    # meses faltando no meio da série (ex.: a API do Comex Stat deixou de devolver novembro e dezembro)
+    for nome, s in (("exportações (Comex Stat)", (d.get("comex") or {}).get("exportacoes")), ("transações correntes (BC)", d["bc"].get("tc_mensal"))):
+        if s and s.get("datas"):
+            meses = [int(x[:4]) * 12 + int(x[5:7]) for x in s["datas"]]
+            buracos = [s["datas"][i] for i in range(1, len(meses)) if meses[i] - meses[i - 1] != 1]
+            if buracos:
+                problemas.append(f"{nome}: {len(buracos)} buraco(s) na série, o primeiro antes de {buracos[0]}")
     assert not problemas, " | ".join(problemas)
     return "balanço de pagamentos e comércio exterior em dia"
 
