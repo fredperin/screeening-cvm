@@ -392,9 +392,10 @@ async function iniciarBusca() {
 
 /* ============ roteamento ============ */
 // Mesmas seções, na mesma ordem, nos dois lados: #/on/<seção>/<detalhe> e #/off/<seção>/<detalhe>
-const SECOES = [["", "Início"], ["noticias", "Notícias e agenda"], ["macro", "Macro"], ["juros", "Juros"], ["empresas", "Empresas"], ["downloads", "Downloads"]];
+// Brasil e Mundo abrem em Notícias e agenda (a antiga página Início repetia o que vem nas seções); "noticias" fica como endereço
+const SECOES = [["", "Notícias e agenda"], ["macro", "Macro"], ["juros", "Juros"], ["empresas", "Empresas"], ["downloads", "Downloads"]];
 const ROTAS = {
-  on: { banco: (p) => paginaBanco(p), "": paginaInicio, noticias: (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("on")), macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
+  on: { banco: (p) => paginaBanco(p), "": () => paginaNoticias("on"), noticias: (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("on")), macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
   off: Object.fromEntries(SECOES.map(([k]) => [k, (p) => paginaOffshore(k, p)])),
 };
 // Consolidado abre em Notícias e agenda; "noticias" fica como endereço antigo
@@ -402,6 +403,7 @@ const SECOES_CONS = [["", "Notícias e agenda"], ["atividade", "Atividade e empr
 ROTAS.cons = { "": () => paginaNoticias("cons"), noticias: () => paginaNoticias("cons"), atividade: () => paginaConsolidado("atividade"),
   inflacao: () => paginaConsolidado("inflacao"), juros: () => paginaConsolidado("") };
 ROTAS.off.noticias = () => paginaNoticias("off");
+ROTAS.off[""] = () => paginaNoticias("off");
 ROTAS.off.empresas = () => paginaEmpresasMundo();
 ROTAS.off.empresa = (p) => paginaEmpresaMundo(p);
 const ROTAS_ANTIGAS = { agenda: "noticias" };  // endereços de antes da divisão Onshore/Offshore
@@ -409,7 +411,7 @@ const ROTAS_ANTIGAS = { agenda: "noticias" };  // endereços de antes da divisã
 function desenharNav(lado, secao) {
   document.querySelectorAll("#lados a").forEach((a) => a.classList.toggle("ativo", a.dataset.lado === lado));
   document.getElementById("nav").innerHTML = (lado === "cons" ? SECOES_CONS : SECOES).map(([k, nome]) =>
-    `<a href="#/${lado || "on"}${k ? `/${k}` : ""}" class="${lado && k === secao ? "ativo" : ""}">${nome}</a>`).join("");
+    `<a href="#/${lado || "on"}${k ? `/${k}` : ""}" class="${lado && k === (secao === "noticias" ? "" : secao) ? "ativo" : ""}">${nome}</a>`).join("");
   document.body.dataset.lado = lado || "";
 }
 
