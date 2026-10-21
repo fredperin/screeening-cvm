@@ -15,15 +15,18 @@ Uso: py -m pipeline.comparar PASTA_DOS_DADOS_ANTERIORES
 
 import json
 import sys
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO
 
 ARQ = DIR_INTERMEDIARIO / "comparacao.json"
 DIAS_ALERTA = 3
+FUSO_BR = timezone(timedelta(hours=-3))  # o GitHub Actions roda em UTC: horários sempre em Brasília
 # arquivos de controle, que mudam por natureza a cada execução
-NAO_COMPARAR = {"observacoes.json", "saude.json", "status.json", "validacao.json", "comparacao.json"}
+NAO_COMPARAR = {"observacoes.json", "saude.json", "status.json", "validacao.json", "comparacao.json", "atualizacoes.json"}
+# listas que andam com o tempo (agenda: eventos passados saem; notícias e eventos: janela dos últimos dias)
+ROLANTES = ("agenda", "noticias", "eventos_recentes")
 IGNORAR_CHAVES = {"falhas", "avisos", "abertas", "resolvidas_agora", "descartados"}
 EIXOS = ("datas", "periodos", "anos", "trimestres")
 MAX_ADIANTO_INICIO = 60    # dias que o início de uma série pode andar (janelas móveis: últimos 12 meses, 1 ano etc.)
@@ -108,7 +111,8 @@ class Comparacao:
                 if any(_numero(v) for v in va):
                     self.problema(arq, f"{cam}.{k}", "valores da série sumiram")
                 continue
-            mudou = [(x, a, vd[pos[x]]) for x, a in zip(da, va) if x in pos and _numero(a)
+            # o último ponto antigo pode ainda estar em formação (semana ou mês corrente): mudança nele não é revisão
+            mudou = [(x, a, vd[pos[x]]) for x, a in zip(da[:-1], va[:-1]) if x in pos and _numero(a)
                      and (not _numero(vd[pos[x]]) or abs(vd[pos[x]] - a) > TOLERANCIA * max(1.0, abs(a)))]
             if mudou:
                 x, a, b = mudou[-1]
@@ -148,7 +152,7 @@ class Comparacao:
                 for x in antes:
                     if x[chave] in novos:
                         self.comparar(arq, f"{cam}[{x[chave]}]", x, novos[x[chave]])
-            elif len(depois) < len(antes) * 0.8:
+            elif len(depois) < len(antes) * 0.8 and not arq.startswith(ROLANTES):
                 self.problema(arq, cam, f"lista encolheu de {len(antes)} para {len(depois)} itens")
 
 
@@ -173,8 +177,65 @@ def comparar_pastas(anterior, atual=DIR_DADOS_SITE):
     return c
 
 
+# ---------- quando cada dado chegou ao site (para o ⓘ dos gráficos) ----------
+ARQ_CHEGADAS = DIR_INTERMEDIARIO / "chegadas.json"
+# demonstrativos e formulários (empresas e bancos) mudam poucas vezes por ano: ficam de fora
+SEM_CHEGADAS = ("empresas/", "fichas/", "negocio/", "eventos/", "resumos/", "bancos/")
+
+
+def _ultimas_datas(obj, saida, nivel=0):
+    """Última data de cada série do arquivo."""
+    if isinstance(obj, dict):
+        eixo = next((e for e in EIXOS if isinstance(obj.get(e), list) and obj[e]), None)
+        if eixo and Comparacao.colunas(obj, eixo):
+            saida.add(str(obj[eixo][-1]))
+        if nivel < 6:
+            for v in obj.values():
+                _ultimas_datas(v, saida, nivel + 1)
+    elif isinstance(obj, list) and nivel < 6:
+        for v in obj[:600]:
+            if isinstance(v, (dict, list)):
+                _ultimas_datas(v, saida, nivel + 1)
+    return saida
+
+
+def registrar_chegadas(atual=DIR_DADOS_SITE):
+    """Para cada arquivo e cada 'última data' de série, o momento em que ela apareceu pela primeira vez.
+    No primeiro registro não se sabe quando os dados já existentes chegaram: ficam sem horário (null)."""
+    agora = datetime.now(FUSO_BR).isoformat(timespec="minutes")
+    try:
+        reg = json.loads(ARQ_CHEGADAS.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        reg = {"desde": agora, "chegadas": {}}
+    inicial = not reg["chegadas"]
+    novas = {}
+    atual = Path(atual)
+    for p in sorted(atual.rglob("*.json")):
+        rel = p.relative_to(atual).as_posix()
+        if p.name in NAO_COMPARAR or rel.startswith(SEM_CHEGADAS):
+            continue
+        try:
+            datas = _ultimas_datas(json.loads(p.read_text(encoding="utf-8")), set())
+        except (OSError, ValueError):
+            continue
+        if not datas:
+            continue
+        antes = reg["chegadas"].get(rel)
+        novas[rel] = {d: (antes[d] if antes and d in antes else (None if inicial else agora))
+                      for d in sorted(datas)}
+    reg["chegadas"] = novas
+    texto = json.dumps(reg, ensure_ascii=False, separators=(",", ":"))
+    ARQ_CHEGADAS.write_text(texto, encoding="utf-8")
+    (DIR_DADOS_SITE / "atualizacoes.json").write_text(texto, encoding="utf-8")
+    return reg
+
+
 def gerar(anterior):
-    agora = datetime.now().isoformat(timespec="minutes")
+    agora = datetime.now(FUSO_BR).isoformat(timespec="minutes")
+    try:
+        registrar_chegadas()
+    except Exception as e:  # noqa: BLE001  (o registro do ⓘ não pode derrubar a comparação)
+        print("⚠️ registro de chegadas:", repr(e)[:200])
     try:
         historico = json.loads(ARQ.read_text(encoding="utf-8")).get("historico", [])
     except (OSError, ValueError):
@@ -183,8 +244,12 @@ def gerar(anterior):
         saida = {"verificado_em": agora, "sem_anterior": True, "problemas": [], "recentes": [], "revisoes": {}, "historico": historico}
     else:
         c = comparar_pastas(anterior)
-        limite = (datetime.now() - timedelta(days=DIAS_ALERTA)).isoformat(timespec="minutes")
+        limite = (datetime.now(FUSO_BR) - timedelta(days=DIAS_ALERTA)).isoformat(timespec="minutes")
         historico = [h for h in historico if h["em"] >= limite]
+        # alarmes antigos de listas que andam com o tempo (regra posterior a eles) não ficam abertos
+        for h in historico:
+            h["problemas"] = [p for p in h["problemas"] if not (p["arquivo"].startswith(ROLANTES) and "encolheu" in p["detalhe"])]
+        historico = [h for h in historico if h["problemas"]]
         if c.problemas:
             historico.append({"em": agora, "problemas": c.problemas[:50]})
         saida = {

@@ -384,8 +384,26 @@ def checar_comparacao():
         f"; revisões da fonte em {len(rev)} arquivo(s): " + ", ".join(list(rev)[:5]) if rev else "")
 
 
+RECUSAS_ALERTA = 3  # recusas não resolvidas no dia, por servidor, para virar alerta
+
+
+def checar_consultas():
+    """Fontes que nos barraram por excesso (contagem do cliente único, pipeline.rede). Uma recusa isolada é
+    absorvida (espera e nova tentativa; o site fica com o último dado bom); repetida no dia, vira alerta."""
+    arq = DIR_INTERMEDIARIO / "consultas.json"
+    if not arq.exists():
+        return "sem registro de consultas"
+    dia = json.loads(arq.read_text(encoding="utf-8")).get(date.today().isoformat(), {})
+    barrados = {s: c for s, c in dia.items() if c.get("recusas_finais", 0) >= RECUSAS_ALERTA}
+    assert not barrados, "fonte recusando consultas por excesso — " + "; ".join(
+        f"{s}: {c['recusas_finais']} recusas não resolvidas em {c['consultas']} consultas" for s, c in barrados.items())
+    total, recusas = sum(c["consultas"] for c in dia.values()), sum(c["recusas"] for c in dia.values())
+    return f"{total} consultas hoje em {len(dia)} servidores; {recusas} recusas absorvidas"
+
+
 CHECAGENS = {
     "Atualização (pipeline)": checar_atualizacao,
+    "Fontes — consultas recusadas por excesso": checar_consultas,
     "Dados — comparação com a versão anterior": checar_comparacao,
     "CVM — ITR/DFP": checar_cvm,
     "CVM — cadastro": checar_cvm_cadastro,

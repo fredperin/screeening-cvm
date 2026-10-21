@@ -10,7 +10,9 @@ const cache = {};
 const graficos = [];
 const app = document.getElementById("app");
 
+const ARQUIVOS_PAGINA = new Set();  // arquivos de dados usados pela tela aberta (para o ⓘ dizer de onde vem cada gráfico)
 async function dados(caminho) {
+  if (caminho !== "dados/atualizacoes.json") ARQUIVOS_PAGINA.add(caminho);
   if (!cache[caminho]) {
     cache[caminho] = fetch(caminho, { cache: "no-cache" }).then((r) => {
       if (!r.ok) throw new Error(`${caminho}: HTTP ${r.status}`);
@@ -206,14 +208,136 @@ function baixarCsv(painel) {
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 }
 
-function abrirExplicativo(chave) {
+// Data mais recente com valor nos gráficos do painel (eixo de tempo); `mensal`/`trimestral` pelo espaçamento das datas
+function dadoMaisRecente(painel) {
+  let max = null;
+  const datas = new Set(), pontos = [];
+  painel.querySelectorAll(".grafico").forEach((el) => {
+    const g = echarts.getInstanceByDom(el);
+    if (!g) return;
+    const op = g.getOption();
+    const eixo = op.xAxis && op.xAxis[0];
+    // eixo de tempo ([data, valor]) ou de categorias que são datas (rótulos AAAA-MM-DD)
+    const rotulosData = eixo && eixo.type === "category" && (eixo.data || []).length && /^\d{4}-\d{2}-\d{2}/.test(String(eixo.data[eixo.data.length - 1]));
+    if (!eixo || (eixo.type !== "time" && !rotulosData)) return;
+    op.series.forEach((s) => (s.data || []).forEach((p0, i) => {
+      const p = rotulosData ? [eixo.data[i], p0 && typeof p0 === "object" && !Array.isArray(p0) ? p0.value : p0] : p0;
+      if (!Array.isArray(p) || p[1] == null || p[0] == null) return;
+      const d = typeof p[0] === "number" ? new Date(p[0]).toISOString().slice(0, 10) : String(p[0]).slice(0, 10);
+      datas.add(d);
+      pontos.push([d, p[1]]);
+      if (!max || d > max) max = d;
+    }));
+  });
+  if (!max) return null;
+  const valores = pontos.filter((p) => p[0] === max).map((p) => p[1]);
+  const todas = [...datas];
+  const dia1 = todas.length > 2 && todas.every((d) => d.slice(8, 10) === "01");
+  const tri = dia1 && todas.every((d) => ["01", "04", "07", "10"].includes(d.slice(5, 7)));
+  const mes = Number(max.slice(5, 7));
+  const rotulo = tri ? `${Math.floor((mes - 1) / 3) + 1}º tri/${max.slice(0, 4)}` : dia1 ? `${MESES[mes - 1]}/${max.slice(0, 4)}` : dataBR(max);
+  return { data: max, rotulo, valores };
+}
+
+// Se o arquivo tem uma série que termina na data `d` com um dos `valores` do gráfico (para saber de qual arquivo
+// veio o gráfico quando dois arquivos da tela terminam na mesma data)
+function contemSerie(obj, d, valores, nivel = 0) {
+  if (!obj || typeof obj !== "object" || nivel > 6) return false;
+  if (!Array.isArray(obj)) {
+    const eixo = ["datas", "periodos"].find((e) => Array.isArray(obj[e]) && obj[e].length);
+    if (eixo && String(obj[eixo][obj[eixo].length - 1]).slice(0, 10) === d) {
+      const n = obj[eixo].length;
+      const listas = Object.values(obj).flatMap((v) => (Array.isArray(v) ? [v] : v && typeof v === "object" ? Object.values(v).filter(Array.isArray) : []));
+      // o gráfico pode mostrar o valor em outra escala (ex.: US$ milhões do arquivo × 1 milhão no gráfico)
+      const igual = (a, x) => [1, 1e3, 1e6, 1e9, 100, 0.01].some((k) => Math.abs(a * k - x) <= 1e-6 * Math.max(1, Math.abs(x)));
+      if (listas.some((l) => l.length === n && typeof l[n - 1] === "number" && valores.some((x) => igual(l[n - 1], x)))) return true;
+    }
+  }
+  return Object.values(obj).some((v) => v && typeof v === "object" && contemSerie(v, d, valores, nivel + 1));
+}
+
+const ARQUIVO_POR_PREFIXO = [["externo_", "setor_externo.json"], ["credito_", "credito.json"], ["fiscal_", "macro.json"]];
+
+// Gráficos sem eixo de datas (curvas de juros por prazo): arquivo de origem e data de referência da curva
+const FONTE_CURVAS = { curva_di: "curva_di.json", di_ipca: "curva_di.json", tesouro_ipca: "tesouro.json", tesouro_pre: "tesouro.json",
+  inflacao_implicita: "tesouro.json", ust_curva: "offshore.json", ust_real: "offshore.json", curva_euro: "offshore.json" };
+function referenciaDaCurva(j, chave) {
+  if (!j) return null;
+  if (j.data_base) return j.data_base;
+  if (j.curvas && j.curvas.hoje) return j.curvas.hoje.data;
+  const T = j.treasuries || {}, C = (j.bce || {}).curva || {};
+  if (chave.startsWith("ust")) return ((T[chave === "ust_real" ? "real" : "nominal"] || {}).hoje || {}).data || null;
+  return (C.hoje || {}).data || C.data || null;
+}
+
+// Data e hora no horário de Brasília (o pipeline grava em UTC ou com fuso; só a data quando não há hora)
+function dataHoraCompleta(iso) {
+  if (!iso) return "—";
+  if (iso.length <= 10) return dataBR(iso);
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return new Intl.DateTimeFormat("pt-BR", { timeZone: "America/Sao_Paulo", day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit" }).format(d).replace(",", " às");
+}
+// Etapa da atualização que gera cada arquivo (status.json registra se ela consultou a fonte com sucesso)
+const etapaDoArquivo = (a) => (a.startsWith("tesouro") ? "tesouro" : a.startsWith("proventos/") ? "mercado"
+  : a.startsWith("mundo_empresas") ? "empresas_mundo" : a.replace(/\.json$/, ""));
+
+// Bloco "Atualização" do ⓘ: dado mais recente do gráfico, quando chegou ao site e quando a fonte foi verificada.
+// Fora: demonstrativos e formulários (empresas e bancos), que mudam poucas vezes por ano.
+async function blocoAtualizacao(painel) {
+  if (!painel) return "";
+  const naEmpresa = /^#\/(on|off)\/(empresa|banco)\//.test(location.hash);
+  if (naEmpresa && !/cotac|provento/.test(painel.dataset.info || "")) return "";
+  let ult = dadoMaisRecente(painel), arq = null, achado = null;
+  const reg = await dados("dados/atualizacoes.json").catch(() => null);
+  if (!ult) {
+    const fonte = FONTE_CURVAS[painel.dataset.info];
+    if (!fonte) return "";
+    const ref = referenciaDaCurva(await dados(`dados/${fonte}`).catch(() => null), painel.dataset.info);
+    ult = { data: ref, rotulo: ref ? dataBR(ref) : "—" };
+    arq = fonte;
+  } else {
+    const usados = [...ARQUIVOS_PAGINA].map((c) => c.replace(/^dados\//, "")).filter((c) => reg && reg.chegadas[c]);
+    const candidatos = usados.filter((a) => ult.data in reg.chegadas[a]);
+    for (const a of candidatos) {
+      if (candidatos.length === 1 || contemSerie(await dados(`dados/${a}`).catch(() => null), ult.data, ult.valores)) { achado = a; break; }
+    }
+    if (!achado && candidatos.length) {
+      // gráfico com valores calculados (somas, acumulados): o arquivo sai do nome do explicativo; na dúvida, sem "chegou"
+      const pref = (ARQUIVO_POR_PREFIXO.find(([p]) => (painel.dataset.info || "").startsWith(p)) || [])[1];
+      achado = candidatos.includes(pref) ? pref : null;
+    }
+    arq = achado || (usados.length === 1 ? usados[0] : null);
+  }
+  let verificacao = "";
+  if (arq) {
+    const st = await dados("dados/status.json").catch(() => null);
+    const etapa = etapaDoArquivo(arq);
+    const info = st && st.etapas ? st.etapas[etapa] : null;
+    const intradia = st && st.etapas ? st.etapas[`${etapa}_intradia`] : null;  // Tesouro e notícias: 3x por dia útil
+    let quando = info && info.ok ? st.atualizado_em : null;
+    if (intradia && intradia.ok && (!quando || new Date(intradia.em) > new Date(quando))) quando = intradia.em;
+    if (quando) verificacao = `<li>Última verificação na fonte: <b>${dataHoraCompleta(quando)}</b></li>`;
+    else if (info) verificacao = `<li>A fonte não respondeu na última atualização (${dataHoraCompleta(st.atualizado_em)}): o gráfico mostra o último dado recebido</li>`;
+  }
+  const chegou = achado && reg ? reg.chegadas[achado][ult.data] : undefined;
+  const linhas = [`<li>Dado mais recente: <b>${ult.rotulo}</b></li>`];
+  if (chegou !== undefined) linhas.push(`<li>Chegou ao site: <b>${chegou ? dataHoraCompleta(chegou) : `antes de ${dataBR(reg.desde.slice(0, 10))}`}</b></li>`);
+  if (verificacao) linhas.push(verificacao);
+  return `<h3>Atualização</h3><ul>${linhas.join("")}</ul>`;
+}
+
+async function abrirExplicativo(chave, painel = null) {
   const e = (window.EXPLICATIVOS || {})[chave];
   if (!e) return;
   const m = document.getElementById("modal");
   m.innerHTML = `<div class="modal-caixa" role="dialog" aria-modal="true" aria-label="${esc(e.titulo)}">
     <div class="modal-topo"><h2>${esc(e.titulo)}</h2><button data-fechar title="Fechar (Esc)">✕</button></div>
-    <div class="resumo">${e.html}</div></div>`;
+    <div class="resumo">${e.html}<div class="atualizacao"></div></div></div>`;
   m.hidden = false;
+  const alvo = m.querySelector(".atualizacao");
+  try { alvo.innerHTML = await blocoAtualizacao(painel); } catch (_) { /* sem o bloco, o explicativo continua */ }
 }
 function fecharModal() { document.getElementById("modal").hidden = true; }
 
@@ -222,7 +346,7 @@ app.addEventListener("click", (ev) => {
   if (!b) return;
   ev.stopPropagation();
   const painel = b.closest(".painel");
-  if (b.dataset.acao === "info") abrirExplicativo(painel.dataset.info);
+  if (b.dataset.acao === "info") abrirExplicativo(painel.dataset.info, painel);
   else if (b.dataset.acao === "csv") baixarCsv(painel);
   else if (b.dataset.acao === "tela") alternarTelaCheia(painel);
 });
@@ -289,6 +413,7 @@ function desenharNav(lado, secao) {
 
 async function rotear() {
   MOEDA = "R$";
+  ARQUIVOS_PAGINA.clear();
   limparGraficos();
   fecharTelaCheia();
   fecharModal();

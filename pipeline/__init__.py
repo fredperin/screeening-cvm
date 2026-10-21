@@ -18,6 +18,11 @@ DIR_DOWNLOADS_SITE = RAIZ / "site" / "downloads"
 for _d in (DIR_INTERMEDIARIO, DIR_DADOS_SITE, DIR_DOWNLOADS_SITE):
     _d.mkdir(parents=True, exist_ok=True)
 
+# Cliente de internet único (ritmo por servidor, espera em recusas, conexão reaproveitada): pipeline/rede.py
+from pipeline import rede as _rede  # noqa: E402
+
+_rede.instalar()
+
 
 # ---------------- Chaves de acesso nunca vão para arquivos publicados ----------------
 # Algumas APIs repetem a chave na mensagem de erro (o BLS: "The key:XXXX provided by the User is invalid";
