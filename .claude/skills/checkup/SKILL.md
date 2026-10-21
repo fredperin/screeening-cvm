@@ -13,7 +13,7 @@ sem aprovação explícita do usuário**.
 - Site estático (HTML/JS + ECharts) gerado por pipeline Python (`pipeline/`) no GitHub Actions: atualização diária completa
   (`rv-mapp.yml`, ~06h30 de Brasília) e Tesouro + notícias 3x por dia útil (`tesouro-intradia.yml`).
 - Seções: Consolidado · Brasil (Início, Notícias e agenda, Macro com 8 abas, Juros, Empresas com 4 abas, Downloads) ·
-  Mundo (Macro: Global, EUA, Europa, China, Mercados; Juros; Empresas do S&P 500 via SEC).
+  Mundo (Macro: Global, Mercados, EUA, Europa, China; Juros; Empresas do S&P 500 via SEC).
 - Já existe vigilância automática sem IA: `pipeline/monitor.py` (fontes em dia, faixas, buracos), `pipeline/validar.py`
   (anomalias nas empresas), `pipeline/teste_telas.py` (navegador percorre todas as telas). Resultados publicados em
   `dados/observacoes.json`, `dados/saude.json`, `dados/status.json`. O check-up vai **além** disso: julgamento, coerência e melhorias.

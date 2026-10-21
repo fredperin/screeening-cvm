@@ -1565,7 +1565,7 @@ const PLANO_OFFSHORE = {
     ["Comparáveis estrangeiras", "Receita, margens, endividamento e retorno de empresas listadas nos EUA.", "SEC EDGAR (balanços XBRL, API oficial)"]]],
 };
 const CATEGORIAS_OFF = { fed: ["Fed", COR.verde], bce: ["BCE", COR.roxo], eua: ["EUA (dados)", COR.azul], europa: ["Europa (dados)", COR.ciano] };
-const SUBS_MACRO_OFF = [["global", "Global"], ["eua", "Estados Unidos"], ["euro", "Europa (Zona do Euro)"], ["china", "China"], ["mercados", "Mercados"]];
+const SUBS_MACRO_OFF = [["global", "Global"], ["mercados", "Mercados"], ["eua", "Estados Unidos"], ["euro", "Europa (Zona do Euro)"], ["china", "China"]];
 // Abas internas de cada país (mesma organização da seção Brasil)
 const ABAS_PAIS_OFF = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["emprego", "Emprego"], ["monetaria", "Política monetária"]];
 let ABA_PAIS_OFF = "atividade";
