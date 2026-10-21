@@ -34,6 +34,9 @@ from pipeline.series_empresa import adicionar_indicadores, montar_visoes, para_j
 URL_SPY = "https://www.ssga.com/library-content/products/fund-data/etfs/us/holdings-daily-us-en-spy.xlsx"
 URL_TICKERS = "https://www.sec.gov/files/company_tickers_exchange.json"
 URL_FATOS = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
+# Demonstrações como divulgadas (FilingSummary + R*.htm, vários arquivos por empresa): fora do site desde 2026-10-21
+# (a página de cada empresa ficou só com Negócio e Documentos); desligado para consultar menos a SEC. True religa.
+BAIXAR_DEMONSTRACOES_SEC = False
 URL_SUBMISSOES = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
 URL_INDICE_DIA = "https://www.sec.gov/Archives/edgar/daily-index/{ano}/QTR{tri}/form.{dia:%Y%m%d}.idx"
 DIR_EMP = DIR_DADOS_SITE / "mundo_empresas"
@@ -456,6 +459,19 @@ def _tabela_r(url):
     return {"titulo": titulo.split(" - ")[0].strip().title(), "unidade": unidade.strip(), "colunas": rotulos, "linhas": linhas}
 
 
+def _acoes_historico(fatos):
+    """Ações em circulação por data, da capa de cada 10-K/10-Q. Empresas com mais de uma classe (GOOGL/GOOG) informam
+    um valor por classe na mesma entrega: soma as classes de cada entrega e fica com a entrega mais recente de cada data."""
+    por_entrega = {}
+    for f in fatos:
+        chave = (f["end"], f.get("accn") or f.get("filed"))
+        por_entrega[chave] = por_entrega.get(chave, 0) + float(f["val"])
+    por_data = {}
+    for (fim, _), v in sorted(por_entrega.items(), key=lambda x: (x[0][0], str(x[0][1]))):
+        por_data[fim] = v
+    return [[d, v] for d, v in sorted(por_data.items())]
+
+
 def demonstracoes_sec(docs):
     """DRE, balanço e fluxo de caixa do último 10-K e do último 10-Q (se mais recente), como divulgados."""
     import re
@@ -565,11 +581,12 @@ def gerar(tudo=False, filtro=None):
             if e["ticker"] in CIK_ANTERIOR:  # documentos do registro antigo (ex.: último 10-K antes da reorganização)
                 _, docs_ant = cadastro_e_documentos(CIK_ANTERIOR[e["ticker"]])
                 docs = sorted(docs + docs_ant, key=lambda x: x["data"], reverse=True)[:200]
-            try:
-                demons_sec = demonstracoes_sec(docs)
-            except Exception as ex:  # noqa: BLE001
-                demons_sec = {}
-                falhas.append(sem_segredos(f"{e['ticker']}: demonstrações da SEC — {ex}")[:200])
+            demons_sec = {}
+            if BAIXAR_DEMONSTRACOES_SEC:
+                try:
+                    demons_sec = demonstracoes_sec(docs)
+                except Exception as ex:  # noqa: BLE001
+                    falhas.append(sem_segredos(f"{e['ticker']}: demonstrações da SEC — {ex}")[:200])
             # ações em circulação (capa do 10-K/10-Q) e lucro por ação
             dei = fj.get("facts", {}).get("dei", {})
             acoes = sorted((dei.get("EntityCommonStockSharesOutstanding", {}).get("units", {}).get("shares") or []), key=lambda f: (f["end"], f["filed"]))
@@ -586,6 +603,8 @@ def gerar(tudo=False, filtro=None):
                 "setor": cad.get("setor"), "unidade": "US$", "moeda": "US$", "mes_fim_exercicio": mes_fim, "gerado_em": hoje.isoformat(),
                 "cadastro": cad, "documentos": docs, "peso_sp500": e["peso"],
                 "acoes": acoes[-1]["val"] if acoes else None, "acoes_data": acoes[-1]["end"] if acoes else None,
+                # histórico de ações em circulação (capa de cada 10-K/10-Q): base do P/L histórico do índice
+                "acoes_hist": _acoes_historico(acoes),
                 "dividendo_por_acao_ano": dps_unid,
                 "notas": {"fonte": "SEC EDGAR — companyfacts (XBRL dos 10-K e 10-Q)",
                           "ebit_estimado": bool(q["ebit_estimado"].tail(4).sum())},

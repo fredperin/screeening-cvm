@@ -264,6 +264,66 @@ window.EXPLICATIVOS = {
       indexadores), a partir de 2003.</p>
       <p class="sub">Fonte: Banco Central do Brasil — Dívida mobiliária, participação por indexador (SGS 4173 a 4180).</p>`,
   },
+  sp_cotacao: {
+    titulo: "Cotação do S&P 500",
+    html: `<p>Pontuação diária do índice S&P 500, as 500 maiores empresas americanas ponderadas pelo valor de mercado.</p>
+      <p class="sub">Fonte: S&P Dow Jones Indices, pelo FRED (Fed de St. Louis), que publica os últimos 10 anos.</p>`,
+  },
+  sp_pl: {
+    titulo: "P/L do S&P 500",
+    html: `<p>Valor de mercado total das empresas do índice dividido pelo lucro total dos últimos 12 meses — a mesma conta da S&P para o
+      P/L do índice (não é a média dos P/L de cada empresa). Toda semana: preço de cada ação × quantidade de ações informada à SEC
+      (corrigida por desdobramentos), e o lucro dos 12 meses que já tinha sido divulgado naquela data (balanço conhecido cerca de 45 dias
+      depois do fim do trimestre). Empresas com prejuízo entram na soma.</p>
+      <p class="sub">Fontes: SEC EDGAR (lucro e ações em circulação), Yahoo Finance (cotações semanais, não oficial).</p>`,
+  },
+  sp_receita: {
+    titulo: "Receita do S&P 500",
+    html: `<p>Soma das receitas das empresas que estão hoje no índice, por ano-calendário ou por trimestre-calendário (o trimestre de cada
+      empresa vai para o fim de trimestre mais próximo: o ano fiscal da Apple, por exemplo, fecha em setembro). Não é ponderada pelo peso
+      no índice: o peso já é o tamanho da empresa. A linha é o crescimento contra 1 ano antes, sempre sobre o mesmo conjunto de empresas
+      nos dois períodos (quem não tem dado num dos dois fica de fora da comparação). Anos: só empresas com os 4 trimestres.</p>
+      <p>Composição atual: empresas que saíram do índice no passado não entram, o que favorece um pouco o crescimento passado. Começa em 2010,
+      quando os balanços em formato de dados (XBRL) passam a existir na SEC.</p>
+      <p class="sub">Fonte: SEC EDGAR — balanços dos 10-K e 10-Q (XBRL), somados por empresa.</p>`,
+  },
+  sp_ebitda: {
+    titulo: "EBITDA do S&P 500",
+    html: `<p>Soma do EBITDA (lucro operacional + depreciação e amortização) das empresas não financeiras do índice — bancos, seguradoras e
+      corretoras não têm EBITDA. Mesmas regras da receita: ano ou trimestre-calendário, composição atual e crescimento sobre o mesmo
+      conjunto de empresas.</p>
+      <p class="sub">Fonte: SEC EDGAR — balanços dos 10-K e 10-Q (XBRL).</p>`,
+  },
+  sp_lucro: {
+    titulo: "Lucro do S&P 500",
+    html: `<p>Soma do lucro líquido de todas as empresas do índice (inclusive as com prejuízo). Mesmas regras da receita: ano ou
+      trimestre-calendário, composição atual e crescimento sobre o mesmo conjunto de empresas.</p>
+      <p class="sub">Fonte: SEC EDGAR — balanços dos 10-K e 10-Q (XBRL).</p>`,
+  },
+  sp_roe: {
+    titulo: "ROE e ROIC do S&P 500",
+    html: `<p><b>ROE</b> = lucro total de 12 meses ÷ patrimônio total. <b>ROIC</b> (só não financeiras) = lucro operacional de 12 meses
+      × (1 − 21% de imposto) ÷ (patrimônio + dívida líquida). Soma sobre soma, como para o índice inteiro; a margem líquida (lucro ÷ receita)
+      aparece tracejada para referência.</p>
+      <p class="sub">Fonte: SEC EDGAR — balanços dos 10-K e 10-Q (XBRL).</p>`,
+  },
+  sp_capex: {
+    titulo: "Capex do S&P 500",
+    html: `<p>Soma dos investimentos em ativo imobilizado (capex) das empresas não financeiras do índice. Mesmas regras da receita.</p>
+      <p class="sub">Fonte: SEC EDGAR — demonstração de fluxo de caixa dos 10-K e 10-Q (XBRL).</p>`,
+  },
+  sp_fcf: {
+    titulo: "Fluxo de caixa livre do S&P 500",
+    html: `<p>Soma do fluxo de caixa livre (caixa das operações − capex) das empresas não financeiras. O <b>FCF yield</b> é o fluxo de caixa
+      livre de 12 meses dividido pelo valor de mercado dessas mesmas empresas: quanto o índice "rende" em caixa pelo preço atual.</p>
+      <p class="sub">Fontes: SEC EDGAR (fluxo de caixa e ações em circulação), Yahoo Finance (cotações, não oficial).</p>`,
+  },
+  sp_divida: {
+    titulo: "Endividamento do S&P 500",
+    html: `<p>Soma da dívida líquida (empréstimos e financiamentos − caixa e aplicações) das empresas não financeiras, no fim de cada
+      trimestre ou ano, e a relação dívida líquida ÷ EBITDA de 12 meses dessas empresas.</p>
+      <p class="sub">Fonte: SEC EDGAR — balanços dos 10-K e 10-Q (XBRL).</p>`,
+  },
   juros_bancos_centrais: {
     titulo: "Juros básicos dos bancos centrais",
     html: `<p>Taxa de política monetária de cada banco central (no Brasil, a Selic meta do Copom; nos EUA, o teto da banda dos Fed Funds;

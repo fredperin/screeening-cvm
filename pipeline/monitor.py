@@ -341,6 +341,17 @@ def checar_setor_externo():
     return "balanço de pagamentos e comércio exterior em dia"
 
 
+def checar_sp500():
+    """S&P 500 como um todo (pipeline.sp500): gerado na atualização e com o último trimestre completo recente."""
+    arq = DIR_DADOS_SITE / "sp500.json"
+    assert arq.exists(), "sp500.json não foi gerado"
+    d = json.loads(arq.read_text(encoding="utf-8"))
+    assert _dias(d["gerado_em"]) <= 2, f"S&P 500 parado desde {d['gerado_em']}"
+    ult = (d["trimestral"]["lucro"]["datas"] or ["2000-01-01"])[-1]
+    assert _dias(ult) <= 200, f"último trimestre completo é {ult}"
+    return f"P/L {d['cartoes'].get('pl')}x; último trimestre completo {ult}; {len(d.get('descartados') or [])} valores fora da soma por erro de escala"
+
+
 def checar_fiscal():
     """Política fiscal (pipeline.fiscal): RTN, arrecadação da Receita, Dívida Pública Federal, Tesouro Direto e SICONFI
     em dia (atrasos normais: RTN ~2 meses, arquivo da Receita ~3 meses, Tesouro Transparente ~1,5 mês, RGF quadrimestral)."""
@@ -440,6 +451,7 @@ CHECAGENS = {
     "Site — telas, gráficos e links (teste automático)": checar_telas,
     "Mundo — mercados, commodities, China e Global": checar_mundo,
     "Mundo — empresas do S&P 500 (SEC)": checar_empresas_mundo,
+    "Mundo — S&P 500 como um todo (soma das empresas)": checar_sp500,
     "Offshore — Tesouro dos EUA, Fed, BLS, BCE, Eurostat": checar_offshore,
     "Tesouro Direto (oficial)": checar_tesouro,
     "Tesouro Direto — tempo real (não oficial)": checar_tesouro_tempo_real,

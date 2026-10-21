@@ -44,7 +44,7 @@ ROTAS = [
     ("#/off", None), ("#/off/noticias", None),
     ("#/off/macro/global", "#ind-global button"), ("#/off/macro/eua", "#sub-pais button"), ("#/off/macro/euro", "#sub-pais button"),
     ("#/off/macro/china", "#sub-pais button"), ("#/off/macro/mercados", "#sub-mercados button"),
-    ("#/off/juros", "#sub-juros-off button"), ("#/off/empresas", None), ("#/off/empresa/AAPL", "#abas-empresa-mundo button"), ("#/off/empresa/MSFT", "#abas-empresa-mundo button"),
+    ("#/off/juros", "#sub-juros-off button"), ("#/off/empresas", "#sub-sp button"), ("#/off/empresa/AAPL", "#abas-empresa-mundo button"), ("#/off/empresa/MSFT", "#abas-empresa-mundo button"),
     ("#/cons", None), ("#/cons/atividade", None), ("#/cons/inflacao", None), ("#/cons/juros", None),
     ("#/status", None),
 ]

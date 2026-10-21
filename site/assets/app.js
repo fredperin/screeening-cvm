@@ -2188,37 +2188,47 @@ function desenharMercados(mundo, cab, abas) {
 /* ============ Mundo → Empresas (S&P 500, SEC EDGAR) ============ */
 let ORDEM_MUNDO = { campo: "peso", desc: true };
 const COLUNAS_MUNDO = [
-  ["peso", "Peso S&P", (v) => (v == null ? "—" : `${num(v, 2)}%`)], ["preco", "Preço", (v) => (v == null ? "—" : `US$ ${num(v, 2)}`)],
-  ["var_dia", "Dia", (v) => (v == null ? "—" : `<span class="${classeSinal(v)}">${num(v, 2)}%</span>`)],
-  ["market_cap", "Valor de mercado", (v) => usd(v)], ["receita", "Receita LTM", (v) => usd(v)], ["lucro", "Lucro LTM", (v) => usd(v)],
-  ["m_ebit", "Margem EBIT", pct], ["roe", "ROE", pct], ["pl_x", "P/L", vezes], ["pvp", "P/VP", vezes], ["ev_ebitda", "EV/EBITDA", vezes],
-  ["dl_ebitda", "Dív.líq./EBITDA", vezes], ["dy", "Dividend yield", (v) => pct(v, 2)],
+  ["peso", "Peso S&P", (v) => (v == null ? "—" : `${num(v, 2)}%`)], ["receita", "Receita LTM", (v) => usd(v)], ["lucro", "Lucro LTM", (v) => usd(v)],
+  ["roe", "ROE", pct],
 ];
 const usd = (v) => { const m = MOEDA; MOEDA = "US$"; const t = reais(v); MOEDA = m; return t; };
+const ABAS_EMPRESAS_MUNDO = [["sp500", "S&P 500"], ["empresas", "Empresas"]];
+let ABA_EMPRESAS_MUNDO = "sp500";
+const PERIODO_SP = {};  // botão Anual / Trimestral de cada gráfico do S&P 500
 
 async function paginaEmpresasMundo() {
-  const idx = await dados("dados/mundo_empresas.json").catch(() => null);
+  MOEDA = "US$";
+  const [idx, sp] = await Promise.all([dados("dados/mundo_empresas.json").catch(() => null), dados("dados/sp500.json").catch(() => null)]);
   if (!idx || !idx.empresas || !idx.empresas.length) {
     app.innerHTML = `<div class="cabecalho"><div><h1>Mundo · Empresas</h1></div></div><p class="sub">As empresas do S&P 500 entram na próxima atualização.</p>`;
     return;
   }
-  const setores = [...new Set(idx.empresas.map((e) => e.setor).filter(Boolean))].sort();
+  const abas = `<div class="seletor seletor-editoria" id="sub-sp" style="margin:0 0 12px">${ABAS_EMPRESAS_MUNDO.map(([k, n]) =>
+    `<button data-k="${k}" class="${k === ABA_EMPRESAS_MUNDO ? "ativo" : ""}">${n}</button>`).join("")}</div>`;
+  const ligarAbas = () => document.getElementById("sub-sp").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    ABA_EMPRESAS_MUNDO = b.dataset.k; limparGraficos(); paginaEmpresasMundo();
+  });
+  if (ABA_EMPRESAS_MUNDO === "sp500") { desenharSP500(sp, idx, abas); ligarAbas(); return; }
+
+  const setorDe = (e) => ((sp && sp.setores) || {})[e.id] || e.setor || "";
+  const setores = [...new Set(idx.empresas.map(setorDe).filter(Boolean))].sort();
   app.innerHTML = `<div class="cabecalho"><div><h1>Mundo · Empresas</h1><div class="sub">${idx.empresas.length} empresas do S&P 500 (carteira do SPY de ${esc(idx.spy_em || "—")})
-      · demonstrações da SEC (10-K e 10-Q) · cotações do Yahoo Finance (não oficial) · valores em US$, últimos 12 meses</div></div></div>
+      · balanços da SEC (10-K e 10-Q) · valores em US$, últimos 12 meses</div></div></div>${abas}
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
       <input class="filtro" id="busca-mundo" placeholder="Buscar por ticker ou nome (ex.: AAPL, Coca-Cola)">
-      <select class="filtro" id="setor-mundo" style="max-width:320px"><option value="">Todos os setores (SIC)</option>${setores.map((s) => `<option>${esc(s)}</option>`).join("")}</select></div>
+      <select class="filtro" id="setor-mundo" style="max-width:320px"><option value="">Todos os setores</option>${setores.map((s) => `<option>${esc(s)}</option>`).join("")}</select></div>
     <div class="painel" data-info="empresas_mundo"><div class="rolagem rolagem-y" style="max-height:75vh"><table class="tabela" id="tab-mundo"></table></div>
-      <div class="nota">Clique no título da coluna para ordenar e na linha para abrir a empresa. Indicadores pelos últimos 12 meses (soma dos 4 trimestres dos 10-Q/10-K);
-        múltiplos com o preço do último pregão × ações em circulação da capa do último relatório.</div></div>`;
+      <div class="nota">Clique no título da coluna para ordenar e na linha para abrir a empresa. Receita e lucro dos últimos 12 meses (soma dos 4 trimestres dos 10-Q/10-K).
+        Setor: atividade informada à SEC (SIC) agrupada nos 11 setores do mercado — aproximação da classificação GICS, que é paga.</div></div>`;
   const desenhar = () => {
     const q = document.getElementById("busca-mundo").value.trim().toLowerCase(), setor = document.getElementById("setor-mundo").value;
-    const lista = idx.empresas.filter((e) => (!q || e.id.toLowerCase().includes(q) || (e.nome || "").toLowerCase().includes(q)) && (!setor || e.setor === setor))
+    const lista = idx.empresas.filter((e) => (!q || e.id.toLowerCase().includes(q) || (e.nome || "").toLowerCase().includes(q)) && (!setor || setorDe(e) === setor))
       .sort((a, b) => { const x = a[ORDEM_MUNDO.campo], y = b[ORDEM_MUNDO.campo]; if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * (ORDEM_MUNDO.desc ? -1 : 1); });
     document.getElementById("tab-mundo").innerHTML = `<tr><th style="text-align:left">Empresa</th><th style="text-align:left">Setor</th>
       ${COLUNAS_MUNDO.map(([k, r]) => `<th data-ordem="${k}" style="cursor:pointer">${r}${ORDEM_MUNDO.campo === k ? (ORDEM_MUNDO.desc ? " ▾" : " ▴") : ""}</th>`).join("")}</tr>
       ${lista.map((e) => `<tr class="clicavel" data-id="${esc(e.id)}"><td style="text-align:left"><b>${esc(e.id)}</b> <span class="sub">${esc(e.nome)}</span></td>
-        <td style="text-align:left;white-space:normal" class="sub">${esc(e.setor || "")}</td>${COLUNAS_MUNDO.map(([k, , f]) => `<td>${f(e[k])}</td>`).join("")}</tr>`).join("")}`;
+        <td style="text-align:left;white-space:normal" class="sub">${esc(setorDe(e))}</td>${COLUNAS_MUNDO.map(([k, , f]) => `<td>${f(e[k])}</td>`).join("")}</tr>`).join("")}`;
   };
   document.getElementById("busca-mundo").addEventListener("input", desenhar);
   document.getElementById("setor-mundo").addEventListener("change", desenhar);
@@ -2227,11 +2237,86 @@ async function paginaEmpresasMundo() {
     if (th) { const k = th.dataset.ordem; ORDEM_MUNDO = { campo: k, desc: ORDEM_MUNDO.campo === k ? !ORDEM_MUNDO.desc : true }; desenhar(); return; }
     const tr = ev.target.closest("[data-id]"); if (tr) location.hash = `#/off/empresa/${encodeURIComponent(tr.dataset.id)}`;
   });
+  ligarAbas();
   desenhar();
 }
 
-const ABAS_EMPRESA_MUNDO = [["negocio", "Negócio"], ["eventos", "Documentos (SEC)"], ["cotacao", "Cotação"], ["resultados", "Resultados"], ["graficos", "Gráficos"], ["dividendos", "Dividendos e recompras"]];
-let ABA_EMPRESA_MUNDO = "resultados", DEMONSTRACAO_MUNDO = "anual";
+// ---------- Mundo → Empresas → S&P 500: soma das empresas do índice (pipeline/sp500.py) ----------
+function desenharSP500(sp, idx, abas) {
+  if (!sp) {
+    app.innerHTML = `<div class="cabecalho"><div><h1>Mundo · Empresas</h1></div></div>${abas}<p class="sub">Os números do S&P 500 entram na próxima atualização.</p>`;
+    return;
+  }
+  const C = sp.cartoes || {}, T = sp.trimestral || {}, A = sp.anual || {}, I = sp.indicadores || {};
+  const ultimo = (s) => (s && s.valores && s.valores.length ? s.valores[s.valores.length - 1] : null);
+  const ultData = (s) => (s && s.datas && s.datas.length ? s.datas[s.datas.length - 1] : null);
+  const triRot = (d) => (d ? `${Math.floor((Number(d.slice(5, 7)) - 1) / 3) + 1}º tri/${d.slice(0, 4)}` : "—");
+  const cartoes = [
+    cartao("Valor de mercado", C.valor_mercado ? usd(C.valor_mercado) : "—", `${C.n_empresas || ""} empresas`),
+    cartao("P/L (12 meses)", C.pl != null ? `${num(C.pl, 1)}x` : "—", "valor de mercado ÷ lucro"),
+    cartao("FCF yield", pctPronto(C.fcf_yield, 1), "fluxo de caixa livre ÷ valor de mercado"),
+    cartao("ROE", pctPronto(C.roe, 1), `12 meses · ${triRot(ultData(I.roe))}`),
+    cartao("ROIC", pctPronto(C.roic, 1), "não financeiras"),
+    cartao("Dív. líquida / EBITDA", C.dl_ebitda != null ? `${num(C.dl_ebitda, 2)}x` : "—", "não financeiras"),
+    cartao("Lucro — crescimento", pctPronto(ultimo(T.lucro_cresc), 1), `${triRot(ultData(T.lucro_cresc))} contra 1 ano antes`),
+    cartao("Margem líquida", pctPronto(C.margem_liquida, 1), "lucro ÷ receita, 12 meses"),
+  ];
+  // barras (US$) + crescimento contra o ano anterior (linha, eixo direito), com botão Anual / Trimestral
+  const comPeriodo = (id, chave, titulo, info, extra = null, eixoDir = "pctPronto") => ({ id, chave, titulo, info, extra, eixoDir });
+  const graficosP = [
+    comPeriodo("sp-receita", "receita", "Receita", "sp_receita"),
+    comPeriodo("sp-ebitda", "ebitda", "EBITDA (não financeiras)", "sp_ebitda"),
+    comPeriodo("sp-lucro", "lucro", "Lucro líquido", "sp_lucro"),
+    null,  // ROE e ROIC entram aqui (ao lado do lucro)
+    comPeriodo("sp-capex", "capex", "Capex (não financeiras)", "sp_capex"),
+    comPeriodo("sp-fcf", "fcf", "Fluxo de caixa livre e FCF yield (não financeiras)", "sp_fcf",
+      { nome: "FCF yield (eixo direito)", valores: Pares(sp.fcf_yield), tipo: "line", eixo: "dir", cor: COR.ambar }),
+    comPeriodo("sp-divida", "divida_liquida", "Dívida líquida e dívida líquida / EBITDA (não financeiras)", "sp_divida",
+      { nome: "Dívida líquida / EBITDA (eixo direito)", valores: Pares(I.dl_ebitda), tipo: "line", eixo: "dir", cor: COR.ambar }, "vezes"),
+  ];
+  const botoes = (g) => `<div class="seletor" data-periodo="${g.id}">${[["anual", "Anual"], ["trimestral", "Trimestral"]].map(([k, n]) =>
+    `<button data-k="${k}" class="${(PERIODO_SP[g.id] || "anual") === k ? "ativo" : ""}">${n}</button>`).join("")}</div>`;
+  const painelP = (g) => `<div class="painel${g.chave === "divida_liquida" ? " largo" : ""}" data-info="${g.info}"><div class="cabecalho" style="margin-bottom:6px">
+    <h2 style="margin:0">${g.titulo}</h2>${botoes(g)}</div><div class="grafico" id="${g.id}"></div></div>`;
+  app.innerHTML = `<div class="cabecalho"><div><h1>Mundo · Empresas</h1><div class="sub">S&P 500 como um todo: soma das ${C.n_empresas || ""} empresas do índice
+      · balanços da SEC, cotações do Yahoo (não oficial) e índice do FRED · valores em US$ · atualizado em ${dataHoraBR(sp.gerado_em)}</div></div></div>${abas}
+    <div class="grade-cartoes">${cartoes.join("")}</div>
+    <div class="grade">
+      ${painelG("sp-cotacao", "Cotação do S&P 500", "sp_cotacao")}${painelG("sp-pl", "P/L do S&P 500 (valor de mercado ÷ lucro de 12 meses)", "sp_pl")}
+      ${graficosP.map((g) => (g ? painelP(g) : painelG("sp-roe", "ROE e ROIC (12 meses)", "sp_roe"))).join("")}
+    </div>
+    <div class="nota secao">Soma das empresas que estão hoje no índice (quem saiu no passado não entra) desde 2010, quando os balanços em formato de dados
+      começam na SEC. Crescimento sempre sobre o mesmo conjunto de empresas nos dois períodos. Bancos, seguradoras e corretoras ficam fora de EBITDA, capex,
+      fluxo de caixa livre, dívida e ROIC. ${sp.descartados && sp.descartados.length ? `Valores fora da soma por erro de escala no balanço entregue à SEC: ${esc(sp.descartados.join("; "))}.` : ""}</div>`;
+  grafico(document.getElementById("sp-cotacao"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "preco", series: sp.cotacao && sp.cotacao.datas
+    ? [{ nome: "S&P 500 (pontos)", valores: Pares(sp.cotacao), tipo: "line", cor: COR.azul }] : [] });
+  grafico(document.getElementById("sp-pl"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "vezes", series: [
+    { nome: "P/L (12 meses)", valores: Pares(sp.pl_historico), tipo: "line", cor: COR.ambar }] });
+  grafico(document.getElementById("sp-roe"), { xTempo: true, inicioTempo: "2011-01-01", deslizante: true, eixoEsq: "pctPronto", series: [
+    { nome: "ROE", valores: Pares(I.roe), tipo: "line", cor: COR.azul }, { nome: "ROIC (não financeiras)", valores: Pares(I.roic), tipo: "line", cor: COR.verde },
+    { nome: "Margem líquida", valores: Pares(I.margem_liquida), tipo: "line", cor: COR.cinza, tracejado: true }] });
+  const desenharP = (g) => {
+    const el = document.getElementById(g.id), velho = echarts.getInstanceByDom(el);
+    if (velho) { graficos.splice(graficos.indexOf(velho), 1); velho.dispose(); }
+    const B = (PERIODO_SP[g.id] || "anual") === "anual" ? A : T;
+    const barras = Pares(B[g.chave]).map(([d, v]) => [d, v == null ? null : v * 1e6]);
+    grafico(el, { xTempo: true, inicioTempo: "2011-01-01", deslizante: true, eixoEsq: "reais", eixoDir: g.eixoDir, series: [
+      { nome: g.titulo.split(" e ")[0].replace(" (não financeiras)", ""), valores: barras, cor: COR.azul },
+      g.extra || { nome: "Crescimento contra 1 ano antes (eixo direito)", valores: Pares(B[`${g.chave}_cresc`]), tipo: "line", eixo: "dir", cor: COR.ambar }] });
+  };
+  graficosP.filter(Boolean).forEach(desenharP);
+  document.querySelectorAll("[data-periodo]").forEach((sel) => sel.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    const g = graficosP.find((x) => x && x.id === sel.dataset.periodo);
+    PERIODO_SP[g.id] = b.dataset.k;
+    sel.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenharP(g);
+  }));
+}
+
+// página de cada empresa do S&P 500: só Negócio e Documentos (os números ficam na aba S&P 500 e no tabelão)
+const ABAS_EMPRESA_MUNDO = [["negocio", "Negócio"], ["eventos", "Documentos (SEC)"]];
+let ABA_EMPRESA_MUNDO = "negocio", DEMONSTRACAO_MUNDO = "anual";
 
 async function paginaEmpresaMundo(id) {
   const emp = await dados(`dados/mundo_empresas/${id}.json`).catch(() => null);
@@ -2358,7 +2443,7 @@ async function paginaEmpresaMundo(id) {
   };
   const mostrar = (k) => {
     limparGraficos();
-    ABA_EMPRESA_MUNDO = ABAS[k] ? k : "resultados";
+    ABA_EMPRESA_MUNDO = ABAS[k] && ABAS_EMPRESA_MUNDO.some(([x]) => x === k) ? k : "negocio";
     document.querySelectorAll("#abas-empresa-mundo button").forEach((x) => x.classList.toggle("ativo", x.dataset.k === ABA_EMPRESA_MUNDO));
     ABAS[ABA_EMPRESA_MUNDO]();
   };
