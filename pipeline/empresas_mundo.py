@@ -116,7 +116,11 @@ def universo():
 # ---------------- séries a partir do companyfacts ----------------
 FLUXOS_GAAP = {
     "receita": ["Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "RevenueFromContractWithCustomerIncludingAssessedTax",
-                "SalesRevenueNet", "SalesRevenueGoodsNet", "RevenuesNetOfInterestExpense", "RevenueNet"],
+                "SalesRevenueNet", "SalesRevenueGoodsNet", "RevenuesNetOfInterestExpense", "RevenueNet",
+                "RegulatedAndUnregulatedOperatingRevenue", "ElectricUtilityRevenue", "OilAndGasRevenue"],
+    # bancos: receita líquida = margem financeira líquida + receitas de serviços (quando não há conta de receita total)
+    "margem_fin": ["InterestIncomeExpenseNet", "InterestIncomeExpenseAfterProvisionForLoanLoss"],
+    "receita_servicos": ["NoninterestIncome"],
     "custo": ["CostOfRevenue", "CostOfGoodsAndServicesSold", "CostOfGoodsSold", "CostOfServices", "CostOfGoodsAndServiceExcludingDepreciationDepletionAndAmortization"],
     "lucro_bruto": ["GrossProfit"],
     "sga": ["SellingGeneralAndAdministrativeExpense", "GeneralAndAdministrativeExpense"],
@@ -156,10 +160,34 @@ SALDOS_GAAP = {
 }
 
 
+# Meses em que terminam os trimestres fiscais da empresa em processamento (definido em montar_empresa)
+_MESES_TRIMESTRE = None
+
+
 def _fim_normalizado(iso):
-    """Fim de trimestre de 52/53 semanas (27/12, 03/10...) -> último dia do mês 'dono' do trimestre."""
-    d = pd.Timestamp(iso) - pd.Timedelta(days=7)
-    return (d + pd.offsets.MonthEnd(0)).date()
+    """
+    Fim de trimestre de 52/53 semanas (27/12, 06/09, 01/02...) -> último dia do mês de fechamento do trimestre fiscal:
+    o fim de mês mais próximo entre os 4 meses de fechamento da empresa (ex.: exercício em dezembro -> mar, jun, set, dez).
+    Sem o calendário da empresa, usa o fim de mês uma semana antes.
+    """
+    d = pd.Timestamp(iso)
+    if _MESES_TRIMESTRE:
+        candidatos = [pd.Timestamp(a, m, 1) + pd.offsets.MonthEnd(0) for a in (d.year - 1, d.year, d.year + 1) for m in _MESES_TRIMESTRE]
+        return min(candidatos, key=lambda c: abs((c - d).days)).date()
+    return (d - pd.Timedelta(days=7) + pd.offsets.MonthEnd(0)).date()
+
+
+def _mes_fim_exercicio(gaap):
+    """Mês de fechamento do exercício: fim de mês mais próximo das datas dos anos (350–380 dias) do 10-K."""
+    fins = []
+    for c in ("NetIncomeLoss", "ProfitLoss", "Revenues", "RevenueFromContractWithCustomerExcludingAssessedTax", "Assets"):
+        for f in (gaap.get(c, {}).get("units", {}).get("USD") or []):
+            if f.get("form") == "10-K" and f.get("start") and 350 <= (pd.Timestamp(f["end"]) - pd.Timestamp(f["start"])).days + 1 <= 380:
+                d = pd.Timestamp(f["end"])
+                fins.append(min((d + pd.offsets.MonthEnd(0), d - pd.offsets.MonthEnd(1)), key=lambda c: abs((c - d).days)).month)
+        if fins:
+            break
+    return max(set(fins[-12:]), key=fins[-12:].count) if fins else 12
 
 
 def _fatos(gaap, conceitos, unidade="USD"):
@@ -183,17 +211,17 @@ def _fluxo(gaap, conceitos):
     for f in fatos:
         ini, fim = pd.Timestamp(f["start"]), pd.Timestamp(f["end"])
         dias = (fim - ini).days + 1
-        if 80 <= dias <= 100:
+        if 77 <= dias <= 125:  # trimestres de 12 a 17 semanas (varejistas têm um trimestre de 16 semanas)
             tri[f["end"]] = float(f["val"])
         if 350 <= dias <= 380:
             anos[f["end"]] = float(f["val"])
-        if 80 <= dias <= 380:
+        if 77 <= dias <= 380:
             por_inicio.setdefault(f["start"], []).append((fim, dias, float(f["val"])))
     # trimestre que falta = acumulado − acumulado anterior com o mesmo início (ex.: 4º tri = ano − 9 meses)
     for ini, lista in por_inicio.items():
         lista.sort()
         for (f0, d0, v0), (f1, d1, v1) in zip(lista, lista[1:]):
-            if 80 <= d1 - d0 <= 100 and f1.strftime("%Y-%m-%d") not in tri:
+            if 77 <= d1 - d0 <= 125 and f1.strftime("%Y-%m-%d") not in tri:
                 tri[f1.strftime("%Y-%m-%d")] = v1 - v0
     norm = lambda m: {_fim_normalizado(k): v for k, v in sorted(m.items())}  # noqa: E731
     return norm(tri), norm(anos)
@@ -219,9 +247,12 @@ def _juntar_fatos(antigo, novo):
 
 
 def montar_empresa(fatos):
+    global _MESES_TRIMESTRE
     gaap = fatos.get("facts", {}).get("us-gaap", {})
     if not gaap:
         return None
+    mes_fim = _mes_fim_exercicio(gaap)
+    _MESES_TRIMESTRE = sorted({(mes_fim - 1 - 3 * k) % 12 + 1 for k in range(4)})
     tri, anos = {}, {}
     for k, conc in FLUXOS_GAAP.items():
         tri[k], anos[k] = _fluxo(gaap, conc)
@@ -236,6 +267,7 @@ def montar_empresa(fatos):
     for k in saldos:
         q[k] = [saldos[k].get(d, float("nan")) for d in datas]
     # convenções das empresas brasileiras: despesas e IR negativos; dívida = empréstimos de curto + longo prazo
+    q["receita"] = q["receita"].fillna(q["margem_fin"] + q["receita_servicos"])
     q["lucro_bruto"] = q["lucro_bruto"].fillna(q["receita"] - q["custo"])
     q["ir"] = -q["ir_despesa"]
     q["desp_fin"] = -q["desp_juros"]
@@ -257,10 +289,14 @@ def montar_empresa(fatos):
     sumiu = q["aplicacoes"].isna() & q["aplicacoes"].shift(1).notna() | (q["aplicacoes"].isna() & q["aplicacoes"].ffill().notna())
     q.loc[sumiu, ["divida_liquida", "divida_liquida_ifrs16"]] = float("nan")
     q = q.sort_index()
-    # mês de fim do exercício: o mais comum entre os anos do 10-K
-    meses = [d.month for d in anos["receita"] or anos["lucro_liquido"]]
-    mes_fim = max(set(meses), key=meses.count) if meses else 12
-    visoes = montar_visoes(q, mes_fim)
+    # trimestres de 16 semanas: o fim de um trimestre pode ficar até ~4 meses depois do anterior
+    import pipeline.series_empresa as se
+    original = se._consecutivos
+    se._consecutivos = lambda datas: all(70 <= (b - a).days <= 130 for a, b in zip(datas, datas[1:]))
+    try:
+        visoes = montar_visoes(q, mes_fim)
+    finally:
+        se._consecutivos = original  # o Brasil (mesmo processo) continua com a regra original
     # anos: número do 10-K quando existir (como a DFP no Brasil)
     a = visoes["anual"]
     for k in ("receita", "lucro_bruto", "ebit", "lair", "lucro_liquido", "fco", "fci", "fcfin", "da", "capex", "div_pagos"):
@@ -489,9 +525,13 @@ def gerar(tudo=False, filtro=None):
     empresas, data_spy = universo()
     hoje = date.today()
     semanal = hoje.weekday() >= 5 and registro.get("_semanal") != hoje.isocalendar()[:2].__repr__()
+    # o próprio código mudou (nova regra de leitura do XBRL): refaz todas as empresas, como no Brasil
+    import hashlib
+    versao = hashlib.sha256(open(__file__, "rb").read() + open(__file__.replace("empresas_mundo.py", "series_empresa.py"), "rb").read()).hexdigest()[:16]
+    codigo_mudou = registro.get("_versao") != versao
     if filtro:
         alvo = {e["cik"] for e in empresas if e["ticker"] in filtro}
-    elif tudo or semanal or not registro.get("_ultimo_indice"):
+    elif tudo or semanal or codigo_mudou or not registro.get("_ultimo_indice"):
         alvo = {e["cik"] for e in empresas}
     else:
         desde = date.fromisoformat(registro["_ultimo_indice"]) - timedelta(days=1)
@@ -556,6 +596,8 @@ def gerar(tudo=False, filtro=None):
                           for e in empresas[:20])
     gerar_indice(empresas, data_spy, semanal or tudo or len(alvo) >= len(empresas) // 2 or falta_historico)
     registro["_ultimo_indice"] = hoje.isoformat()
+    if not filtro:
+        registro["_versao"] = versao
     if semanal:
         registro["_semanal"] = hoje.isocalendar()[:2].__repr__()
     ARQ_REGISTRO.write_text(json.dumps(registro, ensure_ascii=False), encoding="utf-8")
