@@ -1195,10 +1195,17 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
     const mud = P(S.selic_meta);
     return ref.datas.map((d) => { const fim = `${d.slice(0, 7)}-31`; let v = null; for (const [x, y] of mud) { if (x <= fim) v = y; else break; } return [d, v]; });
   };
+  // barras somadas: cada parte nas datas da série de referência (vazio onde a parte não tem dado), em R$
+  const naRef = (ref, chave) => {
+    if (!ref || !S[chave]) return [];
+    const m = Object.fromEntries(P(S[chave]));
+    return ref.datas.map((d) => [d, m[d] == null ? null : m[d] * 1e6]);
+  };
   const defsCredito = (g) => {
     const x = g === "total" ? "" : `_${g}`;            // sufixo das chaves: saldo_pj, taxa_pf...
     const k = (base) => (g === "total" ? `${base}_total` : `${base}_${g}`);
     const quem = { total: "", pj: " · pessoa jurídica", pf: " · pessoa física" }[g];
+    const refConc = S[`${k("conc")}_sa`];
     const lista = [
       { t: `Saldo da carteira de crédito${quem}`, info: "credito_saldo", op: { eixoEsq: "reais", eixoDir: "pctPronto", series: [
         { nome: "Recursos livres", valores: M(S[g === "total" ? "saldo_livres" : `saldo${x}_livres`]), cor: COR.azul, pilha: "saldo" },
@@ -1208,10 +1215,11 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
         { nome: "Total", valores: P(S[k("pib")]), tipo: "line", cor: COR.ambar },
         { nome: "Recursos livres", valores: P(S[g === "total" ? "pib_livres" : `pib${x}_livres`]), tipo: "line", cor: COR.azul },
         { nome: "Recursos direcionados", valores: P(S[g === "total" ? "pib_dir" : `pib${x}_dir`]), tipo: "line", cor: COR.roxo }] } },
-      { t: `Concessões (crédito novo no mês, dessazonalizado)${quem}`, info: "credito_concessoes", op: { eixoEsq: "reais", series: [
-        { nome: "Total", valores: M(S[`${k("conc")}_sa`]), tipo: "line", cor: COR.ambar },
-        { nome: "Recursos livres", valores: M(S[g === "total" ? "conc_livres_sa" : `conc${x}_livres_sa`]), tipo: "line", cor: COR.azul },
-        { nome: "Recursos direcionados", valores: M(S[g === "total" ? "conc_dir_sa" : `conc${x}_dir_sa`]), tipo: "line", cor: COR.roxo }] } },
+      { t: `Concessões (crédito novo no mês, dessazonalizado)${quem}`, info: "credito_concessoes", alt: {
+        "Segmentado": { eixoEsq: "reais", series: [
+          { nome: "Recursos livres", valores: naRef(refConc, g === "total" ? "conc_livres_sa" : `conc${x}_livres_sa`), cor: COR.azul, pilha: "conc" },
+          { nome: "Recursos direcionados", valores: naRef(refConc, g === "total" ? "conc_dir_sa" : `conc${x}_dir_sa`), cor: COR.roxo, pilha: "conc" }] },
+        "Total": { eixoEsq: "reais", series: [{ nome: "Total", valores: M(refConc), cor: COR.ambar }] } } },
       { t: `Juros, spread e custo do crédito${quem}`, info: "credito_juros", op: { eixoEsq: "pctPronto", series: [
         { nome: "Taxa média (crédito novo)", valores: P(S[k("taxa")]), tipo: "line", cor: COR.ambar },
         { nome: "Taxa — livres", valores: P(S[g === "total" ? "taxa_livres" : `taxa${x}_livres`]), tipo: "line", cor: COR.azul },
@@ -1227,8 +1235,8 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
     ];
     if (g === "total") {
       lista.push({ t: "Pessoa física × pessoa jurídica: saldo", info: "credito_pfpj", op: { eixoEsq: "reais", series: [
-        { nome: "Pessoa física", valores: M(S.saldo_pf), tipo: "line", cor: COR.verde },
-        { nome: "Pessoa jurídica", valores: M(S.saldo_pj), tipo: "line", cor: COR.azul }] } });
+        { nome: "Pessoa física", valores: naRef(S.saldo_total, "saldo_pf"), cor: COR.verde, pilha: "pfpj" },
+        { nome: "Pessoa jurídica", valores: naRef(S.saldo_total, "saldo_pj"), cor: COR.azul, pilha: "pfpj" }] } });
       return lista;
     }
     lista.push({ t: `Prazo médio da carteira (meses)${quem}`, info: "credito_prazo", op: { eixoEsq: "numero", series: [
@@ -1244,10 +1252,13 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
         { nome: "Juros", valores: P(S.compr_juros), cor: COR.vermelho, pilha: "c" },
         { nome: "Amortização", valores: P(S.compr_amort), cor: COR.azul, pilha: "c" }] } });
     }
-    // Modalidades: um gráfico com botões (saldo, juros, inadimplência), uma linha por modalidade
+    // Modalidades: um gráfico com botões; saldo em barras somadas (uma parte por modalidade), juros e inadimplência em linhas
     const mods = ((cred && cred.modalidades) || {})[g] || [];
-    const porMod = (campo, conv) => ({ eixoEsq: campo === "saldo" ? "reais" : "pctPronto", series: mods.map((m, j) => ({
-      nome: m.nome, valores: conv(S[`mod_${g}_${m.k}_${campo}`]), tipo: "line", cor: PALETA_GRAF[j % PALETA_GRAF.length] })) });
+    // nas barras somadas fica de fora o que já está dentro de outra modalidade (o rotativo faz parte do cartão total)
+    const PARTE_DE_OUTRA = new Set(["cartao_rotativo"]);
+    const porMod = (campo, conv) => ({ eixoEsq: campo === "saldo" ? "reais" : "pctPronto", series: mods.map((m, j) => [m, j]).filter(([m]) => campo !== "saldo" || !PARTE_DE_OUTRA.has(m.k)).map(([m, j]) => (campo === "saldo"
+      ? { nome: m.nome, valores: naRef(S[k("saldo")], `mod_${g}_${m.k}_saldo`), cor: PALETA_GRAF[j % PALETA_GRAF.length], pilha: "mod" }
+      : { nome: m.nome, valores: conv(S[`mod_${g}_${m.k}_${campo}`]), tipo: "line", cor: PALETA_GRAF[j % PALETA_GRAF.length] })) });
     lista.push({ t: `Modalidades${quem}`, info: "credito_modalidades", largo: true, alt: {
       "Saldo": porMod("saldo", M), "Taxa de juros": porMod("taxa", P), "Inadimplência": porMod("inad", P) } });
     return lista;
