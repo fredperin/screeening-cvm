@@ -1388,7 +1388,8 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
           { nome: "A vencer", valores: [...V.valores, V.depois].map((v) => v * 1e6), cor: COR.azul }] } }] : []),
       ...(S.dpf_vence_12m ? [{ t: "Parcela da Dívida Pública Federal que vence em 12 meses", info: "fiscal_dpf_12m", op: { eixoEsq: "pctPronto", series: [
         { nome: "Vence em até 12 meses", valores: P(S.dpf_vence_12m), tipo: "line", cor: COR.vermelho }] } }] : []),
-      prazo, dmf,
+      // composição por indexador ao lado do prazo médio (composição primeiro)
+      { ...dmf, largo: false }, prazo,
       ...(S.td_total ? [{ t: "Tesouro Direto — estoque por tipo de título", info: "fiscal_tesouro_direto", op: { eixoEsq: "reais", series: pilhaR("td_total",
         [["td_selic", "Tesouro Selic"], ["td_ipca", "Tesouro IPCA+"], ["td_prefixado", "Tesouro Prefixado"], ["td_renda", "Tesouro Renda+"],
           ["td_educa", "Tesouro Educa+"], ["td_igpm", "Tesouro IGP-M+"], ["td_outros", "Outros"]], "td") } }] : []),
