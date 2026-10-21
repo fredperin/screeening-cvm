@@ -71,7 +71,9 @@ def _serie_mensal(lista, campo="metricFOB"):
 
 def comex():
     hoje = date.today()
-    periodo = {"from": f"{INICIO_COMEX}-01", "to": f"{hoje.year}-{hoje.month:02d}"}
+    # A API aplica o intervalo de meses a cada ano (de jan/2015 a out/2026 = só janeiro a outubro de todos os anos):
+    # por isso o período vai até dezembro do ano corrente (meses ainda não divulgados simplesmente não vêm)
+    periodo = {"from": f"{INICIO_COMEX}-01", "to": f"{hoje.year}-12"}
     saida = {}
     for fluxo in ("export", "import"):
         s = _serie_mensal(_comex({"flow": fluxo, "monthDetail": True, "period": periodo, "filters": [], "details": [], "metrics": ["metricFOB"]}))
