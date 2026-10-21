@@ -480,7 +480,7 @@ BANCOS_CENTRAIS = {"US": "EUA (Fed)", "XM": "Zona do Euro (BCE)", "CN": "China (
                    "KR": "Coreia do Sul"}
 URL_OCDE_KEI_JUROS = ("https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_KEI@DF_KEI,4.0/{paises}.M.IRLT+IR3TIB.......?"
                       "startPeriod={ini}")
-PAISES_OCDE = {"USA": "EUA", "DEU": "Alemanha", "JPN": "Japão", "GBR": "Reino Unido", "CHN": "China", "BRA": "Brasil", "MEX": "México",
+PAISES_OCDE = {"USA": "EUA", "DEU": "Alemanha", "FRA": "França", "ITA": "Itália", "ESP": "Espanha", "JPN": "Japão", "GBR": "Reino Unido", "CHN": "China", "BRA": "Brasil", "MEX": "México",
                "CHL": "Chile", "COL": "Colômbia", "ZAF": "África do Sul", "IND": "Índia", "IDN": "Indonésia", "KOR": "Coreia do Sul"}
 URL_BCE_IRS = "IRS/M.{paises}.L.L40.CI.0000.EUR.N.Z"
 PAISES_EURO = {"DE": "Alemanha", "FR": "França", "IT": "Itália", "ES": "Espanha", "PT": "Portugal", "GR": "Grécia", "NL": "Holanda"}

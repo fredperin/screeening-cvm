@@ -1076,7 +1076,8 @@ const SUBS_FISCAL = [["arrecadacao", "Arrecadação"], ["despesas", "Despesas"],
 let ABA_FISCAL = "arrecadacao";
 const SUBS_JUROS_OFF = [["mundo", "Mundo"], ["eua", "EUA"], ["euro", "Zona do Euro"], ["china", "China"]];
 let ABA_JUROS_OFF = "mundo";
-const GRUPOS_ATIVOS = { desenvolvidos: true, emergentes: true };  // botões liga/desliga Desenvolvidos / Em desenvolvimento
+const GRUPOS_ATIVOS = { desenvolvidos: true, emergentes: true, mundo: true };  // Macro > Global
+const GRUPOS_JUROS = { desenvolvidos: true, emergentes: true };  // Juros > Mundo  // botões liga/desliga Desenvolvidos / Em desenvolvimento
 const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
 const ESCOLHA_GRAFICO = {};  // opção escolhida em cada gráfico com botões (fica ao trocar de janela)
 const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinza], ["nucleo_ex3", "EX3", COR.roxo],
@@ -2053,7 +2054,7 @@ function desenharGlobal(mundo, cab, abas) {
   // grupos como nos Juros (convenção dos índices de mercado: Coreia do Sul entre os emergentes; o FMI a trata como avançada)
   const GRUPOS_FMI = { desenvolvidos: ["USA", "EURO", "DEU", "FRA", "ITA", "JPN", "GBR", "CAN", "AUS", "CHE"],
     emergentes: ["BRA", "CHN", "IND", "MEX", "ARG", "CHL", "COL", "PER", "ZAF", "KOR", "IDN", "TUR", "SAU", "RUS"] };
-  const NOMES_GRUPO = { desenvolvidos: "Desenvolvidos", emergentes: "Em desenvolvimento" };
+  const NOMES_GRUPO = { desenvolvidos: "Desenvolvidos", emergentes: "Em desenvolvimento", mundo: "Mundo" };
   const anos = [...new Set(Object.values(ind.valores).flatMap((v) => Object.keys(v)))].sort();
   const regioes = ["WEOWORLD", "ADVEC", "OEMDC"];
   const linhaTab = (c, classe = "") => `<tr class="${classe}"><td style="text-align:left">${esc(paises[c])}</td>
@@ -2080,7 +2081,7 @@ function desenharGlobal(mundo, cab, abas) {
       .map(([gr, c], j) => [gr, { nome: paises[c], valores: anos.map((a) => ind.valores[c][a] ?? null), tipo: "line",
         cor: PALETA_GRAF[j % PALETA_GRAF.length], tracejado: gr === "emergentes" }])
       .filter(([gr]) => GRUPOS_ATIVOS[gr]).map(([, s]) => s);
-    if (ind.valores.WEOWORLD) series.push({ nome: paises.WEOWORLD, valores: anos.map((a) => ind.valores.WEOWORLD[a] ?? null), tipo: "line", cor: COR.texto });
+    if (ind.valores.WEOWORLD && GRUPOS_ATIVOS.mundo) series.push({ nome: paises.WEOWORLD, valores: anos.map((a) => ind.valores.WEOWORLD[a] ?? null), tipo: "line", cor: COR.texto });
     grafico(el, { rotulos: anos, eixoEsq: "pctPronto", janela: 40, series });
     document.querySelectorAll("#grupos-global button").forEach((b) => b.classList.toggle("ativo", !!GRUPOS_ATIVOS[b.dataset.k]));
   };
@@ -2466,18 +2467,18 @@ async function paginaOffshore(secao, parametro) {
         .concat([cartao("Treasury 10 anos", pctPronto(ust10.valor), dataBR(ust10.data))]);
       // um gráfico de juros básicos e um de 10 anos, cada um com os botões Desenvolvidos / Em desenvolvimento
       const GRUPOS = {
-        desenvolvidos: { bc: ["US", "XM", "JP", "GB", "CA", "AU", "CH"], lp: ["USA", "DEU", "JPN", "GBR"] },
+        desenvolvidos: { bc: ["US", "XM", "JP", "GB", "CA", "AU", "CH"], lp: ["USA", "EUAAA", "DEU", "FRA", "ITA", "ESP", "JPN", "GBR"] },
         // Turquia fica só na tabela: o juro dela (dezenas de %) achataria as outras linhas
         emergentes: { bc: ["BR", "CN", "MX", "CL", "CO", "PE", "ZA", "IN", "ID", "KR"], lp: ["BRA", "CHN", "MEX", "CHL", "COL", "ZAF", "IND", "KOR", "IDN"] },
       };
       const botoesGrupo = `<div class="seletor" data-grupo-juros>${[["desenvolvidos", "Desenvolvidos"], ["emergentes", "Em desenvolvimento"]].map(([k, n]) =>
-        `<button data-k="${k}" class="${GRUPOS_ATIVOS[k] ? "ativo" : ""}" title="Mostrar ou tirar do gráfico os países do grupo">${n}</button>`).join("")}</div>`;
+        `<button data-k="${k}" class="${GRUPOS_JUROS[k] ? "ativo" : ""}" title="Mostrar ou tirar do gráfico os países do grupo">${n}</button>`).join("")}</div>`;
       // todos os países no mesmo gráfico; cor fixa por país; emergentes tracejados
       const linhasGrupos = (fonte, chave, degrau) => ["desenvolvidos", "emergentes"].flatMap((gr) => GRUPOS[gr][chave].map((k) => [gr, k]))
         .filter(([, k]) => fonte[k] && (degrau || emDia(fonte[k])))
         .map(([gr, k], j) => [gr, { nome: fonte[k].nome, valores: degrau ? ateHoje(fonte[k]) : Pares(fonte[k]), tipo: "line",
           cor: PALETA_GRAF[j % PALETA_GRAF.length], tracejado: gr === "emergentes" }])
-        .filter(([gr]) => GRUPOS_ATIVOS[gr]).map(([, s]) => s);
+        .filter(([gr]) => GRUPOS_JUROS[gr]).map(([, s]) => s);
       const painelBotoes = (id, titulo, info) => `<div class="painel" data-info="${info}"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">${titulo}</h2>
         ${botoesGrupo}</div><div class="grafico" id="${id}"></div></div>`;
       corpo = `${painelBotoes("gw-bc", "Juros básicos dos bancos centrais", "juros_bancos_centrais")}${painelBotoes("gw-10", "Juro de 10 anos", "juros_10a_paises")}
@@ -2487,14 +2488,14 @@ async function paginaOffshore(secao, parametro) {
         grafico(document.getElementById("gw-bc"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", degrau: true,
           series: linhasGrupos(BC, "bc", true) });
         grafico(document.getElementById("gw-10"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto",
-          series: linhasGrupos(LP, "lp", false) });
-        document.querySelectorAll("[data-grupo-juros] button").forEach((b) => b.classList.toggle("ativo", !!GRUPOS_ATIVOS[b.dataset.k]));
+          series: linhasGrupos({ ...LP, ...(E.aaa_10a ? { EUAAA: { nome: "Zona do Euro (AAA, BCE)", ...E.aaa_10a } } : {}) }, "lp", false) });
+        document.querySelectorAll("[data-grupo-juros] button").forEach((b) => b.classList.toggle("ativo", !!GRUPOS_JUROS[b.dataset.k]));
       };
       depois = () => document.querySelectorAll("[data-grupo-juros]").forEach((sel) => sel.addEventListener("click", (ev) => {
         const b = ev.target.closest("button"); if (!b) return;
         const k = b.dataset.k;
-        if (GRUPOS_ATIVOS[k] && Object.values(GRUPOS_ATIVOS).filter(Boolean).length === 1) return;  // pelo menos um grupo no gráfico
-        GRUPOS_ATIVOS[k] = !GRUPOS_ATIVOS[k];
+        if (GRUPOS_JUROS[k] && !(GRUPOS_JUROS.desenvolvidos && GRUPOS_JUROS.emergentes)) return;  // pelo menos um grupo de países no gráfico
+        GRUPOS_JUROS[k] = !GRUPOS_JUROS[k];
         desenhar();
       }));
     } else if (ABA_JUROS_OFF === "eua") {
