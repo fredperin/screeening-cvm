@@ -123,18 +123,17 @@ def checar_focus():
 
 
 def checar_tesouro():
-    url = ("https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/"
-           "resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/PrecoTaxaTesouroDireto.csv")
-    r = requests.get(url, timeout=60, stream=True)
-    r.raise_for_status()
-    cabecalho = next(r.iter_lines()).decode("latin1")
-    assert "Taxa Compra Manha" in cabecalho, "colunas do arquivo do Tesouro mudaram"
-    arq = DIR_DADOS_SITE / "tesouro.json"
-    if arq.exists():
-        base = json.loads(arq.read_text(encoding="utf-8"))["data_base"]
-        assert _dias(base) <= 7, f"dados do Tesouro parados em {base}"
-        return f"arquivo ok; última data {base}"
-    return "arquivo ok"
+    """Arquivo oficial do Tesouro Transparente: confere a cópia baixada pela etapa tesouro, sem novo pedido ao servidor
+    (que recusa pedidos em excesso). Falha de download só vira problema se os dados ficarem parados."""
+    from pipeline.tesouro import ARQ as ARQ_TESOURO
+    assert ARQ_TESOURO.exists(), "arquivo do Tesouro Transparente não foi baixado"
+    with open(ARQ_TESOURO, encoding="latin1") as f:
+        assert "Taxa Compra Manha" in f.readline(), "colunas do arquivo do Tesouro mudaram"
+    tes = json.loads((DIR_DADOS_SITE / "tesouro.json").read_text(encoding="utf-8"))
+    base, aviso = tes["data_base"], tes.get("aviso_oficial")
+    assert _dias(base) <= 7, f"dados do Tesouro parados em {base}" + (f" ({aviso})" if aviso else "")
+    return f"arquivo ok; última data {base}" + (f"; publicado em {tes['publicado_em'][:16]}" if tes.get("publicado_em") else "") \
+        + (f"; aviso: {aviso}" if aviso else "")
 
 
 def checar_tesouro_tempo_real():

@@ -1,0 +1,97 @@
+name: R.V. Mapp - publicar telas (sem atualizar dados)
+
+# Alteração só nas telas (pasta site/): publica o site novo com os dados já guardados, sem consultar nenhuma fonte.
+# Se o mesmo envio também mexeu no pipeline, quem publica é a atualização completa (rv-mapp.yml).
+on:
+  push:
+    branches: [main]
+    paths: ["site/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+  actions: read
+
+concurrency:
+  group: rv-mapp-telas
+  cancel-in-progress: true
+
+jobs:
+  montar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    outputs:
+      seguir: ${{ steps.escopo.outputs.seguir }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: escopo
+        env:
+          ANTES: ${{ github.event.before }}
+        run: |
+          mudou=$(git diff --name-only "$ANTES" "$GITHUB_SHA" 2>/dev/null || true)
+          if echo "$mudou" | grep -q -E '^(pipeline|src|config)/|^\.github/workflows/rv-mapp\.yml$'; then
+            echo "O envio também alterou o pipeline: a atualização completa publica o site."; echo "seguir=nao" >> "$GITHUB_OUTPUT"
+          else
+            echo "seguir=sim" >> "$GITHUB_OUTPUT"
+          fi
+
+      # Se a atualização completa estiver rodando, espera ela terminar e usa os dados que ela acabou de guardar
+      # (publicar antes faria o site voltar às telas antigas quando ela terminasse)
+      - name: Esperar a atualização completa
+        if: steps.escopo.outputs.seguir == 'sim'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for i in $(seq 1 130); do
+            rodando=$(gh run list -R "$GITHUB_REPOSITORY" --workflow rv-mapp.yml --json status -q '[.[] | select(.status != "completed")] | length')
+            if [ "$rodando" = "0" ]; then exit 0; fi
+            echo "Atualização completa em andamento; aguardando ($i min)..."
+            sleep 60
+          done
+          echo "A atualização completa não terminou em 130 minutos"; exit 1
+
+      - name: Restaurar dados guardados
+        if: steps.escopo.outputs.seguir == 'sim'
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            data/raw
+            data/pipeline
+            site/dados
+            site/downloads
+          key: rvmapp-dados-${{ github.run_id }}
+          restore-keys: rvmapp-dados-
+
+      - name: Conferir dados
+        if: steps.escopo.outputs.seguir == 'sim'
+        run: |
+          if [ ! -f site/dados/status.json ]; then
+            echo "Não há dados guardados: rode a atualização completa (Actions → R.V. Mapp - atualizar dados e publicar site)."; exit 1
+          fi
+
+      - if: steps.escopo.outputs.seguir == 'sim'
+        run: sed -i "s/__VERSAO__/t${{ github.run_number }}/g" site/index.html
+
+      - uses: actions/configure-pages@v5
+        if: steps.escopo.outputs.seguir == 'sim'
+
+      - uses: actions/upload-pages-artifact@v3
+        if: steps.escopo.outputs.seguir == 'sim'
+        with:
+          path: site
+
+  publicar:
+    needs: montar
+    if: needs.montar.outputs.seguir == 'sim'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - id: deploy
+        uses: actions/deploy-pages@v4

@@ -23,7 +23,11 @@ from pipeline import DIR_DADOS_SITE
 
 URL = ("https://www.tesourotransparente.gov.br/ckan/dataset/df56aa42-484a-4a59-8184-7676580c81e3/"
        "resource/796d2059-14e9-44e3-80c9-2d9e30b405c1/download/PrecoTaxaTesouroDireto.csv")
+# Metadados do mesmo arquivo (poucos bytes): a data da última publicação evita baixar os ~15 MB sem necessidade
+URL_METADADOS = ("https://www.tesourotransparente.gov.br/ckan/api/3/action/resource_show"
+                 "?id=796d2059-14e9-44e3-80c9-2d9e30b405c1")
 ARQ = RAW_DIR / "tesouro_precos_taxas.csv"
+ARQ_VERSAO = RAW_DIR / "tesouro_precos_taxas.versao"  # last_modified do arquivo baixado
 DIR_TITULOS = DIR_DADOS_SITE / "tesouro"
 FUSO_BR = timezone(timedelta(hours=-3))
 
@@ -36,12 +40,42 @@ LIMITE_SALTO = 1.0  # pontos percentuais entre a taxa do momento e a última tax
 DATAS_REFERENCIA = {"hoje": 0, "1 semana": 7, "1 mês": 30, "6 meses": 182, "1 ano": 365}
 
 
+def versao_publicada():
+    """Data e hora da última publicação do arquivo no Tesouro Transparente."""
+    r = requests.get(URL_METADADOS, headers=CABECALHO, timeout=60)
+    r.raise_for_status()
+    return r.json()["result"]["last_modified"]
+
+
 def baixar():
-    with requests.get(URL, timeout=300, stream=True) as r:
-        r.raise_for_status()
-        with open(ARQ, "wb") as f:
-            for parte in r.iter_content(chunk_size=1 << 20):
-                f.write(parte)
+    """Baixa o arquivo só quando o Tesouro publicou uma versão nova.
+
+    O servidor recusa pedidos em excesso (HTTP 429): com uma cópia anterior, a falha não derruba a etapa
+    e volta como aviso (o monitor acusa se os dados ficarem parados). Devolve o aviso ou None."""
+    try:
+        versao = versao_publicada()
+    except (requests.RequestException, ValueError, KeyError) as e:
+        if ARQ.exists():
+            return f"data da publicação indisponível ({type(e).__name__}); mantido o arquivo anterior"
+        versao = None
+    if versao and ARQ.exists() and ARQ_VERSAO.exists() and ARQ_VERSAO.read_text(encoding="utf-8") == versao:
+        return None
+    parcial = ARQ.with_suffix(".parcial")  # o arquivo anterior só é trocado depois do download completo
+    try:
+        with requests.get(URL, timeout=300, stream=True) as r:
+            r.raise_for_status()
+            with open(parcial, "wb") as f:
+                for parte in r.iter_content(chunk_size=1 << 20):
+                    f.write(parte)
+        parcial.replace(ARQ)
+    except requests.RequestException as e:
+        parcial.unlink(missing_ok=True)
+        if not ARQ.exists():
+            raise
+        return f"arquivo novo não baixado ({type(e).__name__}); mantida a versão anterior"
+    if versao:
+        ARQ_VERSAO.write_text(versao, encoding="utf-8")
+    return None
 
 
 def carregar():
@@ -129,8 +163,9 @@ def _inflacao_implicita(pre, ipca):
 
 
 def gerar(baixar_arquivo=True):
-    if baixar_arquivo or not ARQ.exists():
-        baixar()
+    aviso_oficial = baixar() if baixar_arquivo or not ARQ.exists() else None
+    if aviso_oficial:
+        print("   ⚠️ Tesouro Transparente:", aviso_oficial)
     d = carregar()
     ultima = d["Data Base"].max()
     datas_disponiveis = sorted(d["Data Base"].unique())
@@ -206,14 +241,14 @@ def gerar(baixar_arquivo=True):
     arquivo.write_text(json.dumps({
         "gerado_em": datetime.now(FUSO_BR).isoformat(timespec="minutes"),
         "fonte": "Tesouro Transparente (dados abertos oficiais)", "data_base": ultima.strftime("%Y-%m-%d"),
-        "curvas": curvas, "titulos": titulos, "tempo_real": agora, "falha_tempo_real": falha_ao_vivo,
+        "publicado_em": ARQ_VERSAO.read_text(encoding="utf-8") if ARQ_VERSAO.exists() else None,
+        "aviso_oficial": aviso_oficial, "curvas": curvas, "titulos": titulos, "tempo_real": agora, "falha_tempo_real": falha_ao_vivo,
     }, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     return arquivo
 
 
 if __name__ == "__main__":
-    import sys
-    caminho = gerar(baixar_arquivo=not ARQ.exists() or "--intradia" not in sys.argv)
+    caminho = gerar()
     dados = json.loads(caminho.read_text(encoding="utf-8"))
     for rotulo, c in dados["curvas"].items():
         print(f"{rotulo:9s} {c['data']}  pré {len(c['prefixado'])} pts ({c['prefixado'][0]['taxa']}%→{c['prefixado'][-1]['taxa']}%)"

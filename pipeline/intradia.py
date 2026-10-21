@@ -20,7 +20,7 @@ def main():
     inicio = datetime.now(timezone.utc)
     erro = None
     try:
-        tesouro.gerar(baixar_arquivo=not tesouro.ARQ.exists())
+        tesouro.gerar()  # só baixa o arquivo oficial se o Tesouro publicou versão nova desde a última vez
         planilhas.gerar_juros()
     except Exception as e:
         erro = sem_segredos(repr(e))[:500]

@@ -9,9 +9,11 @@ on:
         description: "Regerar todas as empresas (JSON + Excel)"
         type: boolean
         default: false
+  # Só alteração no pipeline refaz as consultas às fontes; alteração só nas telas (site/) vai para
+  # rv-mapp-telas.yml, que publica com os dados já guardados
   push:
     branches: [main]
-    paths: ["site/**", "pipeline/**", "src/**", "config/**", ".github/workflows/rv-mapp.yml"]
+    paths: ["pipeline/**", "src/**", "config/**", ".github/workflows/rv-mapp.yml"]
 
 permissions:
   contents: read
@@ -19,6 +21,8 @@ permissions:
   id-token: write
   issues: write
 
+# Uma atualização completa por vez. Se outra ficar na fila, a mais nova substitui a da fila; como todas as
+# execuções deste workflow são completas (as de telas ficam em outro), a diária substituída é refeita pela seguinte
 concurrency:
   group: rv-mapp
   cancel-in-progress: false

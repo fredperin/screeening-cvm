@@ -47,18 +47,45 @@ DESTINOS = ["China", "Estados Unidos", "Argentina", "Países Baixos (Holanda)", 
 INICIO_COMEX = 2015
 
 
-def _comex(corpo, tentativas=4):
+REVISAO_COMEX_DIAS = 7  # mesmo com o último mês em dia, refaz uma vez por semana para pegar as revisões
+
+
+class LimiteComex(RuntimeError):
+    """A API recusou por excesso de consultas: insistir só piora; nova tentativa no dia seguinte."""
+
+
+def _comex(corpo, tentativas=3):
     for i in range(tentativas):
         try:
             r = requests.post(URL_COMEX, json=corpo, timeout=120, headers={"Content-Type": "application/json"})
             if r.status_code == 429:
-                raise requests.HTTPError("HTTP 429 (limite de consultas)")
+                raise LimiteComex("Comex Stat: HTTP 429 (limite de consultas)")
             r.raise_for_status()
             return r.json()["data"]["list"]
         except (requests.RequestException, ValueError, KeyError) as e:
             if i == tentativas - 1:
                 raise RuntimeError(f"Comex Stat: {e}") from None
-            time.sleep(10 * (i + 1))
+            time.sleep(20 * (i + 1))
+
+
+def _mes_esperado(hoje):
+    """Último mês que já pode ter sido divulgado (o Comex Stat publica o mês no começo do mês seguinte)."""
+    return f"{hoje.year - 1}-12" if hoje.month == 1 else f"{hoje.year}-{hoje.month - 1:02d}"
+
+
+def _motivo_comex(anterior, hoje):
+    """Por que consultar o Comex Stat nesta execução (None = não precisa). No máximo uma tentativa por dia."""
+    if anterior.get("comex_tentado_em") == hoje.isoformat():
+        return None
+    datas = ((anterior.get("comex") or {}).get("exportacoes") or {}).get("datas") or []
+    if not datas:
+        return "sem histórico"
+    if datas[-1][:7] < _mes_esperado(hoje):
+        return "mês novo"
+    ok_em = anterior.get("comex_ok_em")
+    if not ok_em or (hoje - date.fromisoformat(ok_em)).days >= REVISAO_COMEX_DIAS:
+        return "revisão semanal"
+    return None
 
 
 def _serie_mensal(lista, campo="metricFOB"):
@@ -78,7 +105,7 @@ def comex():
     for fluxo in ("export", "import"):
         s = _serie_mensal(_comex({"flow": fluxo, "monthDetail": True, "period": periodo, "filters": [], "details": [], "metrics": ["metricFOB"]}))
         saida[{"export": "exportacoes", "import": "importacoes"}[fluxo]] = _empacotar(s / 1e6, f"{'Exportações' if fluxo == 'export' else 'Importações'} (FOB)", "US$ milhões", casas=1)
-        time.sleep(2)
+        time.sleep(5)
     lista = _comex({"flow": "export", "monthDetail": True, "period": periodo, "filters": [{"filter": "heading", "values": list(PRODUTOS)}],
                     "details": ["heading"], "metrics": ["metricFOB"]})
     produtos = {}
@@ -87,14 +114,14 @@ def comex():
         if not s.empty:
             produtos[cod] = {**_empacotar(s / 1e6, nome, "US$ milhões", casas=1), "codigo": cod}
     saida["produtos"] = produtos
-    time.sleep(2)
+    time.sleep(5)
     lista = _comex({"flow": "export", "monthDetail": True, "period": periodo, "filters": [], "details": ["country"], "metrics": ["metricFOB"]})
     destinos = {}
     for pais in DESTINOS:
         s = _serie_mensal([x for x in lista if x.get("country") == pais])
         if not s.empty:
             destinos[pais] = _empacotar(s / 1e6, pais, "US$ milhões", casas=1)
-    time.sleep(2)
+    time.sleep(5)
     blocos = _comex({"flow": "export", "monthDetail": True, "period": periodo, "filters": [], "details": ["economicBlock"], "metrics": ["metricFOB"]})
     ue = _serie_mensal([x for x in blocos if "Europeia" in (x.get("economicBlock") or "")])
     if not ue.empty:
@@ -141,16 +168,36 @@ def gerar():
     falhas = []
     bc, f = banco_central(anterior.get("bc"))
     falhas += f
-    try:
-        cx = comex()
-    except Exception as e:  # noqa: BLE001
-        falhas.append(f"Comex Stat: {e}"[:200])
-        cx = anterior.get("comex", {})
+    hoje = date.today()
+    cx = anterior.get("comex", {})
+    controle = {k: anterior.get(k) for k in ("comex_tentado_em", "comex_ok_em", "comex_aviso")}
+    motivo = _motivo_comex(anterior, hoje)
+    if motivo:
+        controle["comex_tentado_em"] = hoje.isoformat()
+        try:
+            # sonda de um mês só: se o mês novo ainda não saiu, não faz as consultas grandes
+            sem_mes_novo = motivo == "mês novo" and not any(float(x.get("metricFOB") or 0) > 0 for x in _comex(
+                {"flow": "export", "monthDetail": True, "period": {"from": _mes_esperado(hoje), "to": _mes_esperado(hoje)},
+                 "filters": [], "details": [], "metrics": ["metricFOB"]}))
+            if sem_mes_novo:
+                controle["comex_aviso"] = f"{_mes_esperado(hoje)} ainda não divulgado pelo Comex Stat"
+            else:
+                cx = comex()
+                controle.update(comex_ok_em=hoje.isoformat(), comex_aviso=None)
+        except Exception as e:  # noqa: BLE001
+            controle["comex_aviso"] = f"{e}"[:200]
+            # só é falha se faltar dado: na revisão semanal, a versão anterior continua completa
+            if motivo != "revisão semanal":
+                falhas.append(f"Comex Stat ({motivo}): {e}"[:200])
+    elif controle.get("comex_aviso") and "não divulgado" not in controle["comex_aviso"] \
+            and (((cx.get("exportacoes") or {}).get("datas") or ["0000-00"])[-1][:7] < _mes_esperado(hoje)):
+        falhas.append(f"Comex Stat (tentativa de hoje, nova amanhã): {controle['comex_aviso']}"[:200])
     if not bc and not cx:
         raise RuntimeError("nenhuma fonte do setor externo respondeu")
     falhas = [sem_segredos(x) for x in falhas]
-    ARQ.write_text(json.dumps({"gerado_em": datetime.now().isoformat(timespec="minutes"), "bc": bc, "comex": cx, "falhas": falhas},
-                              ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    ARQ.write_text(json.dumps({"gerado_em": datetime.now().isoformat(timespec="minutes"), "bc": bc, "comex": cx, "falhas": falhas,
+                               **controle}, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    print(f"   Comex Stat: {'consultado (' + motivo + ')' if motivo else 'não consultado (já em dia ou já tentado hoje)'}")
     ult = (cx.get("exportacoes") or {}).get("datas", ["—"])[-1]
     print(f"✅ setor externo: {len(bc)} séries do BC; Comex até {ult}; {len(falhas)} falhas")
     for x in falhas:
