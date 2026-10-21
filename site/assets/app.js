@@ -424,9 +424,10 @@ const ROTAS = {
   off: Object.fromEntries(SECOES.map(([k]) => [k, (p) => paginaOffshore(k, p)])),
 };
 // Consolidado abre em Notícias e agenda; "noticias" fica como endereço antigo
-const SECOES_CONS = [["", "Notícias e agenda"], ["atividade", "Atividade e emprego"], ["inflacao", "Inflação"], ["juros", "Juros"]];
-ROTAS.cons = { "": () => paginaNoticias("cons"), noticias: () => paginaNoticias("cons"), atividade: () => paginaConsolidado("atividade"),
-  inflacao: () => paginaConsolidado("inflacao"), juros: () => paginaConsolidado("") };
+// Consolidado: Notícias e agenda + Gráficos (PIB, inflação, juros e desemprego); endereços antigos abrem os Gráficos
+const SECOES_CONS = [["", "Notícias e agenda"], ["graficos", "Gráficos"]];
+ROTAS.cons = { "": () => paginaNoticias("cons"), noticias: () => paginaNoticias("cons"), graficos: paginaConsolidado,
+  atividade: paginaConsolidado, inflacao: paginaConsolidado, juros: paginaConsolidado };
 ROTAS.off.noticias = () => paginaNoticias("off");
 ROTAS.off[""] = () => paginaNoticias("off");
 ROTAS.off.empresas = () => paginaEmpresasMundo();
@@ -2073,7 +2074,8 @@ function desenharPaisOff(pais, off, cab, abas, mundo = null) {
 let IND_GLOBAL = "NGDP_RPCH";
 function desenharGlobal(mundo, cab, abas) {
   const G = mundo.global || {};
-  const inds = G.indicadores || {}, paises = G.paises || {};
+  // o PIB em US$ (NGDPD) é usado só no Consolidado
+  const inds = Object.fromEntries(Object.entries(G.indicadores || {}).filter(([k]) => k !== "NGDPD")), paises = G.paises || {};
   if (!inds[IND_GLOBAL]) IND_GLOBAL = Object.keys(inds)[0];
   const ind = inds[IND_GLOBAL];
   const ano = G.ano_corrente || new Date().getFullYear();
@@ -2742,93 +2744,50 @@ function juroReal(taxa, inflacao12m) {
   return inflacao12m.datas.map((d, i) => [d, t[i] == null ? null : ((1 + t[i] / 100) / (1 + inflacao12m.valores[i] / 100) - 1) * 100]).filter((p) => p[1] != null);
 }
 
-async function paginaConsolidado(secao) {
-  const [macro, off] = await Promise.all([dados("dados/macro.json"), dados("dados/offshore.json").catch(() => null)]);
-  const S = macro.series, T = (off && off.treasuries) || {}, F = (off && off.fed) || {}, B = (off && off.bls) || {}, E = (off && off.bce) || {}, Z = (off && off.eurostat) || {};
+async function paginaConsolidado() {
+  const [macro, off, mundo] = await Promise.all([dados("dados/macro.json"), dados("dados/offshore.json").catch(() => null), dados("dados/mundo.json").catch(() => null)]);
+  const S = macro.series, F = (off && off.fed) || {}, B = (off && off.bls) || {}, E = (off && off.bce) || {}, Z = (off && off.eurostat) || {};
+  const CH = (mundo && mundo.china) || {}, BC = ((off && off.juros_mundo) || {}).bancos_centrais || {};
+  const G = (mundo && mundo.global) || {}, PIB = ((G.indicadores || {}).NGDPD) || null, paises = G.paises || {};
   const u = (s) => ultimo(s);
   const mes = (s) => (u(s).data ? `${MESES[Number(u(s).data.slice(5, 7)) - 1]}/${u(s).data.slice(2, 4)}` : "");
-  const titulos = { "": "Juros", inflacao: "Inflação", atividade: "Atividade e emprego" };
-  const cab = `<div class="cabecalho"><div><h1>Consolidado · ${titulos[secao] || "Juros"}</h1>
-    <div class="sub">Brasil, Estados Unidos e Zona do Euro nos mesmos gráficos · mesmas fontes oficiais das seções Brasil e Mundo
-      <span style="color:${PAISES.br[1]}">●</span> Brasil <span style="color:${PAISES.eua[1]}">●</span> EUA <span style="color:${PAISES.euro[1]}">●</span> Zona do Euro</div></div></div>`;
-  const linha = (pais, nome, valores, extra = {}) => ({ nome, valores, tipo: "line", cor: PAISES[pais][1], ...extra });
+  const linha = (pais, nome, valores, extra = {}) => ({ nome, valores, tipo: "line", cor: PAISES[pais] ? PAISES[pais][1] : COR.vermelho, ...extra });
   const tempo = (anos = 10) => ({ xTempo: true, inicioTempo: desde(anos), deslizante: true, eixoEsq: "pctPronto" });
-
-  if (secao === "inflacao") {
-    app.innerHTML = `${cab}
-      <div class="grade-cartoes">
-        ${cartao("IPCA 12m", pctPronto(u(S.ipca_12m).valor, 1), `meta 3% · ${mes(S.ipca_12m)}`)}
-        ${cartao("CPI EUA 12m", pctPronto(u(B.cpi_12m).valor, 1), `objetivo do Fed 2% (PCE) · ${mes(B.cpi_12m)}`)}
-        ${cartao("HICP 12m", pctPronto(u(Z.hicp_12m).valor, 1), `meta do BCE 2% · ${mes(Z.hicp_12m)}`)}
-        ${cartao("Núcleos Brasil 12m", pctPronto(u(S.nucleos_media_12m).valor, 1), "média dos 5 núcleos")}
-        ${cartao("Núcleo CPI 12m", pctPronto(u(B.cpi_nucleo_12m).valor, 1), "sem alimentos e energia")}
-        ${cartao("Núcleo HICP 12m", pctPronto(u(Z.hicp_nucleo_12m).valor, 1), "sem energia, alimentos, álcool e fumo")}
-      </div>
-      <div class="grade">
-        ${painelG("gc-inf", "Inflação em 12 meses: IPCA, CPI e HICP", "inflacao_mundo")}
-        ${painelG("gc-nuc", "Núcleos em 12 meses", "inflacao_mundo")}
-        ${painelG("gc-inf-meta", "Distância da meta (inflação 12m − meta)", "inflacao_mundo")}
-      </div>`;
-    grafico(document.getElementById("gc-inf"), { ...tempo(), series: [
-      linha("br", "IPCA (Brasil)", Pares(S.ipca_12m)), linha("eua", "CPI (EUA)", Pares(B.cpi_12m)), linha("euro", "HICP (Zona do Euro)", Pares(Z.hicp_12m))] });
-    grafico(document.getElementById("gc-nuc"), { ...tempo(), series: [
-      linha("br", "Média dos núcleos do IPCA", Pares(S.nucleos_media_12m)), linha("eua", "Núcleo do CPI", Pares(B.cpi_nucleo_12m)),
-      linha("euro", "Núcleo do HICP", Pares(Z.hicp_nucleo_12m))] });
-    const menos = (s, meta) => Pares(s).map(([d, v]) => [d, v - meta]);
-    grafico(document.getElementById("gc-inf-meta"), { ...tempo(), series: [
-      linha("br", "IPCA − 3%", menos(S.ipca_12m, 3)), linha("eua", "CPI − 2%", menos(B.cpi_12m, 2)), linha("euro", "HICP − 2%", menos(Z.hicp_12m, 2))] });
-    return;
-  }
-
-  if (secao === "atividade") {
-    app.innerHTML = `${cab}
-      <div class="grade-cartoes">
-        ${cartao("PIB Brasil 4 tri", pctPronto(u(S.pib_12m).valor, 1), "acumulado em 4 trimestres")}
-        ${cartao("PIB Zona do Euro", pctPronto(u(Z.pib_12m).valor, 1), "contra o mesmo tri do ano anterior")}
-        ${cartao("Desemprego EUA", pctPronto(u(B.desemprego).valor, 1), mes(B.desemprego))}
-        ${cartao("Desemprego Zona do Euro", pctPronto(u(Z.desemprego).valor, 1), mes(Z.desemprego))}
-      </div>
-      <div class="grade">
-        ${painelG("gc-pib", "PIB: crescimento contra um ano antes", "pib_mundo")}
-        ${painelG("gc-des", "Desemprego", "desemprego_mundo")}
-      </div>
-      <div class="nota secao">Em seguida: PIB dos EUA (precisa da chave gratuita do FRED) e desemprego do Brasil (PNAD Contínua, IBGE).</div>`;
-    grafico(document.getElementById("gc-pib"), { ...tempo(), series: [
-      linha("br", "Brasil (4 trimestres)", Pares(S.pib_12m)), linha("euro", "Zona do Euro (ano contra ano)", Pares(Z.pib_12m))] });
-    grafico(document.getElementById("gc-des"), { ...tempo(), series: [
-      linha("eua", "EUA", Pares(B.desemprego)), linha("euro", "Zona do Euro", Pares(Z.desemprego))] });
-    return;
-  }
-
-  // Juros
-  const fed = u(F.meta_max), bce = u(E.deposito);
-  app.innerHTML = `${cab}
+  const china = (s, nome) => (s && s.datas ? [linha("china", nome, Pares(s), { cor: COR.vermelho, tracejado: true })] : []);
+  app.innerHTML = `<div class="cabecalho"><div><h1>Consolidado · Gráficos</h1>
+      <div class="sub">Brasil e o mundo nos mesmos gráficos · mesmas fontes oficiais das seções Brasil e Mundo</div></div></div>
     <div class="grade-cartoes">
       ${cartao("Selic meta", pctPronto(u(S.selic_meta).valor), dataBR(u(S.selic_meta).data))}
-      ${cartao("Fed Funds (teto)", pctPronto(fed.valor), `banda ${pctPronto(u(F.meta_min).valor)}–${pctPronto(fed.valor)}`)}
-      ${cartao("BCE (depósito)", pctPronto(bce.valor), "")}
-      ${cartao("Juro real Brasil", pctPronto(u(S.juro_real).valor, 1), "Selic ÷ IPCA 12m")}
-      ${cartao("Treasury 10 anos", pctPronto(u(T.historico && T.historico["10 anos"]).valor), dataBR(u(T.historico && T.historico["10 anos"]).data))}
-      ${cartao("Euro AAA 10 anos", pctPronto(u(E.aaa_10a).valor), dataBR(u(E.aaa_10a).data))}
+      ${cartao("Fed Funds (teto)", pctPronto(u(F.meta_max).valor), dataBR(u(F.meta_max).data))}
+      ${cartao("BCE (depósito)", pctPronto(u(E.deposito).valor), dataBR(u(E.deposito).data))}
+      ${cartao("IPCA 12m", pctPronto(u(S.ipca_12m).valor, 1), mes(S.ipca_12m))}
+      ${cartao("CPI EUA 12m", pctPronto(u(B.cpi_12m).valor, 1), mes(B.cpi_12m))}
+      ${cartao("HICP 12m", pctPronto(u(Z.hicp_12m).valor, 1), mes(Z.hicp_12m))}
     </div>
     <div class="grade">
-      ${painelG("gc-basicos", "Juros básicos: Selic, Fed Funds e BCE", "juros_mundo")}
-      ${painelG("gc-real", "Juro real ex-post: taxa básica ÷ inflação 12 meses", "juro_real_mundo")}
-      ${painelG("gc-inf-j", "Inflação em 12 meses: IPCA, CPI e HICP", "inflacao_mundo", "", "largo")}
+      ${PIB ? painelG("gc-pib", "PIB nominal em US$ (FMI)", "pib_nominal_mundo", `<div class="nota">Anual, em dólares correntes; a partir de ${G.ano_corrente || new Date().getFullYear()} (inclusive), projeções do FMI.</div>`, "largo") : ""}
+      ${painelG("gc-inf", "Inflação em 12 meses", "inflacao_mundo", "", "largo")}
+      ${painelG("gc-juros", "Juros básicos dos bancos centrais", "juros_bancos_centrais", "", "largo")}
+      ${painelG("gc-des", "Desemprego", "desemprego_mundo", "", "largo")}
     </div>`;
-  grafico(document.getElementById("gc-basicos"), { ...tempo(), degrau: true, series: [
-    linha("br", "Selic meta", ateHoje(S.selic_meta)), linha("eua", "Fed Funds (teto da banda)", ateHoje(F.meta_max)), linha("euro", "BCE (depósito)", ateHoje(E.deposito))] });
-  grafico(document.getElementById("gc-real"), { ...tempo(), series: [
-    linha("br", "Brasil", Pares(S.juro_real)), linha("eua", "EUA (Fed Funds ÷ CPI)", B.cpi_12m ? juroReal(F.meta_max, B.cpi_12m) : []),
-    linha("euro", "Zona do Euro (depósito ÷ HICP)", Z.hicp_12m ? juroReal(E.deposito, Z.hicp_12m) : [])] });
-  // Inflação dos três logo abaixo dos juros, na última linha inteira
-  grafico(document.getElementById("gc-inf-j"), { ...tempo(), series: [
-    linha("br", "IPCA (Brasil)", Pares(S.ipca_12m)), linha("eua", "CPI (EUA)", Pares(B.cpi_12m)), linha("euro", "HICP (Zona do Euro)", Pares(Z.hicp_12m))] });
+  if (PIB) {
+    const CODIGOS = ["USA", "CHN", "EURO", "JPN", "DEU", "IND", "GBR", "FRA", "BRA", "ITA", "CAN", "MEX", "KOR"].filter((c) => PIB.valores[c]);
+    const anos = [...new Set(CODIGOS.flatMap((c) => Object.keys(PIB.valores[c])))].sort();
+    MOEDA = "US$";  // eixo e caixa de valores em dólares (a navegação seguinte volta para R$)
+    grafico(document.getElementById("gc-pib"), { rotulos: anos, eixoEsq: "reais", janela: 40, series: CODIGOS.map((c, j) => ({
+      nome: paises[c], valores: anos.map((a) => (PIB.valores[c][a] != null ? PIB.valores[c][a] * 1e9 : null)), tipo: "line",
+      cor: c === "BRA" ? PAISES.br[1] : PALETA_GRAF[j % PALETA_GRAF.length] })) });
+  }
+  grafico(document.getElementById("gc-inf"), { ...tempo(), series: [
+    linha("br", "IPCA (Brasil)", Pares(S.ipca_12m)), linha("eua", "CPI (EUA)", Pares(B.cpi_12m)), linha("euro", "HICP (Zona do Euro)", Pares(Z.hicp_12m)),
+    ...china(CH.cpi_12m, "CPI (China, OCDE)")] });
+  // Turquia fica de fora: o juro dela (dezenas de %) achataria as outras linhas
+  grafico(document.getElementById("gc-juros"), { ...tempo(), degrau: true, series: Object.entries(BC).filter(([k]) => k !== "TR")
+    .map(([k, s], j) => ({ nome: s.nome, valores: ateHoje(s), tipo: "line", cor: k === "BR" ? PAISES.br[1] : PALETA_GRAF[j % PALETA_GRAF.length] })) });
+  grafico(document.getElementById("gc-des"), { ...tempo(), series: [
+    linha("br", "Brasil (PNAD Contínua)", Pares(S.desemprego)), linha("eua", "EUA", Pares(B.desemprego)), linha("euro", "Zona do Euro", Pares(Z.desemprego)),
+    ...china(CH.desemprego, "China (urbano; série descontinuada)")] });
 }
-
-/* ============ Eleições 2026 (Onshore · Notícias e agenda) ============ */
-// A aba só existe em ano eleitoral (o pipeline marca "ativo" pelo calendário do TSE); depois das eleições some sozinha
-let ELEICOES_ATIVAS = null;
 async function eleicoesAtivas() {
   if (ELEICOES_ATIVAS === null) ELEICOES_ATIVAS = await dados("dados/eleicoes.json").then((e) => (e.ativo ? e : false)).catch(() => false);
   return ELEICOES_ATIVAS;

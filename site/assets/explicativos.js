@@ -902,6 +902,12 @@ window.EXPLICATIVOS = {
       <p>As três são nominais, cada uma na sua moeda. As datas de referência aparecem na legenda.</p>
       <p class="sub">Fonte: B3 (DI x Pré), U.S. Department of the Treasury (Treasuries) e Banco Central Europeu (curva AAA).</p>`,
   },
+  pib_nominal_mundo: {
+    titulo: "PIB nominal em US$",
+    html: `<p>Tamanho de cada economia em dólares correntes, por ano, segundo o World Economic Outlook do FMI (indicador NGDPD). Os anos a partir do corrente são projeções do FMI.</p>
+      <p>Como é em dólar corrente, a variação do câmbio também mexe no valor.</p>
+      <p>Fonte: FMI, World Economic Outlook (API DataMapper).</p>`,
+  },
   inflacao_mundo: {
     titulo: "Inflação comparada",
     html: `<ul>
