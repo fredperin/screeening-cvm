@@ -60,6 +60,17 @@ jobs:
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
 
+      # Teste das telas (sem IA): navegador sem tela percorre todas as seções e abas do site recém-gerado
+      - name: Testar telas do site
+        if: always()
+        continue-on-error: true
+        run: |
+          python -m playwright install --with-deps chromium
+          python -m pipeline.teste_telas
+        env:
+          PYTHONUTF8: "1"
+          SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+
       # Agentes automáticos (sem IA): saúde das fontes e anomalias nos dados gerados
       - name: Monitorar fontes
         if: always()

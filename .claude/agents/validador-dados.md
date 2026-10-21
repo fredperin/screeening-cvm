@@ -1,6 +1,6 @@
 ---
 name: validador-dados
-description: Confere números da plataforma R.V. Mapp (site, JSON e Excel) contra as fontes oficiais e explica divergências. Usar SOMENTE quando o usuário pedir explicitamente uma validação de dados (ex.: "valide a Klabin", "confira os dividendos da WEG", "rode o validador"). Nunca acionar por conta própria.
+description: Confere números da plataforma R.V. Mapp (site, JSON e Excel) contra as fontes oficiais e explica divergências. Usar SOMENTE quando o usuário pedir explicitamente uma validação de dados (ex.: "valide a Klabin", "confira os dividendos da WEG", "rode o validador"). Também pode ser acionado pelo check-up quinzenal (skill checkup). Fora disso, nunca acionar por conta própria.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 model: sonnet
 ---

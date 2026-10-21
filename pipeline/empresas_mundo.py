@@ -269,6 +269,11 @@ def montar_empresa(fatos):
     # convenções das empresas brasileiras: despesas e IR negativos; dívida = empréstimos de curto + longo prazo
     q["receita"] = q["receita"].fillna(q["margem_fin"] + q["receita_servicos"])
     q["lucro_bruto"] = q["lucro_bruto"].fillna(q["receita"] - q["custo"])
+    # EBIT estimado quando a empresa não divulga resultado operacional (petroleiras, conglomerados):
+    # lucro antes do IR + despesas de juros − receitas financeiras (marcado em ebit_estimado)
+    estimado = q["ebit"].isna() & q["lair"].notna() & q["desp_juros"].notna()
+    q["ebit_estimado"] = estimado.astype(float)
+    q.loc[estimado, "ebit"] = q.loc[estimado, "lair"] + q.loc[estimado, "desp_juros"].abs() - q.loc[estimado, "rec_fin"].fillna(0)
     q["ir"] = -q["ir_despesa"]
     q["desp_fin"] = -q["desp_juros"]
     q["res_fin"] = q["lair"] - q["ebit"]
@@ -300,6 +305,8 @@ def montar_empresa(fatos):
     # anos: número do 10-K quando existir (como a DFP no Brasil)
     a = visoes["anual"]
     for k in ("receita", "lucro_bruto", "ebit", "lair", "lucro_liquido", "fco", "fci", "fcfin", "da", "capex", "div_pagos"):
+        if k == "ebit" and not anos["ebit"]:
+            continue  # sem EBIT divulgado: fica a soma dos trimestres (estimados)
         for d in a.index:
             v = anos[k].get(d) if k in anos else None
             if v is not None and not math.isnan(v):
@@ -580,7 +587,8 @@ def gerar(tudo=False, filtro=None):
                 "cadastro": cad, "documentos": docs, "peso_sp500": e["peso"],
                 "acoes": acoes[-1]["val"] if acoes else None, "acoes_data": acoes[-1]["end"] if acoes else None,
                 "dividendo_por_acao_ano": dps_unid,
-                "notas": {"fonte": "SEC EDGAR — companyfacts (XBRL dos 10-K e 10-Q)"},
+                "notas": {"fonte": "SEC EDGAR — companyfacts (XBRL dos 10-K e 10-Q)",
+                          "ebit_estimado": bool(q["ebit_estimado"].tail(4).sum())},
                 **para_json(visoes),
                 "demonstracoes_sec": demons_sec,
             }

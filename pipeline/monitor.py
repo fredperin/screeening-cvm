@@ -308,6 +308,17 @@ def checar_empresas_mundo():
     return f"{len(m['empresas'])} empresas; {com_preco} com cotação"
 
 
+def checar_telas():
+    """Teste automático das telas (pipeline.teste_telas): páginas que não carregam, gráficos sem dados, erros e links quebrados."""
+    arq = DIR_INTERMEDIARIO / "teste_telas.json"
+    assert arq.exists(), "o teste das telas não rodou"
+    t = json.loads(arq.read_text(encoding="utf-8"))
+    assert _dias(t["verificado_em"]) <= 1, f"o teste das telas não rodou nesta atualização (último em {t['verificado_em'][:10]})"
+    problemas = t.get("problemas", []) + [f"link de documento sem resposta: {x}" for x in t.get("links_com_falha", [])]
+    assert not problemas, f"{len(problemas)} problema(s): " + " | ".join(problemas[:8])
+    return f"{t['telas']} telas e {t.get('links_testados', 0)} links conferidos"
+
+
 def checar_setor_externo():
     """Setor externo (pipeline.setor_externo): BC e Comex Stat sem falhas e em dia."""
     arq = DIR_DADOS_SITE / "setor_externo.json"
@@ -371,6 +382,7 @@ CHECAGENS = {
     "Macro — séries completas e em dia": checar_macro,
     "Banco Central — estatísticas de crédito": checar_credito,
     "Setor externo (Banco Central e Comex Stat)": checar_setor_externo,
+    "Site — telas, gráficos e links (teste automático)": checar_telas,
     "Mundo — mercados, commodities, China e Global": checar_mundo,
     "Mundo — empresas do S&P 500 (SEC)": checar_empresas_mundo,
     "Offshore — Tesouro dos EUA, Fed, BLS, BCE, Eurostat": checar_offshore,

@@ -1985,7 +1985,8 @@ async function paginaEmpresaMundo(id) {
         <div class="grade" id="graficos-empresa"></div>
         <div class="nota secao">Séries padronizadas a partir dos dados XBRL da SEC (US-GAAP), em US$: trimestres isolados pela diferença dos acumulados do ano;
           anos pelo número do 10-K. EBITDA = resultado operacional + depreciação e amortização da demonstração do fluxo de caixa. Bancos e seguradoras não divulgam
-          lucro bruto nem resultado operacional e ficam com esses gráficos vazios.</div>`;
+          lucro bruto nem resultado operacional e ficam com esses gráficos vazios.
+          ${(emp.notas || {}).ebit_estimado ? `<b style="color:var(--ambar)">Esta empresa não divulga resultado operacional: EBIT e EBITDA são estimados (lucro antes do IR + despesas de juros − receitas financeiras).</b>` : ""}</div>`;
       document.getElementById("visao").addEventListener("click", (ev) => {
         const b = ev.target.closest("button"); if (!b) return;
         VISAO = b.dataset.v;

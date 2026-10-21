@@ -1,6 +1,6 @@
 ---
 name: pesquisador-fontes
-description: Pesquisa e testa fontes de dados novas para a plataforma R.V. Mapp (APIs, arquivos abertos, sites oficiais) antes de qualquer implementação. Usar SOMENTE quando o usuário pedir explicitamente uma pesquisa de fonte (ex.: "pesquise se dá para trazer os índices da FGV", "veja se existe API para X"). Nunca acionar por conta própria.
+description: Pesquisa e testa fontes de dados novas para a plataforma R.V. Mapp (APIs, arquivos abertos, sites oficiais) antes de qualquer implementação. Usar SOMENTE quando o usuário pedir explicitamente uma pesquisa de fonte (ex.: "pesquise se dá para trazer os índices da FGV", "veja se existe API para X"). Também pode ser acionado pelo check-up quinzenal (skill checkup). Fora disso, nunca acionar por conta própria.
 tools: Read, Grep, Glob, Bash, WebFetch, WebSearch
 model: sonnet
 ---
