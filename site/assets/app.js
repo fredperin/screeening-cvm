@@ -122,7 +122,26 @@ function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTemp
       ...(s.area ? { areaStyle: { color: s.cor, opacity: 0.85 }, lineStyle: { width: 0 } } : {}),
     })),
   });
+  if (series.length >= MUITAS_SERIES) botaoTodasSeries(el);
   return g;
+}
+
+// Gráficos com muitas séries: botão ☑ para desmarcar todas (e escolher na legenda) ou marcar todas de novo
+const MUITAS_SERIES = 6;
+function botaoTodasSeries(el) {
+  const painel = el.closest(".painel"), titulo = painel && painel.querySelector("h2");
+  if (!titulo || painel.querySelector('[data-acao="todas"]')) return;
+  let caixa = titulo.querySelector(".ferramentas");
+  if (!caixa) { titulo.insertAdjacentHTML("beforeend", '<span class="ferramentas"></span>'); caixa = titulo.querySelector(".ferramentas"); }
+  caixa.insertAdjacentHTML("afterbegin", '<button data-acao="todas" title="Desmarcar todas as séries (depois escolha na legenda) ou marcar todas de novo">☑</button>');
+}
+function alternarTodasSeries(painel) {
+  painel.querySelectorAll(".grafico").forEach((el) => {
+    const g = echarts.getInstanceByDom(el); if (!g) return;
+    const op = g.getOption(), marcadas = (op.legend && op.legend[0] && op.legend[0].selected) || {};
+    const todas = op.series.every((s) => marcadas[s.name] !== false);
+    g.dispatchAction({ type: todas ? "legendInverseSelect" : "legendAllSelect" });
+  });
 }
 
 /* ============ ferramentas dos painéis: explicativo, download e tela cheia ============ */
@@ -139,7 +158,9 @@ function decorarPaineis(raiz = app) {
     if (temInfo) botoes.push(`<button data-acao="info" title="O que é e como é calculado">ⓘ</button>`);
     if (temGrafico) botoes.push(`<button data-acao="csv" title="Baixar a série histórica completa (CSV, abre no Excel)">⤓</button>`,
       `<button data-acao="tela" title="Tela cheia (Esc para sair)">⛶</button>`);
-    titulo.insertAdjacentHTML("beforeend", `<span class="ferramentas">${botoes.join("")}</span>`);
+    const caixa = titulo.querySelector(".ferramentas");
+    if (caixa) caixa.insertAdjacentHTML("beforeend", botoes.join(""));
+    else titulo.insertAdjacentHTML("beforeend", `<span class="ferramentas">${botoes.join("")}</span>`);
   });
 }
 
@@ -351,6 +372,7 @@ app.addEventListener("click", (ev) => {
   if (b.dataset.acao === "info") abrirExplicativo(painel.dataset.info, painel);
   else if (b.dataset.acao === "csv") baixarCsv(painel);
   else if (b.dataset.acao === "tela") alternarTelaCheia(painel);
+  else if (b.dataset.acao === "todas") alternarTodasSeries(painel);
 });
 document.getElementById("modal").addEventListener("click", (ev) => {
   if (ev.target.id === "modal" || ev.target.closest("[data-fechar]")) fecharModal();
