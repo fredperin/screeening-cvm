@@ -96,7 +96,7 @@ def semanal_pendente(arq):
 
 
 def main(tudo=False):
-    from pipeline import (agenda, bancos, calendario_resultados, credito, curva_di, eleicoes, empresas_mundo, eventos, ficha, fre_textos, macro, mercado, mundo, noticias, setor_externo,
+    from pipeline import (agenda, bancos, calendario_resultados, credito, curva_di, eleicoes, empresas_mundo, eventos, ficha, fiscal, fre_textos, macro, mercado, mundo, noticias, setor_externo,
                           offshore, planilhas, resumos, tesouro)
     from pipeline.cvm_lote import atualizar_base_cvm
     from pipeline.gerar_empresas import DIR_EMPRESAS, gerar_indice
@@ -107,6 +107,7 @@ def main(tudo=False):
     _etapa("macro", macro.gerar, status)
     _etapa("credito", credito.gerar, status)
     _etapa("setor_externo", setor_externo.gerar, status)
+    _etapa("fiscal", fiscal.gerar, status)
     _etapa("agenda", agenda.gerar, status)
     _etapa("tesouro", tesouro.gerar, status)
     _etapa("curva_di", curva_di.gerar, status)

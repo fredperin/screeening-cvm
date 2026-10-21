@@ -32,6 +32,7 @@ RITMO = {  # segundos entre consultas ao mesmo servidor
     "api.bls.gov": 1, "sdmx.oecd.org": 3, "www.imf.org": 1, "api.imf.org": 1, "api.worldbank.org": 0.3,
     "ec.europa.eu": 0.3, "data-api.ecb.europa.eu": 0.3, "markets.newyorkfed.org": 0.3, "home.treasury.gov": 0.5,
     "servicodados.ibge.gov.br": 0.3, "apisidra.ibge.gov.br": 0.3,
+    "apiapex.tesouro.gov.br": 1, "apidatalake.tesouro.gov.br": 0.3, "www.gov.br": 1,
 }
 RITMO_PADRAO = 0.1
 SEM_NOVA_TENTATIVA = {"api-comexstat.mdic.gov.br"}  # o Comex Stat só piora quando se insiste

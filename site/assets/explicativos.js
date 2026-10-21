@@ -264,6 +264,135 @@ window.EXPLICATIVOS = {
       indexadores), a partir de 2003.</p>
       <p class="sub">Fonte: Banco Central do Brasil — Dívida mobiliária, participação por indexador (SGS 4173 a 4180).</p>`,
   },
+  fiscal_arrecadacao: {
+    titulo: "Arrecadação federal por tributo",
+    html: `<p>Tudo o que a União arrecada, separado por tributo: Imposto de Renda (pessoa física, empresas e retido na fonte),
+      contribuição previdenciária, Cofins, PIS/Pasep, CSLL, IPI, impostos de importação e exportação, IOF e o que é administrado por
+      outros órgãos. As barras somadas dão o total.</p>
+      <p><b>Nominal</b> = valores correntes, como a Receita publica. <b>A preços de hoje</b> = cada mês corrigido pelo IPCA até o último mês
+      disponível, para comparar anos diferentes sem o efeito da inflação. "Acumulado em 12 meses" tira a sazonalidade (o IR concentra
+      pagamentos em março a maio, por exemplo).</p>
+      <p class="sub">Fonte: Receita Federal — Arrecadação das receitas federais (dados abertos, por estado, somados para o Brasil); IPCA do IBGE pelo Banco Central (SGS 433).</p>`,
+  },
+  fiscal_arrecadacao_pib: {
+    titulo: "Arrecadação federal em % do PIB e crescimento real",
+    html: `<p>Arrecadação de 12 meses dividida pelo PIB de 12 meses (carga tributária federal) e o crescimento real: arrecadação dos
+      últimos 12 meses a preços de hoje contra a dos 12 meses anteriores, também a preços de hoje.</p>
+      <p class="sub">Fonte: Receita Federal — Arrecadação das receitas federais; Banco Central — PIB acumulado em 12 meses (SGS 4382) e IPCA (SGS 433).</p>`,
+  },
+  fiscal_tributos: {
+    titulo: "Arrecadação federal por tributo — tabela",
+    html: `<p>Valores do último mês publicado e dos últimos 12 meses, participação de cada tributo no total e crescimento real
+      (12 meses a preços de hoje contra os 12 anteriores). O Imposto de Renda aparece também dividido em suas partes.</p>
+      <p class="sub">Fonte: Receita Federal — Arrecadação das receitas federais (dados abertos); IPCA do IBGE pelo Banco Central.</p>`,
+  },
+  fiscal_receitas_rtn: {
+    titulo: "Receita do Governo Central",
+    html: `<p><b>Receita total</b> do Governo Central (Tesouro, Previdência e Banco Central) = receita líquida + transferências
+      obrigatórias a estados e municípios (fundos de participação, royalties, salário-educação, Cide etc.). A <b>receita líquida</b>
+      é o que fica com a União para pagar suas despesas.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais; PIB do Banco Central (SGS 4382).</p>`,
+  },
+  fiscal_nao_administradas: {
+    titulo: "Receitas não administradas pela Receita Federal",
+    html: `<p>Receitas da União que não são tributos: concessões e permissões (leilões de infraestrutura, petróleo, telecomunicações),
+      dividendos das estatais, royalties e participações pela exploração de recursos naturais e demais receitas. Costumam oscilar
+      bastante e ajudam a fechar o resultado em alguns anos.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais.</p>`,
+  },
+  fiscal_dividendos: {
+    titulo: "Dividendos de estatais pagos à União",
+    html: `<p>Dividendos e juros sobre capital próprio que as empresas controladas pela União pagaram ao Tesouro, por empresa, somados
+      em 12 meses. Interessa ao acionista minoritário dessas empresas: mostra quanto o controlador depende desses pagamentos.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais.</p>`,
+  },
+  fiscal_despesa_grupos: {
+    titulo: "Despesa do Governo Central por grupo",
+    html: `<p>Despesa primária (sem juros) do Governo Central em 12 meses, nos grupos do Tesouro: <b>benefícios previdenciários</b>,
+      <b>pessoal</b>, <b>outras obrigatórias</b> (BPC, abono e seguro-desemprego, precatórios, Fundeb, subsídios…), <b>obrigatórias com
+      controle de fluxo</b> (Bolsa Família, parte de saúde e educação) e <b>discricionárias</b> do Executivo (o que o governo pode cortar).
+      As barras somadas dão a despesa total.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais; PIB do Banco Central (SGS 4382).</p>`,
+  },
+  fiscal_resultado_central: {
+    titulo: "Receita, despesa e resultado primário do Governo Central",
+    html: `<p>Receita líquida e despesa total em 12 meses, em % do PIB, e o <b>resultado primário</b> (receita menos despesa, sem juros):
+      positivo = superávit. É o conceito usado nas metas fiscais da União.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais; PIB do Banco Central (SGS 4382).</p>`,
+  },
+  fiscal_resultado_orgaos: {
+    titulo: "Resultado primário do Governo Central por órgão",
+    html: `<p>Resultado primário de 12 meses do Tesouro Nacional, da Previdência Social (contribuições menos benefícios do INSS)
+      e do Banco Central. Positivo = superávit; a Previdência é deficitária e o Tesouro cobre a diferença.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais.</p>`,
+  },
+  fiscal_discricionarias: {
+    titulo: "Despesas discricionárias por área",
+    html: `<p>Gastos do Poder Executivo que não são obrigatórios por lei (custeio e investimento das áreas). São os primeiros a ser
+      contingenciados quando a meta fiscal aperta.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais.</p>`,
+  },
+  fiscal_obrigatorias: {
+    titulo: "Outras despesas obrigatórias",
+    html: `<p>Despesas obrigatórias fora previdência e pessoal: BPC (benefício a idosos e pessoas com deficiência de baixa renda), abono
+      salarial e seguro-desemprego, sentenças judiciais e precatórios, complemento da União ao Fundeb, subsídios, créditos
+      extraordinários, compensação ao INSS pela desoneração da folha e demais.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais.</p>`,
+  },
+  fiscal_controle_fluxo: {
+    titulo: "Obrigatórias com controle de fluxo",
+    html: `<p>Despesas obrigatórias cujo ritmo de pagamento o Executivo programa ao longo do ano: Bolsa Família e parte das despesas
+      de saúde e educação.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN), API Séries Temporais.</p>`,
+  },
+  fiscal_investimento: {
+    titulo: "Investimento do governo federal",
+    html: `<p>Investimento (obras e equipamentos) pago pelo governo federal em 12 meses, em reais e em % do PIB.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Resultado do Tesouro Nacional (RTN, item de memorando), API Séries Temporais; PIB do Banco Central (SGS 4382).</p>`,
+  },
+  fiscal_dlsp_esferas: {
+    titulo: "Dívida líquida do setor público por esfera",
+    html: `<p>Dívida líquida do setor público (dívidas menos ativos financeiros) dividida entre Governo Federal e Banco Central, estados,
+      municípios e empresas estatais. As barras somadas dão a dívida líquida total; valor negativo = credor líquido.</p>
+      <p class="sub">Fonte: Banco Central do Brasil — Estatísticas fiscais (SGS 4503, 4507, 4508, 4509 e 4513).</p>`,
+  },
+  fiscal_dpf: {
+    titulo: "Dívida Pública Federal em mercado",
+    html: `<p>Estoque da Dívida Pública Federal em poder do mercado (fora da carteira do Banco Central), somado título a título pelo
+      indexador: <b>Selic</b> (LFT), <b>prefixado</b> (LTN e NTN-F), <b>IPCA</b> (NTN-B), <b>IGP-M</b> (NTN-C), <b>câmbio</b> (dívida externa)
+      e demais títulos e contratos. Em "% do estoque", a participação de cada um.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Estoque da Dívida Pública Federal (Tesouro Transparente, posição mensal desde set/2017).</p>`,
+  },
+  fiscal_dpf_vencimentos: {
+    titulo: "Vencimentos da Dívida Pública Federal",
+    html: `<p>Quanto do estoque em mercado vence em cada ano, pelo valor de hoje dos títulos. Muito vencimento concentrado num ano
+      significa mais dívida para rolar de uma vez.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Estoque da Dívida Pública Federal (Tesouro Transparente).</p>`,
+  },
+  fiscal_dpf_12m: {
+    titulo: "Dívida Pública Federal que vence em 12 meses",
+    html: `<p>Parcela do estoque em mercado com vencimento nos 12 meses seguintes a cada mês: indicador de risco de refinanciamento
+      acompanhado pelo próprio Tesouro.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Estoque da Dívida Pública Federal (Tesouro Transparente).</p>`,
+  },
+  fiscal_tesouro_direto: {
+    titulo: "Estoque do Tesouro Direto",
+    html: `<p>Quanto as pessoas físicas têm aplicado em títulos públicos pelo Tesouro Direto, por tipo de título, no fim de cada mês.</p>
+      <p class="sub">Fonte: Tesouro Nacional — Estoque do Tesouro Direto (Tesouro Transparente).</p>`,
+  },
+  fiscal_estados: {
+    titulo: "Dívida e gasto com pessoal dos estados",
+    html: `<p><b>Dívida consolidada líquida</b> (dívida menos caixa e haveres) em % da <b>receita corrente líquida</b>: o limite do Senado
+      para estados é 200%. <b>Pessoal do Poder Executivo</b> em % da receita corrente líquida: limite de 49% pela Lei de Responsabilidade
+      Fiscal. No gráfico, os seis estados mais endividados (fim de cada ano e quadrimestres do ano corrente).</p>
+      <p class="sub">Fonte: Tesouro Nacional — SICONFI, Relatório de Gestão Fiscal (anexos 1 e 2), API de dados abertos.</p>`,
+  },
+  fiscal_capitais: {
+    titulo: "Dívida e gasto com pessoal das capitais",
+    html: `<p>Mesmos indicadores dos estados para as capitais: dívida consolidada líquida em % da receita corrente líquida (limite de 120%
+      para municípios) e pessoal do Poder Executivo em % da receita corrente líquida (limite de 54%).</p>
+      <p class="sub">Fonte: Tesouro Nacional — SICONFI, Relatório de Gestão Fiscal (anexos 1 e 2), API de dados abertos.</p>`,
+  },
   fiscal_prazo: {
     titulo: "Prazo médio da dívida mobiliária federal",
     html: `<p>Prazo médio, em meses, dos títulos do Tesouro Nacional em circulação: quanto maior, menos dívida vence a cada ano

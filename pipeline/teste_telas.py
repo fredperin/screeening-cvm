@@ -34,8 +34,9 @@ PORTA = 8799
 # (rota, botões de abas internas a percorrer: seletor CSS dos botões)
 ROTAS = [
     ("#/on", None), ("#/on/noticias", None),
-    *[(f"#/on/macro/{s}", None) for s in ("atividade", "inflacao", "expectativas", "monetaria", "fiscal", "cambio", "externo")],
+    *[(f"#/on/macro/{s}", None) for s in ("atividade", "inflacao", "expectativas", "monetaria", "cambio", "externo")],
     ("#/on/macro/credito", "#sub-credito button"),
+    ("#/on/macro/fiscal", "#sub-fiscal button"),
     ("#/on/juros", None),
     *[(f"#/on/empresas/{a}", None) for a in ("noticias", "fatos", "tabela", "financeiras")],
     ("#/on/empresa/VALE3", "#abas-empresa button"), ("#/on/empresa/WEGE3", "#abas-empresa button"),

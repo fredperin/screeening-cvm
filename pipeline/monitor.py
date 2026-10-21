@@ -341,6 +341,25 @@ def checar_setor_externo():
     return "balanço de pagamentos e comércio exterior em dia"
 
 
+def checar_fiscal():
+    """Política fiscal (pipeline.fiscal): RTN, arrecadação da Receita, Dívida Pública Federal, Tesouro Direto e SICONFI
+    em dia (atrasos normais: RTN ~2 meses, arquivo da Receita ~3 meses, Tesouro Transparente ~1,5 mês, RGF quadrimestral)."""
+    arq = DIR_DADOS_SITE / "fiscal.json"
+    assert arq.exists(), "fiscal.json não foi gerado"
+    d = json.loads(arq.read_text(encoding="utf-8"))
+    s, problemas = d.get("series", {}), list(d.get("falhas", []))
+    for nome, k, max_dias in (("RTN (Tesouro)", "rtn_receita_total", 100), ("arrecadação (Receita Federal)", "arr_total", 130),
+                              ("Dívida Pública Federal", "dpf_total", 80), ("Tesouro Direto", "td_total", 80)):
+        if not (s.get(k) or {}).get("datas"):
+            problemas.append(f"{nome}: série ausente")
+        elif _dias(s[k]["datas"][-1]) > max_dias:
+            problemas.append(f"{nome}: último dado em {s[k]['datas'][-1]}")
+    if len(d.get("estados") or []) < 27:
+        problemas.append(f"SICONFI: {len(d.get('estados') or [])} estados")
+    assert not problemas, " | ".join(problemas)
+    return f"{len(s)} séries; {len(d['estados'])} estados e {len(d.get('capitais') or [])} capitais"
+
+
 def checar_credito():
     """Estatísticas de crédito do BC (pipeline.credito): sem falhas e com o último mês dentro da defasagem normal (~30 dias)."""
     arq = DIR_DADOS_SITE / "credito.json"
@@ -416,6 +435,7 @@ CHECAGENS = {
     "Banco Central — Focus": checar_focus,
     "Macro — séries completas e em dia": checar_macro,
     "Banco Central — estatísticas de crédito": checar_credito,
+    "Política fiscal (Tesouro, Receita Federal, SICONFI)": checar_fiscal,
     "Setor externo (Banco Central e Comex Stat)": checar_setor_externo,
     "Site — telas, gráficos e links (teste automático)": checar_telas,
     "Mundo — mercados, commodities, China e Global": checar_mundo,

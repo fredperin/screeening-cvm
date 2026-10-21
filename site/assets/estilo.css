@@ -103,6 +103,7 @@ h2 { font-size: 13px; color: var(--ambar); margin: 0 0 8px; font-weight: 600; te
 
 .pos { color: var(--verde); }
 .neg { color: var(--vermelho); }
+.atencao { color: var(--ambar); }
 
 table.tabela { width: 100%; border-collapse: collapse; font-size: 12px; }
 table.tabela th, table.tabela td { padding: 5px 8px; border-bottom: 1px dashed #1e2733; text-align: right; white-space: nowrap; }

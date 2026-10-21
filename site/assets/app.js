@@ -260,9 +260,11 @@ const ARQUIVO_POR_PREFIXO = [["externo_", "setor_externo.json"], ["credito_", "c
 
 // Gráficos sem eixo de datas (curvas de juros por prazo): arquivo de origem e data de referência da curva
 const FONTE_CURVAS = { curva_di: "curva_di.json", di_ipca: "curva_di.json", tesouro_ipca: "tesouro.json", tesouro_pre: "tesouro.json",
-  inflacao_implicita: "tesouro.json", ust_curva: "offshore.json", ust_real: "offshore.json", curva_euro: "offshore.json" };
+  inflacao_implicita: "tesouro.json", ust_curva: "offshore.json", ust_real: "offshore.json", curva_euro: "offshore.json",
+  fiscal_dpf_vencimentos: "fiscal.json" };
 function referenciaDaCurva(j, chave) {
   if (!j) return null;
+  if (chave === "fiscal_dpf_vencimentos") return (j.vencimentos_dpf || {}).data || null;
   if (j.data_base) return j.data_base;
   if (j.curvas && j.curvas.hoje) return j.curvas.hoje.data;
   const T = j.treasuries || {}, C = (j.bce || {}).curva || {};
@@ -1070,6 +1072,8 @@ let JANELA_MACRO = 10;
 const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["expectativas", "Expectativas (Focus)"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["credito", "Crédito"], ["cambio", "Câmbio"], ["externo", "Setor externo"]];
 const SUBS_CREDITO = [["total", "Total"], ["pj", "Pessoa jurídica"], ["pf", "Pessoa física"]];
 let ABA_CREDITO = "total";
+const SUBS_FISCAL = [["arrecadacao", "Arrecadação"], ["despesas", "Despesas"], ["endividamento", "Endividamento"]];
+let ABA_FISCAL = "arrecadacao";
 const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
 const ESCOLHA_GRAFICO = {};  // opção escolhida em cada gráfico com botões (fica ao trocar de janela)
 const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinza], ["nucleo_ex3", "EX3", COR.roxo],
@@ -1077,10 +1081,11 @@ const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinz
 
 async function paginaMacro(sub) {
   if (!SUBS_MACRO.some(([k]) => k === sub)) sub = SUBS_MACRO[0][0];
-  const [macro, cred, ext] = await Promise.all([dados("dados/macro.json"), sub === "credito" ? dados("dados/credito.json").catch(() => null) : null,
-    sub === "externo" ? dados("dados/setor_externo.json").catch(() => null) : null]);
+  const [macro, cred, ext, fis] = await Promise.all([dados("dados/macro.json"), sub === "credito" ? dados("dados/credito.json").catch(() => null) : null,
+    sub === "externo" ? dados("dados/setor_externo.json").catch(() => null) : null,
+    sub === "fiscal" ? dados("dados/fiscal.json").catch(() => null) : null]);
   // Setor externo: séries do BC e do Comex Stat entram no mesmo dicionário (prefixo cx_ para o Comex); valores em US$
-  const S = { ...macro.series, ...((cred && cred.series) || {}), ...((ext && ext.bc) || {}),
+  const S = { ...macro.series, ...((cred && cred.series) || {}), ...((fis && fis.series) || {}), ...((ext && ext.bc) || {}),
     ...(ext && ext.comex ? { cx_exportacoes: ext.comex.exportacoes, cx_importacoes: ext.comex.importacoes } : {}) }, F = macro.focus;
   if (sub === "externo") MOEDA = "US$";
   const u = (k) => ultimo(S[k]);
@@ -1098,26 +1103,30 @@ async function paginaMacro(sub) {
     monetaria: [cartao("Selic meta", pctPronto(u("selic_meta").valor), dataBR(u("selic_meta").data)), cartao("CDI", pctPronto(u("cdi").valor), dataBR(u("cdi").data)),
       cartao("Juro real ex-post", pctPronto(u("juro_real").valor), "Selic ÷ IPCA 12m")],
     cambio: [cartao("Dólar PTAX", `R$ ${num(u("usd").valor, 4)}`, dataBR(u("usd").data)), cartao("Euro PTAX", `R$ ${num(u("eur").valor, 4)}`, dataBR(u("eur").data))],
-    // NFSP: positivo = déficit; os cartões mostram o resultado (superávit positivo)
-    fiscal: [cartao("Dívida bruta (DBGG)", pctPronto(u("dbgg").valor, 1), `% do PIB · ${mes("dbgg")}`),
+    // Política fiscal: cartões da aba interna; no Endividamento, NFSP com sinal invertido (resultado: superávit positivo)
+    fiscal: ABA_FISCAL !== "endividamento" ? cartoesFiscal(S, u, mes) : [cartao("Dívida bruta (DBGG)", pctPronto(u("dbgg").valor, 1), `% do PIB · ${mes("dbgg")}`),
       cartao("Dívida líquida (DLSP)", pctPronto(u("dlsp").valor, 1), `% do PIB · ${mes("dlsp")}`),
       cartao("Resultado primário 12m", pctPronto(u("nfsp_primario").valor == null ? null : -u("nfsp_primario").valor, 2), `% do PIB · setor público consolidado`),
       cartao("Juros nominais 12m", pctPronto(u("nfsp_juros").valor, 2), "% do PIB"),
       cartao("Resultado nominal 12m", pctPronto(u("nfsp_nominal").valor == null ? null : -u("nfsp_nominal").valor, 2), "% do PIB"),
-      cartao("Dívida federal pós-fixada (Selic)", pctPronto(u("dmf_selic").valor, 1), `do estoque · ${mes("dmf_selic")}`)],
+      cartao("Dívida federal pós-fixada (Selic)", pctPronto(u("dmf_selic").valor, 1), `do estoque · ${mes("dmf_selic")}`),
+      cartao("Dívida Pública Federal em mercado", u("dpf_total").valor != null ? reais(u("dpf_total").valor * 1e6) : "—", `Tesouro · ${mes("dpf_total")}`),
+      cartao("DPF que vence em 12 meses", pctPronto(u("dpf_vence_12m").valor, 1), `do estoque · ${mes("dpf_vence_12m")}`)],
     credito: cred ? cartoesCredito(S, u, mes) : [],
     externo: ext ? cartoesExterno(S, u, mes) : [],
     expectativas: [cartao(`IPCA ${new Date().getFullYear()}`, pctPronto(focusAno("ipca")), "mediana Focus"), cartao(`Selic fim de ${new Date().getFullYear()}`, pctPronto(focusAno("selic")), "mediana Focus"),
       cartao(`Câmbio fim de ${new Date().getFullYear()}`, focusAno("cambio") ? `R$ ${num(focusAno("cambio"), 2)}` : "—", "mediana Focus"), cartao(`PIB ${new Date().getFullYear()}`, pctPronto(focusAno("pib")), "mediana Focus")],
   }[sub];
   app.innerHTML = `
-    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS, Estatísticas Fiscais, de Crédito e do Setor Externo), IBGE, FGV, Comex Stat e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
+    <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS, Estatísticas Fiscais, de Crédito e do Setor Externo), Tesouro Nacional (RTN, Dívida Pública, SICONFI), Receita Federal, IBGE, FGV, Comex Stat e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         ${sub === "expectativas" ? "" : `<div class="seletor" id="janela">${[[1, "1A"], [5, "5A"], [10, "10A"], [99, "Máx"]].map(([a, r]) => `<button data-a="${a}" class="${a === JANELA_MACRO ? "ativo" : ""}">${r}</button>`).join("")}</div>`}
         <a class="botao" href="downloads/macro.xlsx" download>Baixar planilha de Macro</a></div></div>
     <div class="abas">${SUBS_MACRO.map(([k, n]) => `<a href="#/on/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>
     ${sub === "credito" ? `<div class="seletor seletor-editoria" id="sub-credito" style="margin:-4px 0 12px">${SUBS_CREDITO.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_CREDITO ? "ativo" : ""}">${n}</button>`).join("")}</div>
       ${cred ? "" : `<p class="sub">Estatísticas de crédito indisponíveis no momento.</p>`}` : ""}
+    ${sub === "fiscal" ? `<div class="seletor seletor-editoria" id="sub-fiscal" style="margin:-4px 0 12px">${SUBS_FISCAL.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_FISCAL ? "ativo" : ""}">${n}</button>`).join("")}</div>
+      ${fis || ABA_FISCAL === "endividamento" ? "" : `<p class="sub">Dados de arrecadação e despesas indisponíveis no momento.</p>`}` : ""}
     <div class="grade-cartoes">${cartoes.join("")}</div>
     <div class="grade" id="graficos-macro"></div>`;
   const subCred = document.getElementById("sub-credito");
@@ -1126,17 +1135,23 @@ async function paginaMacro(sub) {
     ABA_CREDITO = b.dataset.k;
     paginaMacro("credito");
   });
+  const subFiscal = document.getElementById("sub-fiscal");
+  if (subFiscal) subFiscal.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    ABA_FISCAL = b.dataset.k;
+    paginaMacro("fiscal");
+  });
   const janela = document.getElementById("janela");
   if (janela) janela.addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
     JANELA_MACRO = Number(b.dataset.a);
     document.querySelectorAll("#janela button").forEach((x) => x.classList.toggle("ativo", x === b));
-    desenharMacro(S, F, sub, cred, ext);
+    desenharMacro(S, F, sub, cred, ext, fis);
   });
-  desenharMacro(S, F, sub, cred, ext);
+  desenharMacro(S, F, sub, cred, ext, fis);
 }
 
-function desenharMacro(S, F, sub, cred = null, ext = null) {
+function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
   limparGraficos();
   // Histórico completo em todos os gráficos; os botões de janela só escolhem o início (dá para dar zoom para trás)
   const inicio = (anos) => { if (anos >= 99) return null; const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
@@ -1276,6 +1291,109 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
     const mapas = ks.map((k) => Object.fromEntries(P(S[k])));
     return base.datas.map((d) => [d, Math.round(mapas.reduce((a, m) => a + (m[d] || 0), 0) * 100) / 100]);
   };
+  // ---------- Política fiscal (Tesouro/RTN, Receita Federal, Tesouro Transparente, SICONFI) ----------
+  // barras somadas em % (sem conversão de unidade), alinhadas às datas da série de referência
+  const naRefPct = (ref, chave) => {
+    if (!ref || !S[chave]) return [];
+    const m = Object.fromEntries(P(S[chave]));
+    return ref.datas.map((d) => [d, m[d] == null ? null : m[d]]);
+  };
+  const pilhaR = (ref, partes, pilha, suf = "") => partes.map(([k, nome], j) => ({ nome, valores: naRef(S[ref], `${k}${suf}`),
+    cor: PALETA_GRAF[j % PALETA_GRAF.length], pilha }));
+  const pilhaPct = (ref, partes, pilha, suf) => partes.map(([k, nome], j) => ({ nome, valores: naRefPct(S[ref], `${k}${suf}`),
+    cor: PALETA_GRAF[j % PALETA_GRAF.length], pilha }));
+  const TRIBUTOS_GR = [["arr_ir", "Imposto de Renda"], ["arr_previdencia", "Previdência (RGPS)"], ["arr_cofins", "Cofins"],
+    ["arr_pis", "PIS/Pasep"], ["arr_csll", "CSLL"], ["arr_ipi", "IPI"], ["arr_comercio", "Importação e exportação"], ["arr_iof", "IOF"],
+    ["arr_outros_orgaos", "Administradas por outros órgãos"], ["arr_outros", "Demais"]];
+  const GRUPOS_DESPESA = [["rtn_previdencia", "Benefícios previdenciários"], ["rtn_pessoal", "Pessoal e encargos"],
+    ["rtn_outras_obrig", "Outras obrigatórias"], ["rtn_controle_fluxo", "Obrigatórias com controle de fluxo"],
+    ["rtn_discricionarias", "Discricionárias do Executivo"]];
+  const defsFiscal = (aba) => {
+    if (aba === "arrecadacao") return [
+      { t: "Arrecadação federal por tributo — acumulado em 12 meses", info: "fiscal_arrecadacao", largo: true, alt: {
+        "Nominal": { eixoEsq: "reais", series: pilhaR("arr_total_12m", TRIBUTOS_GR, "arr", "_12m") },
+        "A preços de hoje (IPCA)": { eixoEsq: "reais", series: pilhaR("arr_total_12m_real", TRIBUTOS_GR, "arr", "_12m_real") } } },
+      { t: "Arrecadação federal: % do PIB e crescimento real (12 meses)", info: "fiscal_arrecadacao_pib", op: { eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
+        { nome: "% do PIB", valores: P(S.arr_total_12m_pib), tipo: "line", cor: COR.ambar },
+        { nome: "Crescimento real em 12 meses (eixo direito)", valores: P(S.arr_total_cresc_real), tipo: "line", eixo: "dir", cor: COR.verde }] } },
+      { t: "Arrecadação federal no mês, por tributo", info: "fiscal_arrecadacao", op: { eixoEsq: "reais", inicio: inicio(Math.min(JANELA_MACRO, 3)),
+        series: pilhaR("arr_total", TRIBUTOS_GR, "arrm") } },
+      { t: "Receita do Governo Central e transferências a estados e municípios — 12 meses", info: "fiscal_receitas_rtn", alt: {
+        "R$": { eixoEsq: "reais", series: pilhaR("rtn_receita_total_12m", [["rtn_receita_liquida", "Receita líquida do Governo Central"],
+          ["rtn_transferencias", "Transferências a estados e municípios"]], "rec", "_12m") },
+        "% do PIB": { eixoEsq: "pctPronto", series: [
+          { nome: "Receita total", valores: P(S.rtn_receita_total_12m_pib), tipo: "line", cor: COR.ambar },
+          { nome: "Receita líquida", valores: P(S.rtn_receita_liquida_12m_pib), tipo: "line", cor: COR.azul },
+          { nome: "Transferências a estados e municípios", valores: P(S.rtn_transferencias_12m_pib), tipo: "line", cor: COR.roxo }] } } },
+      { t: "Receitas não administradas pela Receita Federal — 12 meses", info: "fiscal_nao_administradas", op: { eixoEsq: "reais",
+        series: pilhaR("rtn_receita_nao_adm_12m", [["rtn_concessoes", "Concessões e permissões"], ["rtn_dividendos", "Dividendos de estatais"],
+          ["rtn_recursos_naturais", "Royalties e participações (recursos naturais)"], ["rtn_nao_adm_demais", "Demais"]], "na", "_12m") } },
+      { t: "Dividendos de estatais pagos à União — 12 meses", info: "fiscal_dividendos", op: { eixoEsq: "reais",
+        series: pilhaR("rtn_dividendos_12m", [["rtn_div_petrobras", "Petrobras"], ["rtn_div_bndes", "BNDES"], ["rtn_div_bb", "Banco do Brasil"],
+          ["rtn_div_caixa", "Caixa"], ["rtn_div_eletrobras", "Eletrobras"], ["rtn_div_demais", "Demais empresas"]], "div", "_12m") } },
+    ];
+    return [  // despesas
+      { t: "Despesa total do Governo Central por grupo — 12 meses", info: "fiscal_despesa_grupos", largo: true, alt: {
+        "R$": { eixoEsq: "reais", series: pilhaR("rtn_despesa_total_12m", GRUPOS_DESPESA, "desp", "_12m") },
+        "% do PIB": { eixoEsq: "pctPronto", series: pilhaPct("rtn_despesa_total_12m_pib", GRUPOS_DESPESA, "desp", "_12m_pib") } } },
+      { t: "Receita líquida, despesa e resultado primário do Governo Central — 12 meses (% do PIB)", info: "fiscal_resultado_central", op: {
+        eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
+          { nome: "Receita líquida", valores: P(S.rtn_receita_liquida_12m_pib), tipo: "line", cor: COR.azul },
+          { nome: "Despesa total", valores: P(S.rtn_despesa_total_12m_pib), tipo: "line", cor: COR.vermelho },
+          { nome: "Resultado primário (eixo direito)", valores: P(S.rtn_resultado_central_12m_pib), eixo: "dir", cor: COR.verde }] } },
+      { t: "Resultado primário do Governo Central por órgão — 12 meses", info: "fiscal_resultado_orgaos", op: { eixoEsq: "reais", series: [
+        ...pilhaR("rtn_resultado_central_12m", [["rtn_resultado_tesouro", "Tesouro Nacional"], ["rtn_resultado_previdencia", "Previdência Social"],
+          ["rtn_resultado_bcb", "Banco Central"]], "res", "_12m"),
+        { nome: "Total do Governo Central", valores: M(S.rtn_resultado_central_12m), tipo: "line", cor: COR.ambar }] } },
+      { t: "Despesas discricionárias do Poder Executivo por área — 12 meses", info: "fiscal_discricionarias", op: { eixoEsq: "reais",
+        series: pilhaR("rtn_discricionarias_12m", [["rtn_disc_saude", "Saúde"], ["rtn_disc_educacao", "Educação"], ["rtn_disc_defesa", "Defesa"],
+          ["rtn_disc_transporte", "Transporte"], ["rtn_disc_administracao", "Administração"], ["rtn_disc_ciencia", "Ciência e tecnologia"],
+          ["rtn_disc_seguranca", "Segurança pública"], ["rtn_disc_assistencia", "Assistência social"], ["rtn_disc_demais", "Demais"]], "disc", "_12m") } },
+      { t: "Outras despesas obrigatórias — 12 meses", info: "fiscal_obrigatorias", op: { eixoEsq: "reais",
+        series: pilhaR("rtn_outras_obrig_12m", [["rtn_obr_bpc", "BPC (LOAS/RMV)"], ["rtn_obr_abono", "Abono e seguro-desemprego"],
+          ["rtn_obr_sentencas", "Sentenças judiciais e precatórios"], ["rtn_obr_fundeb", "Fundeb"], ["rtn_obr_subsidios", "Subsídios e subvenções"],
+          ["rtn_obr_creditos", "Créditos extraordinários"], ["rtn_obr_compensacao", "Compensação da desoneração da folha"],
+          ["rtn_obr_demais", "Demais"]], "obr", "_12m") } },
+      { t: "Obrigatórias com controle de fluxo — 12 meses", info: "fiscal_controle_fluxo", op: { eixoEsq: "reais",
+        series: pilhaR("rtn_controle_fluxo_12m", [["rtn_cf_bolsa", "Bolsa Família"], ["rtn_cf_saude", "Saúde"], ["rtn_cf_educacao", "Educação"],
+          ["rtn_cf_demais", "Demais"]], "cf", "_12m") } },
+      { t: "Investimento do governo federal — 12 meses", info: "fiscal_investimento", op: { eixoEsq: "reais", eixoDir: "pctPronto", series: [
+        { nome: "Investimento (12 meses)", valores: M(S.rtn_investimento_12m), cor: COR.azul },
+        { nome: "% do PIB (eixo direito)", valores: P(S.rtn_investimento_12m_pib), tipo: "line", eixo: "dir", cor: COR.ambar }] } },
+    ];
+  };
+  // Endividamento: gráficos do Banco Central que já existiam + dívida por esfera, Dívida Pública Federal e Tesouro Direto
+  const defsEndividamento = (bc) => {
+    const [divida, resultado, esferas, prazo, dmf] = bc;
+    const V = (fis && fis.vencimentos_dpf) || null;
+    const IDX = [["dpf_selic", "Selic (LFT)"], ["dpf_pre", "Prefixado (LTN e NTN-F)"], ["dpf_ipca", "IPCA (NTN-B)"], ["dpf_igpm", "IGP-M (NTN-C)"],
+      ["dpf_cambio", "Câmbio (dívida externa)"], ["dpf_demais", "Demais"]];
+    const parteDpf = (k) => (S.dpf_total ? S.dpf_total.datas.map((d, i) => { const m = Object.fromEntries(P(S[k])); return [d, m[d] == null ? null : m[d] / S.dpf_total.valores[i] * 100]; }) : []);
+    const estados = ((fis && fis.estados) || []).slice(0, 6);
+    return [
+      divida,
+      { t: "Dívida líquida do setor público por esfera (% do PIB)", info: "fiscal_dlsp_esferas", op: { eixoEsq: "pctPronto", series: [
+        ...[["dlsp_federal", "Governo Federal e Banco Central"], ["dlsp_estados", "Estados"], ["dlsp_municipios", "Municípios"], ["dlsp_estatais", "Estatais"]]
+          .map(([k, nome], j) => ({ nome, valores: alinhar(S.dlsp, [k]), cor: [COR.azul, COR.roxo, COR.ciano, COR.cinza][j], pilha: "dlsp" })),
+        { nome: "Total (DLSP)", valores: P(S.dlsp), tipo: "line", cor: COR.ambar }] } },
+      resultado, esferas,
+      ...(S.dpf_total ? [{ t: "Dívida Pública Federal em mercado por indexador (Tesouro)", info: "fiscal_dpf", largo: true, alt: {
+        "R$": { eixoEsq: "reais", series: pilhaR("dpf_total", IDX, "dpf") },
+        "% do estoque": { eixoEsq: "pctPronto", limitesEsq: [0, 100], series: IDX.map(([k, nome], j) => ({ nome, valores: parteDpf(k), cor: PALETA_GRAF[j], pilha: "dpfp" })) } } }] : []),
+      ...(V ? [{ t: `Vencimentos da Dívida Pública Federal em mercado, por ano · posição de ${mesAno(V.data)}`, info: "fiscal_dpf_vencimentos", op: {
+        xTempo: false, rotulos: [...V.anos, "Depois"], eixoEsq: "reais", janela: 30, series: [
+          { nome: "A vencer", valores: [...V.valores, V.depois].map((v) => v * 1e6), cor: COR.azul }] } }] : []),
+      ...(S.dpf_vence_12m ? [{ t: "Parcela da Dívida Pública Federal que vence em 12 meses", info: "fiscal_dpf_12m", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Vence em até 12 meses", valores: P(S.dpf_vence_12m), tipo: "line", cor: COR.vermelho }] } }] : []),
+      prazo, dmf,
+      ...(S.td_total ? [{ t: "Tesouro Direto — estoque por tipo de título", info: "fiscal_tesouro_direto", op: { eixoEsq: "reais", series: pilhaR("td_total",
+        [["td_selic", "Tesouro Selic"], ["td_ipca", "Tesouro IPCA+"], ["td_prefixado", "Tesouro Prefixado"], ["td_renda", "Tesouro Renda+"],
+          ["td_educa", "Tesouro Educa+"], ["td_igpm", "Tesouro IGP-M+"], ["td_outros", "Outros"]], "td") } }] : []),
+      ...(estados.length ? [{ t: "Dívida consolidada líquida dos estados mais endividados (% da receita corrente líquida)", info: "fiscal_estados", largo: true, op: {
+        eixoEsq: "pctPronto", series: estados.map((e, j) => ({ nome: e.nome, tipo: "line", cor: PALETA_GRAF[j],
+          valores: e.historico.datas.map((d, i) => [d, e.historico.dcl_rcl[i]]) })) } }] : []),
+    ];
+  };
   // cada item: { t: título, info, op: opções do gráfico | alt: { rótulo do botão: opções }, largo, focus }
   const defs = {
     inflacao: [
@@ -1301,7 +1419,7 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
     ],
     credito: cred ? defsCredito(ABA_CREDITO) : [],
     externo: ext ? defsExterno() : [],
-    fiscal: [
+    fiscal: ABA_FISCAL === "endividamento" ? defsEndividamento([
       { t: "Dívida pública (% do PIB): bruta e líquida", info: "fiscal_divida", op: { eixoEsq: "pctPronto", series: [
         { nome: "Dívida bruta do governo geral (DBGG)", valores: P(S.dbgg), tipo: "line", cor: COR.vermelho },
         { nome: "Dívida líquida do setor público (DLSP)", valores: P(S.dlsp), tipo: "line", cor: COR.azul }] } },
@@ -1323,7 +1441,7 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
         { nome: "Prefixado (LTN, NTN-F)", valores: alinhar(S.dmf_ipca, ["dmf_pre"]), tipo: "line", area: true, cor: COR.verde, pilha: "dmf" },
         { nome: "IPCA (NTN-B)", valores: alinhar(S.dmf_ipca, ["dmf_ipca"]), tipo: "line", area: true, cor: COR.vermelho, pilha: "dmf" },
         { nome: "Câmbio, IGP-M, TR e outros", valores: alinhar(S.dmf_ipca, ["dmf_cambio", "dmf_igpm", "dmf_igpdi", "dmf_tr", "dmf_tjlp", "dmf_outros"]), tipo: "line", area: true, cor: COR.cinza, pilha: "dmf" }] } },
-    ],
+    ]) : defsFiscal(ABA_FISCAL),
     cambio: [
       { t: "Câmbio PTAX", info: "cambio", largo: true, op: { series: [{ nome: "Dólar", valores: P(S.usd), tipo: "line", cor: COR.verde }, { nome: "Euro", valores: P(S.eur), tipo: "line", cor: COR.roxo }], eixoEsq: "preco" } },
     ],
@@ -1352,6 +1470,11 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
     grafico(el, xTempo ? { xTempo: true, inicioTempo: (ini !== undefined ? ini : corte) || "1990-01-01", deslizante: true, ...resto } : resto);
   };
   defs.forEach((_, i) => desenhar(i));
+  if (sub === "fiscal" && fis) {  // tabelas da Política fiscal no fim da aba
+    if (ABA_FISCAL === "arrecadacao") area.insertAdjacentHTML("beforeend", tabelaTributos(S));
+    if (ABA_FISCAL === "endividamento") area.insertAdjacentHTML("beforeend",
+      tabelaEntes(fis.estados, "Estados", "fiscal_estados", 200, 49) + tabelaEntes(fis.capitais, "Capitais", "fiscal_capitais", 120, 54));
+  }
   if (sub === "externo" && ext && ext.comex && ext.comex.produtos) {  // tabela logo abaixo do gráfico de produtos
     const graf = document.getElementById(`gm-${defs.findIndex((d) => d.info === "externo_produtos")}`);
     (graf ? graf.closest(".painel") : area.lastElementChild).insertAdjacentHTML("afterend", tabelaProdutosExterno(ext.comex));
@@ -1363,6 +1486,62 @@ function desenharMacro(S, F, sub, cred = null, ext = null) {
     sel.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
     desenhar(i);
   }));
+}
+
+// Política fiscal: cartões de Arrecadação e Despesas (valores do RTN e da Receita em R$ milhões)
+function cartoesFiscal(S, u, mes) {
+  const r = (k) => (u(k).valor != null ? reais(u(k).valor * 1e6) : "—");
+  const parte = (a, b) => (u(a).valor != null && u(b).valor ? pct(u(a).valor / u(b).valor) : "—");
+  if (ABA_FISCAL === "arrecadacao") return [
+    cartao("Arrecadação federal 12m", r("arr_total_12m"), `Receita Federal · até ${mes("arr_total_12m")}`),
+    cartao("Arrecadação em % do PIB", pctPronto(u("arr_total_12m_pib").valor, 1), `12 meses · ${mes("arr_total_12m_pib")}`),
+    cartao("Crescimento real 12m", pctPronto(u("arr_total_cresc_real").valor, 1), "acima do IPCA, contra 12 meses antes"),
+    cartao("Arrecadação no mês", r("arr_total"), mes("arr_total")),
+    cartao("Imposto de Renda", parte("arr_ir_12m", "arr_total_12m"), "da arrecadação de 12 meses"),
+    cartao("Dividendos de estatais 12m", r("rtn_dividendos_12m"), `pagos à União · ${mes("rtn_dividendos_12m")}`)];
+  return [
+    cartao("Despesa do Governo Central 12m", r("rtn_despesa_total_12m"), `Tesouro (RTN) · até ${mes("rtn_despesa_total_12m")}`),
+    cartao("Despesa em % do PIB", pctPronto(u("rtn_despesa_total_12m_pib").valor, 1), `12 meses · ${mes("rtn_despesa_total_12m_pib")}`),
+    cartao("Previdência", parte("rtn_previdencia_12m", "rtn_despesa_total_12m"), "da despesa de 12 meses"),
+    cartao("Discricionárias 12m", r("rtn_discricionarias_12m"), "do Poder Executivo"),
+    cartao("Resultado primário 12m", pctPronto(u("rtn_resultado_central_12m_pib").valor, 2), "% do PIB · Governo Central"),
+    cartao("Investimento federal 12m", r("rtn_investimento_12m"), `${pctPronto(u("rtn_investimento_12m_pib").valor, 2)} do PIB`)];
+}
+
+function tabelaTributos(S) {
+  const ult = (k) => (S[k] && S[k].valores.length ? S[k].valores[S[k].valores.length - 1] : null);
+  const tot = ult("arr_total_12m");
+  const linhas = [["arr_total", "Arrecadação federal total", true], ["arr_ir", "Imposto de Renda"], ["ir_irpf", "· IRPF (pessoa física)"],
+    ["ir_irpj", "· IRPJ (empresas)"], ["ir_irrf_trabalho", "· IRRF — trabalho"], ["ir_irrf_capital", "· IRRF — capital"],
+    ["ir_irrf_exterior", "· IRRF — remessas ao exterior"], ["ir_irrf_outros", "· IRRF — outros"], ["arr_previdencia", "Previdência (RGPS)"],
+    ["arr_cofins", "Cofins"], ["arr_pis", "PIS/Pasep"], ["arr_csll", "CSLL"], ["arr_ipi", "IPI"], ["arr_comercio", "Importação e exportação"],
+    ["arr_iof", "IOF"], ["arr_outros_orgaos", "Administradas por outros órgãos"], ["arr_outros", "Demais"]].filter(([k]) => S[k]);
+  const bi = (v) => (v == null ? "—" : num(v / 1000, 1));
+  const ref = S.arr_total ? S.arr_total.datas[S.arr_total.datas.length - 1] : null;
+  return `<div class="painel largo" data-info="fiscal_tributos"><h2>Arrecadação federal por tributo — R$ bilhões · ${mesAno(ref)}</h2><div class="rolagem"><table class="tabela">
+    <tr><th style="text-align:left">Tributo</th><th>No mês</th><th>12 meses</th><th>% do total</th><th>Crescimento real 12m</th></tr>
+    ${linhas.map(([k, nome, negrito]) => { const c = ult(`${k}_cresc_real`); return `<tr${negrito ? ' style="font-weight:700"' : ""}><td style="text-align:left">${esc(nome)}</td>
+      <td>${bi(ult(k))}</td><td>${bi(ult(`${k}_12m`))}</td><td>${tot ? pct(ult(`${k}_12m`) / tot) : "—"}</td>
+      <td>${c == null ? "—" : `<span class="${classeSinal(c)}">${num(c, 1)}%</span>`}</td></tr>`; }).join("")}
+  </table></div><div class="nota">Crescimento real: 12 meses a preços de hoje (corrigidos pelo IPCA) contra os 12 meses anteriores.
+    Fonte: Receita Federal — Arrecadação das receitas federais (dados abertos); IPCA do IBGE pelo Banco Central.</div></div>`;
+}
+
+// Estados ou capitais: dívida consolidada líquida e despesa com pessoal do Poder Executivo (RGF, último quadrimestre publicado)
+function tabelaEntes(lista, titulo, info, limiteDcl, limitePessoal) {
+  if (!lista || !lista.length) return "";
+  const bi = (v) => (v == null ? "—" : num(v / 1e9, 1));
+  const alerta = (v, lim) => (v == null ? "" : v >= lim ? "neg" : v >= lim * 0.9 ? "atencao" : "");
+  const per = (p) => (p ? `${p.slice(5, 6)}º quad./${p.slice(0, 4)}` : "—");
+  return `<div class="painel largo" data-info="${info}"><h2>${titulo} — dívida e gasto com pessoal (Relatório de Gestão Fiscal)</h2><div class="rolagem"><table class="tabela">
+    <tr><th style="text-align:left">${titulo === "Estados" ? "UF" : "Capital"}</th><th>Período</th><th>Dívida consolidada líquida (R$ bi)</th>
+      <th>Receita corrente líquida (R$ bi)</th><th>DCL / RCL</th><th>Pessoal do Executivo / RCL</th></tr>
+    ${lista.map((e) => `<tr><td style="text-align:left">${esc(e.nome)}</td><td class="sub">${per(e.periodo)}</td><td>${bi(e.dcl)}</td><td>${bi(e.rcl)}</td>
+      <td><span class="${alerta(e.dcl_rcl, limiteDcl)}">${e.dcl_rcl == null ? "—" : `${num(e.dcl_rcl, 1)}%`}</span></td>
+      <td><span class="${alerta(e.pessoal_rcl, limitePessoal)}">${e.pessoal_rcl == null ? "—" : `${num(e.pessoal_rcl, 1)}%`}</span></td></tr>`).join("")}
+  </table></div><div class="nota">Limites da Lei de Responsabilidade Fiscal e do Senado: dívida consolidada líquida até ${limiteDcl}% da receita corrente líquida;
+    pessoal do Poder Executivo até ${limitePessoal}% (em vermelho, acima do limite; em amarelo, a partir de 90% dele). DCL negativa = caixa maior que a dívida.
+    Fonte: Tesouro Nacional — SICONFI, Relatório de Gestão Fiscal (anexos 1 e 2).</div></div>`;
 }
 
 // Setor externo: cartões e tabela de produtos (US$ milhões)
