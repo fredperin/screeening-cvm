@@ -96,6 +96,9 @@ function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTemp
       valueFormatter: undefined,
       formatter: (itens) => {
         const cab = xTempo ? dataBR(new Date(itens[0].axisValue).toISOString().slice(0, 10)) : itens[0].axisValueLabel;
+        // do maior para o menor valor; sem valor no ponto, no fim
+        const valorDe = (i) => { const v = Array.isArray(i.value) ? i.value[1] : i.value; return v == null || !isFinite(v) ? -Infinity : Number(v); };
+        itens = [...itens].sort((a, b) => valorDe(b) - valorDe(a));
         return [cab, ...itens.map((i) => {
           const s = series[i.seriesIndex];
           const v = Array.isArray(i.value) ? i.value[1] : i.value;
