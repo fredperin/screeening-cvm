@@ -264,6 +264,45 @@ window.EXPLICATIVOS = {
       indexadores), a partir de 2003.</p>
       <p class="sub">Fonte: Banco Central do Brasil — Dívida mobiliária, participação por indexador (SGS 4173 a 4180).</p>`,
   },
+  juros_bancos_centrais: {
+    titulo: "Juros básicos dos bancos centrais",
+    html: `<p>Taxa de política monetária de cada banco central (no Brasil, a Selic meta do Copom; nos EUA, o teto da banda dos Fed Funds;
+      na Zona do Euro, a taxa de depósito do BCE), como cada um informa ao BIS. Os gráficos mostram a taxa em degraus: ela só muda
+      nas reuniões de política monetária.</p>
+      <p>Comparar o Brasil com outros emergentes (México, Chile, Colômbia, África do Sul, Índia…) mostra o diferencial de juros que atrai
+      ou afasta o capital estrangeiro. A Turquia, com juro de dezenas de por cento, fica só na tabela para não achatar os gráficos.</p>
+      <p class="sub">Fonte: BIS (Banco de Compensações Internacionais) — Central bank policy rates, série diária.</p>`,
+  },
+  juros_10a_paises: {
+    titulo: "Juro de 10 anos por país",
+    html: `<p>Rendimento médio no mês dos títulos do governo de 10 anos de cada país: a principal referência de custo de dinheiro de longo
+      prazo e de risco de cada economia. Países cuja série parou de ser atualizada pela fonte ficam fora do gráfico.</p>
+      <p class="sub">Fonte: OCDE — Key short-term economic indicators (juros de longo prazo, mensal).</p>`,
+  },
+  breakeven_eua: {
+    titulo: "Inflação implícita de 10 anos (EUA)",
+    html: `<p>Diferença entre o juro do Treasury nominal de 10 anos e o do TIPS de 10 anos (título protegido da inflação): é a inflação
+      média que o mercado embute nos preços para os próximos 10 anos. Mesma ideia da inflação implícita do Tesouro Direto.</p>
+      <p class="sub">Fonte: Tesouro dos EUA — curvas diárias nominal e real (cálculo: nominal − real, na mesma data).</p>`,
+  },
+  juros_euro_paises: {
+    titulo: "Juro de 10 anos dos países da Zona do Euro",
+    html: `<p>Rendimento médio no mês do título do governo de 10 anos de cada país, no critério que o BCE usa para medir a convergência
+      dos juros entre os membros.</p>
+      <p class="sub">Fonte: Banco Central Europeu — Long-term interest rate statistics for convergence purposes (IRS), mensal.</p>`,
+  },
+  spread_euro: {
+    titulo: "Diferença de juros para a Alemanha",
+    html: `<p>Juro de 10 anos de cada país menos o da Alemanha, a referência de menor risco da região. Quando esse diferencial (o "spread")
+      dispara, o mercado está cobrando mais para financiar o país — foi o termômetro da crise do euro de 2011–2012.</p>
+      <p class="sub">Fonte: Banco Central Europeu — Long-term interest rate statistics (IRS), mensal; cálculo: país − Alemanha.</p>`,
+  },
+  juros_china: {
+    titulo: "Juros da China",
+    html: `<p>Juro básico informado pelo Banco do Povo da China ao BIS e juros de mercado em médias mensais (interbancário de 3 meses e título
+      do governo de 10 anos). Não há fonte oficial gratuita com a curva de juros diária da China; por isso os juros de mercado são mensais.</p>
+      <p class="sub">Fontes: BIS — Central bank policy rates; OCDE — Key short-term economic indicators.</p>`,
+  },
   fiscal_arrecadacao: {
     titulo: "Arrecadação federal por tributo",
     html: `<p>Tudo o que a União arrecada, separado por tributo: Imposto de Renda (pessoa física, empresas e retido na fonte),
@@ -695,6 +734,9 @@ window.EXPLICATIVOS = {
     html: `<p>Dados anuais do <b>World Economic Outlook</b> do FMI para os principais países, com <b>projeções</b> para o ano corrente e os
       próximos (revistas em abril e outubro). Crescimento do PIB real, inflação média do ano, desemprego, dívida bruta e resultado nominal do
       governo (% do PIB) e saldo em conta corrente (% do PIB). Mundo, avançadas e emergentes são agregados do próprio FMI.</p>
+      <p>Os botões <b>Desenvolvidos</b> e <b>Em desenvolvimento</b> tiram ou recolocam no gráfico os países de cada grupo (emergentes em linha
+      tracejada); clicar no nome de um país na legenda tira só ele — útil, por exemplo, para esconder a inflação da Argentina e da Turquia,
+      que achata as demais. A Coreia do Sul está entre os emergentes, como nos índices de mercado; o FMI a classifica como economia avançada.</p>
       <p class="sub">Fonte: FMI, World Economic Outlook (DataMapper API).</p>`,
   },
   acoes_eua: {

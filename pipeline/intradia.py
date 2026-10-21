@@ -46,6 +46,12 @@ def main():
     except Exception as e:
         print("⚠️ notícias:", repr(e)[:300])
         status["etapas"]["noticias_intradia"] = {"ok": False, "em": datetime.now(timezone.utc).isoformat(timespec="minutes"), "erro": repr(e)[:300]}
+    # Dívida Pública Federal e Tesouro Direto: nova tentativa (o Tesouro Transparente às vezes recusa; só baixa se houver versão nova)
+    try:
+        from pipeline import fiscal
+        fiscal.atualizar_divida_federal()
+    except Exception as e:  # noqa: BLE001
+        print("⚠️ dívida federal:", repr(e)[:300])
     arq.write_text(json.dumps(status, ensure_ascii=False, indent=1), encoding="utf-8")
     tr = tes.get("tempo_real")
     print(f"✅ Tesouro: oficial de {tes['data_base']}; tempo real (não oficial) " + (f"às {tr['precificado_em']}" if tr else "indisponível"))

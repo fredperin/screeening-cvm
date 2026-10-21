@@ -460,5 +460,30 @@ def gerar():
     return ARQ
 
 
+def atualizar_divida_federal():
+    """Só a Dívida Pública Federal e o Tesouro Direto (Tesouro Transparente), para as rodadas de 3x por dia: o site do
+    Tesouro às vezes recusa o download, e como os arquivos são mensais basta um download bem-sucedido no mês."""
+    if not ARQ.exists():
+        return
+    d = json.loads(ARQ.read_text(encoding="utf-8"))
+    falhas = [f for f in d.get("falhas", []) if not f.startswith(("Tesouro (Dívida Pública Federal)", "Tesouro (Tesouro Direto)"))]
+    try:
+        mensal, d["vencimentos_dpf"] = divida_federal()
+        for k, s in mensal.items():
+            nome = "Parcela que vence em 12 meses" if k == "dpf_vence_12m" else ("DPF em mercado — total" if k == "dpf_total"
+                                                                                else NOMES_INDEXADOR[k.replace("dpf_", "")])
+            d["series"][k] = _pacote(s, nome, "%" if k == "dpf_vence_12m" else "R$ milhões", 2 if k == "dpf_vence_12m" else 1)
+    except Exception as e:  # noqa: BLE001
+        falhas.append(sem_segredos(f"Tesouro (Dívida Pública Federal): {e}")[:300])
+    try:
+        nomes_td = {f"td_{k.lower()}": n for k, n in TIPOS_TD} | {"td_outros": "Outros", "td_total": "Tesouro Direto — total"}
+        for k, s in tesouro_direto().items():
+            d["series"][k] = _pacote(s, nomes_td.get(k, k), "R$ milhões", 1)
+    except Exception as e:  # noqa: BLE001
+        falhas.append(sem_segredos(f"Tesouro (Tesouro Direto): {e}")[:300])
+    d["falhas"] = falhas
+    ARQ.write_text(json.dumps(d, ensure_ascii=False, separators=(",", ":"), allow_nan=False), encoding="utf-8")
+
+
 if __name__ == "__main__":
     gerar()

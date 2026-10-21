@@ -470,8 +470,67 @@ def gerar_noticias_agenda():
     return falhas
 
 
+# ---------------- Juros por país (Mundo → Juros: Mundo, Zona do Euro e China) ----------------
+# BIS: juro básico dos bancos centrais (diário; só as datas de mudança e o último dia); OCDE: juro de 3 meses e de
+# 10 anos por país (mensal); BCE: juro de 10 anos dos países da Zona do Euro (critério de convergência, mensal)
+URL_BIS_CBPOL = "https://stats.bis.org/api/v1/data/WS_CBPOL/D.{paises}/all?startPeriod={ini}&format=csv"
+BANCOS_CENTRAIS = {"US": "EUA (Fed)", "XM": "Zona do Euro (BCE)", "CN": "China (PBoC)", "JP": "Japão (BoJ)", "GB": "Reino Unido (BoE)",
+                   "CA": "Canadá", "AU": "Austrália", "CH": "Suíça", "BR": "Brasil (Copom)", "MX": "México", "CL": "Chile",
+                   "CO": "Colômbia", "PE": "Peru", "ZA": "África do Sul", "TR": "Turquia", "IN": "Índia", "ID": "Indonésia",
+                   "KR": "Coreia do Sul"}
+URL_OCDE_KEI_JUROS = ("https://sdmx.oecd.org/public/rest/data/OECD.SDD.STES,DSD_KEI@DF_KEI,4.0/{paises}.M.IRLT+IR3TIB.......?"
+                      "startPeriod={ini}")
+PAISES_OCDE = {"USA": "EUA", "DEU": "Alemanha", "JPN": "Japão", "GBR": "Reino Unido", "CHN": "China", "BRA": "Brasil", "MEX": "México",
+               "CHL": "Chile", "COL": "Colômbia", "ZAF": "África do Sul", "IND": "Índia", "IDN": "Indonésia", "KOR": "Coreia do Sul"}
+URL_BCE_IRS = "IRS/M.{paises}.L.L40.CI.0000.EUR.N.Z"
+PAISES_EURO = {"DE": "Alemanha", "FR": "França", "IT": "Itália", "ES": "Espanha", "PT": "Portugal", "GR": "Grécia", "NL": "Holanda"}
+INICIO_JUROS = "2005-01-01"
+
+
+def juros_mundo():
+    import io
+    saida = {"bancos_centrais": {}, "longo_prazo": {}, "curto_prazo": {}, "euro_10a": {}}
+    falhas = []
+    try:
+        t = pd.read_csv(io.StringIO(_get(URL_BIS_CBPOL.format(paises="+".join(BANCOS_CENTRAIS), ini=INICIO_JUROS)).text))
+        for pais, nome in BANCOS_CENTRAIS.items():
+            s = t[t["REF_AREA"] == pais].set_index(pd.to_datetime(t.loc[t["REF_AREA"] == pais, "TIME_PERIOD"]))["OBS_VALUE"].dropna().sort_index()
+            if s.empty:
+                continue
+            mudou = s.ne(s.shift())
+            s = pd.concat([s[mudou], s.iloc[[-1]]]).pipe(lambda x: x[~x.index.duplicated()])  # degraus + último dia
+            saida["bancos_centrais"][pais] = {"nome": nome, **_serie(s, 3)}
+    except Exception as e:  # noqa: BLE001
+        falhas.append(f"BIS: {e!r}"[:200])
+    try:
+        h = {"User-Agent": requests.utils.default_user_agent(), "Accept": "application/vnd.sdmx.data+csv; charset=utf-8"}
+        t = pd.read_csv(io.StringIO(_get(URL_OCDE_KEI_JUROS.format(paises="+".join(PAISES_OCDE), ini=INICIO_JUROS[:7]), headers=h).text))
+        for (pais, medida), g in t.groupby(["REF_AREA", "MEASURE"]):
+            if pais not in PAISES_OCDE:
+                continue
+            s = pd.Series(g["OBS_VALUE"].values, index=pd.to_datetime(g["TIME_PERIOD"] + "-01")).dropna().sort_index()
+            alvo = "longo_prazo" if medida == "IRLT" else "curto_prazo"
+            saida[alvo][pais] = {"nome": PAISES_OCDE[pais], **_serie(s, 2)}
+    except Exception as e:  # noqa: BLE001
+        falhas.append(f"OCDE: {e!r}"[:200])
+    try:
+        linhas = _bce(URL_BCE_IRS.format(paises="+".join(PAISES_EURO)), INICIO_JUROS[:7])
+        for pais, nome in PAISES_EURO.items():
+            pts = {pd.Timestamp(l["TIME_PERIOD"] + "-01"): float(l["OBS_VALUE"]) for l in linhas
+                   if l["KEY"].split(".")[2] == pais and l["OBS_VALUE"] not in ("", "NaN")}
+            if pts:
+                saida["euro_10a"][pais] = {"nome": nome, **_serie(pd.Series(pts), 3)}
+    except Exception as e:  # noqa: BLE001
+        falhas.append(f"BCE (juro de 10 anos por país): {e!r}"[:200])
+    if not saida["bancos_centrais"] and not saida["longo_prazo"]:
+        raise RuntimeError("; ".join(falhas) or "juros por país: nenhuma fonte respondeu")
+    saida["falhas"] = falhas
+    return saida
+
+
 FONTES = {"treasuries": ("Tesouro dos EUA", treasuries), "fed": ("Fed de Nova York", fed), "bls": ("BLS (EUA)", bls),
-          "fred": ("FRED (Fed de St. Louis)", fred), "bce": ("BCE", bce), "eurostat": ("Eurostat", eurostat)}
+          "fred": ("FRED (Fed de St. Louis)", fred), "bce": ("BCE", bce), "eurostat": ("Eurostat", eurostat),
+          "juros_mundo": ("BIS, OCDE e BCE — juros por país", juros_mundo)}
 
 
 def gerar():

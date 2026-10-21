@@ -1074,6 +1074,9 @@ const SUBS_CREDITO = [["total", "Total"], ["pj", "Pessoa jurídica"], ["pf", "Pe
 let ABA_CREDITO = "total";
 const SUBS_FISCAL = [["arrecadacao", "Arrecadação"], ["despesas", "Despesas"], ["endividamento", "Endividamento"]];
 let ABA_FISCAL = "arrecadacao";
+const SUBS_JUROS_OFF = [["mundo", "Mundo"], ["eua", "EUA"], ["euro", "Zona do Euro"], ["china", "China"]];
+let ABA_JUROS_OFF = "mundo";
+const GRUPOS_ATIVOS = { desenvolvidos: true, emergentes: true };  // botões liga/desliga Desenvolvidos / Em desenvolvimento
 const NOMES_FOCUS = { selic: "Selic fim de ano (% a.a.)", ipca: "IPCA (%)", pib: "PIB (%)", cambio: "Câmbio fim de ano (R$/US$)" };
 const ESCOLHA_GRAFICO = {};  // opção escolhida em cada gráfico com botões (fica ao trocar de janela)
 const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinza], ["nucleo_ex3", "EX3", COR.roxo],
@@ -2045,22 +2048,48 @@ function desenharGlobal(mundo, cab, abas) {
   const ind = inds[IND_GLOBAL];
   const ano = G.ano_corrente || new Date().getFullYear();
   const anosTab = [ano - 2, ano - 1, ano, ano + 1, ano + 2];
-  const destaque = [["BRA", COR.verde], ["USA", COR.azul], ["EURO", COR.roxo], ["CHN", COR.vermelho], ["WEOWORLD", COR.ambar]];
+  // grupos como nos Juros (convenção dos índices de mercado: Coreia do Sul entre os emergentes; o FMI a trata como avançada)
+  const GRUPOS_FMI = { desenvolvidos: ["USA", "EURO", "DEU", "FRA", "ITA", "JPN", "GBR", "CAN", "AUS", "CHE"],
+    emergentes: ["BRA", "CHN", "IND", "MEX", "ARG", "CHL", "COL", "PER", "ZAF", "KOR", "IDN", "TUR", "SAU", "RUS"] };
+  const NOMES_GRUPO = { desenvolvidos: "Desenvolvidos", emergentes: "Em desenvolvimento" };
   const anos = [...new Set(Object.values(ind.valores).flatMap((v) => Object.keys(v)))].sort();
   const regioes = ["WEOWORLD", "ADVEC", "OEMDC"];
-  const linhas = Object.keys(paises).filter((c) => ind.valores[c]);
+  const linhaTab = (c, classe = "") => `<tr class="${classe}"><td style="text-align:left">${esc(paises[c])}</td>
+    ${anosTab.map((a) => { const v = ind.valores[c][String(a)]; return `<td class="${a >= ano ? "sub" : ""}">${v == null ? "—" : num(v, 1)}</td>`; }).join("")}</tr>`;
+  const blocoTab = (titulo, codigos) => { const cs = codigos.filter((c) => paises[c] && ind.valores[c]); return cs.length
+    ? `<tr><th colspan="${anosTab.length + 1}" style="text-align:left;color:var(--ambar)">${titulo}</th></tr>${cs.map((c) => linhaTab(c)).join("")}` : ""; };
+  const botoes = `<div class="seletor" id="grupos-global">${Object.entries(NOMES_GRUPO).map(([k, n]) =>
+    `<button data-k="${k}" class="${GRUPOS_ATIVOS[k] ? "ativo" : ""}" title="Mostrar ou tirar do gráfico os países do grupo">${n}</button>`).join("")}</div>`;
   app.innerHTML = `${cab("Mundo · Macro", "Global: FMI — World Economic Outlook (projeções revistas em abril e outubro)")}${abas}
     <div class="seletor seletor-editoria" id="ind-global" style="margin:-4px 0 12px">${Object.entries(inds).map(([k, v]) => `<button data-k="${k}" class="${k === IND_GLOBAL ? "ativo" : ""}">${esc(v.nome)}</button>`).join("")}</div>
     <div class="grade">
-      ${painelG("gg-linhas", `${esc(ind.nome)} — Brasil, EUA, Zona do Euro, China e Mundo`, "global_fmi", `<div class="nota">A partir de ${ano} (inclusive), projeções do FMI.</div>`, "largo")}
+      <div class="painel largo" data-info="global_fmi"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">${esc(ind.nome)} — por país</h2>${botoes}</div>
+        <div class="grafico alto" id="gg-linhas"></div><div class="nota">A partir de ${ano} (inclusive), projeções do FMI. Clique no nome de um país na legenda para tirá-lo do gráfico.</div></div>
       <div class="painel largo" data-info="global_fmi"><h2>${esc(ind.nome)} por país</h2><div class="rolagem"><table class="tabela">
         <tr><th style="text-align:left">País / região</th>${anosTab.map((a) => `<th>${a}${a >= ano ? '<br><span class="sub">projeção</span>' : ""}</th>`).join("")}</tr>
-        ${linhas.map((c) => `<tr class="${regioes.includes(c) ? "subtotal" : ""}"><td style="text-align:left">${esc(paises[c])}</td>
-          ${anosTab.map((a) => { const v = ind.valores[c][String(a)]; return `<td class="${a >= ano ? "sub" : ""}">${v == null ? "—" : num(v, 1)}</td>`; }).join("")}</tr>`).join("")}
+        ${regioes.filter((c) => ind.valores[c]).map((c) => linhaTab(c, "subtotal")).join("")}
+        ${blocoTab("Desenvolvidos", GRUPOS_FMI.desenvolvidos)}${blocoTab("Em desenvolvimento", GRUPOS_FMI.emergentes)}
       </table></div><div class="nota">Fonte: FMI, World Economic Outlook (DataMapper). Zona do Euro, Mundo e grupos de países são agregados do próprio FMI.</div></div>
     </div>`;
-  grafico(document.getElementById("gg-linhas"), { rotulos: anos, eixoEsq: "pctPronto", janela: 40, series: destaque.filter(([c]) => ind.valores[c]).map(([c, cor]) => ({
-    nome: paises[c], valores: anos.map((a) => ind.valores[c][a] ?? null), tipo: "line", cor, ...(c === "WEOWORLD" ? { tracejado: true } : {}) })) });
+  const desenharLinhas = () => {
+    const el = document.getElementById("gg-linhas"); const antigo = echarts.getInstanceByDom(el);
+    if (antigo) { graficos.splice(graficos.indexOf(antigo), 1); antigo.dispose(); }
+    const series = ["desenvolvidos", "emergentes"].flatMap((gr) => GRUPOS_FMI[gr].map((c) => [gr, c])).filter(([, c]) => ind.valores[c])
+      .map(([gr, c], j) => [gr, { nome: paises[c], valores: anos.map((a) => ind.valores[c][a] ?? null), tipo: "line",
+        cor: PALETA_GRAF[j % PALETA_GRAF.length], tracejado: gr === "emergentes" }])
+      .filter(([gr]) => GRUPOS_ATIVOS[gr]).map(([, s]) => s);
+    if (ind.valores.WEOWORLD) series.push({ nome: paises.WEOWORLD, valores: anos.map((a) => ind.valores.WEOWORLD[a] ?? null), tipo: "line", cor: COR.texto });
+    grafico(el, { rotulos: anos, eixoEsq: "pctPronto", janela: 40, series });
+    document.querySelectorAll("#grupos-global button").forEach((b) => b.classList.toggle("ativo", !!GRUPOS_ATIVOS[b.dataset.k]));
+  };
+  desenharLinhas();
+  document.getElementById("grupos-global").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    const k = b.dataset.k;
+    if (GRUPOS_ATIVOS[k] && Object.values(GRUPOS_ATIVOS).filter(Boolean).length === 1) return;  // pelo menos um grupo no gráfico
+    GRUPOS_ATIVOS[k] = !GRUPOS_ATIVOS[k];
+    desenharLinhas();
+  });
   document.getElementById("ind-global").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
     IND_GLOBAL = b.dataset.k; limparGraficos(); desenharGlobal(mundo, cab, abas);
@@ -2361,6 +2390,26 @@ const ateHoje = (s) => {
 };
 const desde = (anos) => { const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
 
+// Juros básicos (BIS): taxa atual, data da última mudança e variação em 12 meses; séries em degrau (datas de mudança + último dia)
+function tabelaBancosCentrais(BC) {
+  const linhas = Object.values(BC).filter((s) => s.datas && s.datas.length).map((s) => {
+    const n = s.valores.length, atual = s.valores[n - 1];
+    let i = n - 1;
+    while (i > 0 && s.valores[i - 1] === atual) i--;
+    const ha12 = desde(1);
+    let antes = null;
+    s.datas.forEach((d, j) => { if (d <= ha12) antes = s.valores[j]; });
+    return { nome: s.nome, atual, mudou: i > 0 ? s.datas[i] : null, var12: antes == null ? null : atual - antes, ult: s.datas[n - 1] };
+  }).sort((a, b) => b.atual - a.atual);
+  return `<div class="painel largo" data-info="juros_bancos_centrais"><h2>Juros básicos dos bancos centrais</h2><div class="rolagem"><table class="tabela">
+    <tr><th style="text-align:left">País / banco central</th><th>Juro básico</th><th>Última mudança</th><th>Variação em 12 meses</th><th>Dado de</th></tr>
+    ${linhas.map((l) => `<tr><td style="text-align:left">${esc(l.nome)}</td><td>${num(l.atual, 2)}%</td><td>${l.mudou ? dataBR(l.mudou) : "—"}</td>
+      <td>${l.var12 == null ? "—" : `<span class="${l.var12 > 0 ? "neg" : l.var12 < 0 ? "pos" : ""}">${l.var12 > 0 ? "+" : ""}${num(l.var12, 2)} p.p.</span>`}</td>
+      <td class="sub">${dataBR(l.ult)}</td></tr>`).join("")}
+  </table></div><div class="nota">Taxa de política monetária de cada banco central, como informada ao BIS. Em vermelho, alta em 12 meses; em verde, corte.
+    Fonte: BIS — Central bank policy rates (série diária).</div></div>`;
+}
+
 function painelG(id, titulo, info, extra = "", classe = "") {
   return `<div class="painel ${classe}" data-info="${info}"><h2>${titulo}</h2><div class="grafico${classe.includes("largo") ? " alto" : ""}" id="${id}"></div>${extra}</div>`;
 }
@@ -2396,30 +2445,131 @@ async function paginaOffshore(secao, parametro) {
   }
 
   if (secao === "juros") {
-    app.innerHTML = `${cab("Mundo · Juros", "Tesouro dos EUA, Fed de Nova York e BCE (fontes oficiais) · taxas em % a.a.",
-      `<a class="botao" href="downloads/offshore.xlsx" download>Baixar planilha do Mundo</a>`)}
-      <div class="grade">
-        ${painelG("gq-ust", "Treasuries — curva nominal", "ust_curva")}${painelG("gq-tips", "Treasuries — curva real (TIPS)", "ust_real")}
-        ${painelG("gq-hist", "Treasuries de 2, 10 e 30 anos", "ust_hist")}${painelG("gq-incl", "Inclinação da curva: 10 anos − 2 anos", "ust_hist")}
-        ${painelG("gq-fed", "Fed Funds: meta, taxa efetiva e SOFR", "fed_funds")}${painelG("gq-bce", "BCE: taxa de depósito e €STR", "bce_juros")}
-        ${painelG("gq-eur", "Zona do Euro — curva de juros (títulos AAA)", "curva_euro")}${painelG("gq-eur10", "Juro de 10 anos: Treasury x Zona do Euro AAA", "curva_euro")}
-      </div>`;
-    grafico(document.getElementById("gq-ust"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(T.nominal) });
-    grafico(document.getElementById("gq-tips"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(T.real) });
+    const J = off.juros_mundo || {};
+    if (!SUBS_JUROS_OFF.some(([k]) => k === ABA_JUROS_OFF)) ABA_JUROS_OFF = "mundo";
+    const abasJ = `<div class="seletor seletor-editoria" id="sub-juros-off" style="margin:-4px 0 12px">${SUBS_JUROS_OFF.map(([k, n]) =>
+      `<button data-k="${k}" class="${k === ABA_JUROS_OFF ? "ativo" : ""}">${n}</button>`).join("")}</div>`;
+    const fontes = { mundo: "BIS (juros básicos, diário) e OCDE (juros de mercado, mensal)", eua: "Tesouro dos EUA e Fed de Nova York",
+      euro: "BCE (taxas, curva AAA e juro de 10 anos por país)", china: "BIS (juro básico) e OCDE (juros de mercado, mensal)" }[ABA_JUROS_OFF];
     const H = T.historico || {};
-    grafico(document.getElementById("gq-hist"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
-      { nome: "2 anos", valores: Pares(H["2 anos"]), tipo: "line", cor: COR.ciano }, { nome: "10 anos", valores: Pares(H["10 anos"]), tipo: "line", cor: COR.ambar },
-      { nome: "30 anos", valores: Pares(H["30 anos"]), tipo: "line", cor: COR.roxo }, { nome: "10 anos real (TIPS)", valores: Pares(H["10 anos real (TIPS)"]), tipo: "line", cor: COR.verde, tracejado: true }] });
-    grafico(document.getElementById("gq-incl"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
-      { nome: "10a − 2a (pontos percentuais)", valores: Pares(H["inclinação 10a − 2a"]), tipo: "line", cor: COR.ambar }] });
-    grafico(document.getElementById("gq-fed"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", degrau: true, series: [
-      { nome: "Meta — limite superior", valores: ateHoje(F.meta_max), tipo: "line", cor: COR.ambar }, { nome: "Meta — limite inferior", valores: ateHoje(F.meta_min), tipo: "line", cor: COR.ambar, tracejado: true },
-      { nome: "Efetiva (EFFR)", valores: Pares(F.effr), tipo: "line", cor: COR.ciano }, { nome: "SOFR", valores: Pares(F.sofr), tipo: "line", cor: COR.roxo }] });
-    grafico(document.getElementById("gq-bce"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", degrau: true, series: [
-      { nome: "Taxa de depósito", valores: ateHoje(E.deposito), tipo: "line", cor: COR.ambar }, { nome: "€STR", valores: Pares(E.estr), tipo: "line", cor: COR.ciano }] });
-    grafico(document.getElementById("gq-eur"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(E.curva) });
-    grafico(document.getElementById("gq-eur10"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
-      { nome: "Treasury 10 anos", valores: Pares(H["10 anos"]), tipo: "line", cor: COR.ambar }, { nome: "Zona do Euro AAA 10 anos", valores: Pares(E.aaa_10a), tipo: "line", cor: COR.roxo }] });
+    const BC = J.bancos_centrais || {}, LP = J.longo_prazo || {}, CP = J.curto_prazo || {}, EU = J.euro_10a || {};
+    // série mensal da OCDE só entra se estiver em dia (a Indonésia, por exemplo, parou em dez/2024)
+    const emDia = (s) => s && s.datas.length && s.datas[s.datas.length - 1] >= desde(1).slice(0, 7);
+    const linhasPaises = (fonte, ids, degrau = false) => ids.filter((k) => fonte[k] && (degrau || emDia(fonte[k]))).map((k, j) => ({
+      nome: fonte[k].nome, valores: degrau ? ateHoje(fonte[k]) : Pares(fonte[k]), tipo: "line", cor: PALETA_GRAF[j % PALETA_GRAF.length] }));
+    let corpo = "", cartoes = [], desenhar = () => {}, depois = () => {};
+    if (ABA_JUROS_OFF === "mundo") {
+      cartoes = [["US", "Fed (EUA)"], ["XM", "BCE"], ["CN", "China"], ["JP", "Japão"], ["BR", "Brasil (Copom)"]]
+        .map(([k, r]) => cartao(r, pctPronto(u(BC[k]).valor, 2), BC[k] ? `juro básico · ${dataBR(u(BC[k]).data)}` : ""))
+        .concat([cartao("Treasury 10 anos", pctPronto(ust10.valor), dataBR(ust10.data))]);
+      // um gráfico de juros básicos e um de 10 anos, cada um com os botões Desenvolvidos / Em desenvolvimento
+      const GRUPOS = {
+        desenvolvidos: { bc: ["US", "XM", "JP", "GB", "CA", "AU", "CH"], lp: ["USA", "DEU", "JPN", "GBR"] },
+        // Turquia fica só na tabela: o juro dela (dezenas de %) achataria as outras linhas
+        emergentes: { bc: ["BR", "CN", "MX", "CL", "CO", "PE", "ZA", "IN", "ID", "KR"], lp: ["BRA", "CHN", "MEX", "CHL", "COL", "ZAF", "IND", "KOR", "IDN"] },
+      };
+      const botoesGrupo = `<div class="seletor" data-grupo-juros>${[["desenvolvidos", "Desenvolvidos"], ["emergentes", "Em desenvolvimento"]].map(([k, n]) =>
+        `<button data-k="${k}" class="${GRUPOS_ATIVOS[k] ? "ativo" : ""}" title="Mostrar ou tirar do gráfico os países do grupo">${n}</button>`).join("")}</div>`;
+      // todos os países no mesmo gráfico; cor fixa por país; emergentes tracejados
+      const linhasGrupos = (fonte, chave, degrau) => ["desenvolvidos", "emergentes"].flatMap((gr) => GRUPOS[gr][chave].map((k) => [gr, k]))
+        .filter(([, k]) => fonte[k] && (degrau || emDia(fonte[k])))
+        .map(([gr, k], j) => [gr, { nome: fonte[k].nome, valores: degrau ? ateHoje(fonte[k]) : Pares(fonte[k]), tipo: "line",
+          cor: PALETA_GRAF[j % PALETA_GRAF.length], tracejado: gr === "emergentes" }])
+        .filter(([gr]) => GRUPOS_ATIVOS[gr]).map(([, s]) => s);
+      const painelBotoes = (id, titulo, info) => `<div class="painel" data-info="${info}"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">${titulo}</h2>
+        ${botoesGrupo}</div><div class="grafico" id="${id}"></div></div>`;
+      corpo = `${painelBotoes("gw-bc", "Juros básicos dos bancos centrais", "juros_bancos_centrais")}${painelBotoes("gw-10", "Juro de 10 anos", "juros_10a_paises")}
+        ${tabelaBancosCentrais(BC)}`;
+      desenhar = () => {
+        ["gw-bc", "gw-10"].forEach((id) => { const el = document.getElementById(id); const a = echarts.getInstanceByDom(el); if (a) { graficos.splice(graficos.indexOf(a), 1); a.dispose(); } });
+        grafico(document.getElementById("gw-bc"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", degrau: true,
+          series: linhasGrupos(BC, "bc", true) });
+        grafico(document.getElementById("gw-10"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto",
+          series: linhasGrupos(LP, "lp", false) });
+        document.querySelectorAll("[data-grupo-juros] button").forEach((b) => b.classList.toggle("ativo", !!GRUPOS_ATIVOS[b.dataset.k]));
+      };
+      depois = () => document.querySelectorAll("[data-grupo-juros]").forEach((sel) => sel.addEventListener("click", (ev) => {
+        const b = ev.target.closest("button"); if (!b) return;
+        const k = b.dataset.k;
+        if (GRUPOS_ATIVOS[k] && Object.values(GRUPOS_ATIVOS).filter(Boolean).length === 1) return;  // pelo menos um grupo no gráfico
+        GRUPOS_ATIVOS[k] = !GRUPOS_ATIVOS[k];
+        desenhar();
+      }));
+    } else if (ABA_JUROS_OFF === "eua") {
+      // inflação implícita: juro nominal menos juro real (TIPS) de 10 anos, nas datas em que os dois existem
+      const real10 = Object.fromEntries(Pares(H["10 anos real (TIPS)"]));
+      const implicita = Pares(H["10 anos"]).filter(([d]) => real10[d] != null).map(([d, v]) => [d, Math.round((v - real10[d]) * 100) / 100]);
+      cartoes = [cartao("Fed Funds (meta)", u(F.meta_min).valor != null ? `${num(u(F.meta_min).valor, 2)}–${num(u(F.meta_max).valor, 2)}%` : "—", `efetiva ${pctPronto(u(F.effr).valor)}`),
+        cartao("Treasury 2 anos", pctPronto(u(H["2 anos"]).valor), dataBR(u(H["2 anos"]).data)), cartao("Treasury 10 anos", pctPronto(ust10.valor), dataBR(ust10.data)),
+        cartao("Juro real 10 anos (TIPS)", pctPronto(u(H["10 anos real (TIPS)"]).valor), dataBR(u(H["10 anos real (TIPS)"]).data)),
+        cartao("Inflação implícita 10 anos", pctPronto(implicita.length ? implicita[implicita.length - 1][1] : null), "nominal − TIPS"),
+        cartao("Inclinação 10a − 2a", u(H["inclinação 10a − 2a"]).valor != null ? `${num(u(H["inclinação 10a − 2a"]).valor, 2)} p.p.` : "—", "Treasuries")];
+      corpo = `${painelG("gq-ust", "Treasuries — curva nominal", "ust_curva")}${painelG("gq-tips", "Treasuries — curva real (TIPS)", "ust_real")}
+        ${painelG("gq-hist", "Treasuries de 2, 10 e 30 anos", "ust_hist")}${painelG("gq-incl", "Inclinação da curva: 10 anos − 2 anos", "ust_hist")}
+        ${painelG("gq-fed", "Fed Funds: meta, taxa efetiva e SOFR", "fed_funds")}${painelG("gq-be", "Inflação implícita de 10 anos (Treasury nominal − TIPS)", "breakeven_eua")}`;
+      desenhar = () => {
+        grafico(document.getElementById("gq-ust"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(T.nominal) });
+        grafico(document.getElementById("gq-tips"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(T.real) });
+        grafico(document.getElementById("gq-hist"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
+          { nome: "2 anos", valores: Pares(H["2 anos"]), tipo: "line", cor: COR.ciano }, { nome: "10 anos", valores: Pares(H["10 anos"]), tipo: "line", cor: COR.ambar },
+          { nome: "30 anos", valores: Pares(H["30 anos"]), tipo: "line", cor: COR.roxo }, { nome: "10 anos real (TIPS)", valores: Pares(H["10 anos real (TIPS)"]), tipo: "line", cor: COR.verde, tracejado: true }] });
+        grafico(document.getElementById("gq-incl"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
+          { nome: "10a − 2a (pontos percentuais)", valores: Pares(H["inclinação 10a − 2a"]), tipo: "line", cor: COR.ambar }] });
+        grafico(document.getElementById("gq-fed"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", degrau: true, series: [
+          { nome: "Meta — limite superior", valores: ateHoje(F.meta_max), tipo: "line", cor: COR.ambar }, { nome: "Meta — limite inferior", valores: ateHoje(F.meta_min), tipo: "line", cor: COR.ambar, tracejado: true },
+          { nome: "Efetiva (EFFR)", valores: Pares(F.effr), tipo: "line", cor: COR.ciano }, { nome: "SOFR", valores: Pares(F.sofr), tipo: "line", cor: COR.roxo }] });
+        grafico(document.getElementById("gq-be"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
+          { nome: "Inflação implícita de 10 anos", valores: implicita, tipo: "line", cor: COR.vermelho }] });
+      };
+    } else if (ABA_JUROS_OFF === "euro") {
+      const de = Object.fromEntries(Pares(EU.DE));
+      const spread = (k) => Pares(EU[k]).filter(([d]) => de[d] != null).map(([d, v]) => [d, Math.round((v - de[d]) * 1000) / 1000]);
+      cartoes = [cartao("BCE (depósito)", pctPronto(u(E.deposito).valor), dataBR(u(E.deposito).data)), cartao("€STR", pctPronto(u(E.estr).valor), dataBR(u(E.estr).data)),
+        cartao("AAA 10 anos", pctPronto(u(E.aaa_10a).valor), dataBR(u(E.aaa_10a).data)),
+        ...[["DE", "Alemanha 10 anos"], ["IT", "Itália 10 anos"], ["FR", "França 10 anos"]].map(([k, r]) => cartao(r, pctPronto(u(EU[k]).valor, 2), EU[k] ? `${mesAno(u(EU[k]).data)} · média do mês` : ""))];
+      corpo = `${painelG("gq-bce", "BCE: taxa de depósito e €STR", "bce_juros")}${painelG("gq-eur", "Zona do Euro — curva de juros (títulos AAA)", "curva_euro")}
+        ${painelG("gq-pais", "Juro de 10 anos por país", "juros_euro_paises")}${painelG("gq-spread", "Diferença para a Alemanha (pontos percentuais)", "spread_euro")}
+        ${painelG("gq-eur10", "Juro de 10 anos: Treasury x Zona do Euro AAA", "curva_euro", "", "largo")}`;
+      desenhar = () => {
+        grafico(document.getElementById("gq-bce"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", degrau: true, series: [
+          { nome: "Taxa de depósito", valores: ateHoje(E.deposito), tipo: "line", cor: COR.ambar }, { nome: "€STR", valores: Pares(E.estr), tipo: "line", cor: COR.ciano }] });
+        grafico(document.getElementById("gq-eur"), { xNome: "anos até o vencimento", eixoEsq: "pctPronto", series: curvasPorData(E.curva) });
+        grafico(document.getElementById("gq-pais"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto",
+          series: linhasPaises(EU, ["DE", "FR", "IT", "ES", "PT", "GR", "NL"]) });
+        grafico(document.getElementById("gq-spread"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto",
+          series: ["IT", "FR", "ES", "PT", "GR"].filter((k) => EU[k]).map((k, j) => ({ nome: `${EU[k].nome} − Alemanha`, valores: spread(k), tipo: "line", cor: PALETA_GRAF[j] })) });
+        grafico(document.getElementById("gq-eur10"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "pctPronto", series: [
+          { nome: "Treasury 10 anos", valores: Pares(H["10 anos"]), tipo: "line", cor: COR.ambar }, { nome: "Zona do Euro AAA 10 anos", valores: Pares(E.aaa_10a), tipo: "line", cor: COR.roxo }] });
+      };
+    } else {  // China
+      cartoes = [cartao("Juro básico (PBoC)", pctPronto(u(BC.CN).valor, 2), BC.CN ? `BIS · ${dataBR(u(BC.CN).data)}` : ""),
+        cartao("Interbancário 3 meses", pctPronto(u(CP.CHN).valor, 2), CP.CHN ? `OCDE · ${mesAno(u(CP.CHN).data)}` : ""),
+        cartao("Juro de 10 anos", pctPronto(u(LP.CHN).valor, 2), LP.CHN ? `OCDE · ${mesAno(u(LP.CHN).data)}` : "")];
+      corpo = `<div class="painel largo"><h2>Sobre os dados da China</h2><p class="sub" style="line-height:1.6">Não há fonte oficial gratuita com acesso
+          automático à curva de juros diária da China: o Banco do Povo da China (PBoC) e as bolsas chinesas não oferecem esses dados de forma aberta.
+          Por isso, o juro básico vem do BIS (que reúne as taxas de política monetária informadas pelos bancos centrais) e os juros de mercado
+          (interbancário de 3 meses e título do governo de 10 anos) vêm da OCDE, em <b>médias mensais</b> e com cerca de 1 a 2 meses de atraso.</p></div>
+        ${painelG("gc-bc", "Juro básico da China (PBoC)", "juros_china")}${painelG("gc-merc", "Juros de mercado da China: 3 meses e 10 anos (mensal)", "juros_china")}
+        ${painelG("gc-comp", "Juro de 10 anos: China x EUA (mensal)", "juros_10a_paises", "", "largo")}`;
+      desenhar = () => {
+        grafico(document.getElementById("gc-bc"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", degrau: true,
+          series: BC.CN ? [{ nome: "Juro básico", valores: ateHoje(BC.CN), tipo: "line", cor: COR.vermelho }] : [] });
+        grafico(document.getElementById("gc-merc"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto", series: [
+          ...(CP.CHN ? [{ nome: "Interbancário 3 meses", valores: Pares(CP.CHN), tipo: "line", cor: COR.ciano }] : []),
+          ...(LP.CHN ? [{ nome: "Título do governo 10 anos", valores: Pares(LP.CHN), tipo: "line", cor: COR.ambar }] : [])] });
+        grafico(document.getElementById("gc-comp"), { xTempo: true, inicioTempo: desde(10), deslizante: true, eixoEsq: "pctPronto",
+          series: linhasPaises(LP, ["CHN", "USA"]) });
+      };
+    }
+    app.innerHTML = `${cab("Mundo · Juros", `${fontes} · taxas em % a.a.`, `<a class="botao" href="downloads/offshore.xlsx" download>Baixar planilha do Mundo</a>`)}
+      ${abasJ}<div class="grade-cartoes">${cartoes.join("")}</div><div class="grade">${corpo}</div>`;
+    desenhar();
+    depois();
+    document.getElementById("sub-juros-off").addEventListener("click", (ev) => {
+      const b = ev.target.closest("button"); if (!b) return;
+      ABA_JUROS_OFF = b.dataset.k;
+      paginaOffshore("juros");
+    });
     return;
   }
 

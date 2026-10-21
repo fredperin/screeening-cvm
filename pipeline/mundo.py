@@ -194,7 +194,7 @@ PAISES_FMI = {
     "BRA": "Brasil", "USA": "Estados Unidos", "EURO": "Zona do Euro", "CHN": "China", "JPN": "Japão", "DEU": "Alemanha",
     "GBR": "Reino Unido", "FRA": "França", "ITA": "Itália", "CAN": "Canadá", "IND": "Índia", "MEX": "México", "ARG": "Argentina",
     "CHL": "Chile", "COL": "Colômbia", "PER": "Peru", "ZAF": "África do Sul", "KOR": "Coreia do Sul", "IDN": "Indonésia",
-    "TUR": "Turquia", "SAU": "Arábia Saudita", "AUS": "Austrália", "RUS": "Rússia",
+    "TUR": "Turquia", "SAU": "Arábia Saudita", "AUS": "Austrália", "RUS": "Rússia", "CHE": "Suíça",
 }
 
 
