@@ -15,8 +15,13 @@ sem aprovação explícita do usuário**.
 - Seções: Consolidado · Brasil (Início, Notícias e agenda, Macro com 8 abas, Juros, Empresas com 4 abas, Downloads) ·
   Mundo (Macro: Global, Mercados, EUA, Europa, China; Juros; Empresas do S&P 500 via SEC).
 - Já existe vigilância automática sem IA: `pipeline/monitor.py` (fontes em dia, faixas, buracos), `pipeline/validar.py`
-  (anomalias nas empresas), `pipeline/teste_telas.py` (navegador percorre todas as telas). Resultados publicados em
-  `dados/observacoes.json`, `dados/saude.json`, `dados/status.json`. O check-up vai **além** disso: julgamento, coerência e melhorias.
+  (anomalias nas empresas), `pipeline/teste_telas.py` (navegador percorre todas as telas), `pipeline/comparar.py`
+  (dados novos x execução anterior: nada some, encurta ou recua; revisões das fontes registradas) e `pipeline/rede.py`
+  (cliente único: ritmo por servidor e espera em recusas; contagem em `data/pipeline/consultas.json`). Resultados publicados em
+  `dados/observacoes.json`, `dados/saude.json`, `dados/status.json`, `dados/comparacao.json`. O check-up vai **além** disso:
+  julgamento, coerência e melhorias.
+- Critério de "dado certo" do usuário: **igual ao que a fonte publica** (erro da própria fonte não é nosso). Downloads curtos
+  (Banco Central, Yahoo) têm refação completa semanal; Tesouro e Comex só são baixados quando há dado novo.
 - Regras do usuário: fontes oficiais e confiáveis (mesmo que defasadas); custo zero de infraestrutura; nunca publicar chaves
   de acesso (FRED_API_KEY, BLS_API_KEY, SEC_USER_AGENT) nem e-mail; não mudar layout sem pedido.
 

@@ -16,6 +16,10 @@ Você recebe **um problema já diagnosticado e aprovado pelo usuário** e entreg
 - Segurança: chaves de API (FRED_API_KEY, BLS_API_KEY, SEC_USER_AGENT) só vêm de variáveis de ambiente; toda mensagem de erro
   que pode ir para arquivos publicados passa por `pipeline.sem_segredos`; nunca grave chave nem e-mail em arquivo.
 - Fontes de dados: só oficiais ou já aprovadas pelo usuário; se a correção exigir fonte nova, pare e devolva a proposta.
+- Consultas: toda chamada `requests` passa pelo cliente único (`pipeline/rede.py`, ritmo por servidor e espera em recusas);
+  não contorne. Servidor novo com limite publicado ganha entrada em `RITMO`. Mudança em download curto/condicional
+  (macro.baixar_sgs, mercado.historico_yahoo, tesouro.baixar, setor_externo Comex) exige teste de que o resultado é
+  idêntico ao download completo; depois, `pipeline/comparar.py` contra a versão anterior não pode apontar problema.
 - Mudar `pipeline/series_empresa.py` ou os arquivos de `ARQUIVOS_QUE_GERAM_EMPRESAS` (em `pipeline/rodar.py`) refaz todas as
   empresas do Brasil (60–90 min de atualização): avise isso no resumo.
 
