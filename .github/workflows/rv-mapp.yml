@@ -55,6 +55,10 @@ jobs:
           key: rvmapp-dados-${{ github.run_id }}
           restore-keys: rvmapp-dados-
 
+      # Cópia dos dados antes da atualização, fora do cache, para o comparador de versões
+      - name: Guardar a versão anterior dos dados
+        run: if [ -d site/dados ]; then cp -r site/dados "$RUNNER_TEMP/dados_anteriores"; fi
+
       - name: Atualizar dados
         run: python -m pipeline.rodar ${{ inputs.tudo && '--tudo' || '' }}
         env:
@@ -63,6 +67,14 @@ jobs:
           FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
+
+      # Comparador de versões (sem IA): nada que o site mostrava pode sumir, encurtar ou recuar sem aviso
+      - name: Comparar com a versão anterior
+        if: always()
+        continue-on-error: true
+        run: python -m pipeline.comparar "$RUNNER_TEMP/dados_anteriores"
+        env:
+          PYTHONUTF8: "1"
 
       # Teste das telas (sem IA): navegador sem tela percorre todas as seções e abas do site recém-gerado
       - name: Testar telas do site

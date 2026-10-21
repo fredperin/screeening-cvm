@@ -16,6 +16,7 @@ from datetime import date, datetime
 import pandas as pd
 import requests
 
+from config.config import RAW_DIR
 from pipeline import DIR_DADOS_SITE
 from src.screening import universo_perfis as universo_selecionado  # empresas + bancos listados
 
@@ -25,6 +26,9 @@ URL_HISTORICO = "https://sistemaswebb3-listados.b3.com.br/listedCompaniesProxy/C
 ANOS_PROVENTOS_LISTA = 3
 CABECALHO = {"User-Agent": "Mozilla/5.0"}
 DIR_PROVENTOS = DIR_DADOS_SITE / "proventos"
+DIR_YAHOO = RAW_DIR / "yahoo"  # cópia local do histórico do Yahoo (guardada no cache do GitHub Actions)
+DIR_YAHOO.mkdir(parents=True, exist_ok=True)
+COMPLETO_YAHOO_DIAS = 7
 CLASSE_POR_ISIN = {"ACNOR": "ON", "ACNPR": "PN", "ACNPA": "PNA", "ACNPB": "PNB", "CDAM": "UNIT"}
 
 
@@ -127,22 +131,67 @@ def cotacao_b3(ticker):
         return None
 
 
+def _semanal(hist):
+    if hist is None or hist.empty:
+        return {}
+    fech = hist["Close"].dropna()
+    return {"datas": [d.strftime("%Y-%m-%d") for d in fech.index], "fechamento": [round(float(v), 2) for v in fech]}
+
+
+def _historico_yahoo_completo(t):
+    divs = t.dividends
+    hist = t.history(period="10y", interval="1wk", auto_adjust=False)
+    proventos = []  # lista [data, valor]: pode haver dois proventos na mesma data
+    if divs is not None and not divs.empty:
+        proventos = [[d.strftime("%Y-%m-%d"), float(v)] for d, v in divs.items()]
+    return proventos, _semanal(hist)
+
+
 def historico_yahoo(ticker):
-    """Proventos por ação (todos os anos) e cotação semanal de 10 anos. Falha silenciosa -> vazio."""
+    """Proventos por ação (todos os anos) e cotação semanal de 10 anos. Falha silenciosa -> vazio.
+
+    Com cópia local (data/raw/yahoo), nos dias comuns baixa só os últimos 3 meses e junta ao histórico.
+    Só aceita a junção se o resultado for o mesmo do download completo: as semanas em comum precisam
+    bater (desdobramento ou ajuste do Yahoo muda o passado) e não pode haver provento novo na janela;
+    senão, e a cada COMPLETO_YAHOO_DIAS dias, baixa tudo de novo."""
+    arq = DIR_YAHOO / f"{ticker}.json"
+    hoje = date.today()
+    try:
+        guardado = json.loads(arq.read_text(encoding="utf-8"))
+        idade = (hoje - date.fromisoformat(guardado["completo_em"])).days
+    except (OSError, ValueError, KeyError):
+        guardado, idade = None, None
     try:
         import yfinance as yf
         t = yf.Ticker(f"{ticker}.SA")
-        divs = t.dividends
-        hist = t.history(period="10y", interval="1wk", auto_adjust=False)
+        proventos, cotacao = None, None
+        if guardado and idade < COMPLETO_YAHOO_DIAS and guardado["cotacao"].get("datas"):
+            hist = t.history(period="3mo", interval="1wk", auto_adjust=False)
+            recente = _semanal(hist)
+            antigo = dict(zip(guardado["cotacao"]["datas"], guardado["cotacao"]["fechamento"]))
+            novo = dict(zip(recente.get("datas", []), recente.get("fechamento", [])))
+            comuns = [d for d in novo if d in antigo][:-1]  # a última semana ainda está em formação
+            inicio = recente["datas"][0] if recente else None
+            prov_janela = round(float(hist["Dividends"].sum()), 8) if "Dividends" in hist else None
+            prov_guardado = round(sum(v for d, v in guardado["proventos"] if inicio and d >= inicio), 8)
+            if comuns and all(antigo[d] == novo[d] for d in comuns) and prov_janela is not None \
+                    and abs(prov_janela - prov_guardado) < 1e-6:
+                # mesma janela do completo: semana (começa na segunda) que contém o dia de 10 anos atrás
+                dez_anos = pd.Timestamp(hoje) - pd.DateOffset(years=10)
+                corte = (dez_anos - pd.Timedelta(days=dez_anos.weekday())).strftime("%Y-%m-%d")
+                junto = {d: v for d, v in antigo.items() if d < inicio and d >= corte} | novo
+                datas = sorted(junto)
+                proventos, cotacao = guardado["proventos"], {"datas": datas, "fechamento": [junto[d] for d in datas]}
+                arq.write_text(json.dumps({**guardado, "cotacao": cotacao}), encoding="utf-8")
+        if cotacao is None:
+            proventos, cotacao = _historico_yahoo_completo(t)
+            arq.write_text(json.dumps({"completo_em": hoje.isoformat(), "proventos": proventos, "cotacao": cotacao}), encoding="utf-8")
     except Exception:
         return {}, {}
     por_ano = {}
-    if divs is not None and not divs.empty:
-        por_ano = {str(a): round(float(v), 6) for a, v in divs.groupby(divs.index.year).sum().items()}
-    cotacao = {}
-    if hist is not None and not hist.empty:
-        fech = hist["Close"].dropna()
-        cotacao = {"datas": [d.strftime("%Y-%m-%d") for d in fech.index], "fechamento": [round(float(v), 2) for v in fech]}
+    if proventos:  # mesma soma por ano (pandas) do download direto
+        s = pd.Series([v for _, v in proventos], index=[int(d[:4]) for d, _ in proventos])
+        por_ano = {str(a): round(float(v), 6) for a, v in s.groupby(level=0).sum().items()}
     return por_ano, cotacao
 
 

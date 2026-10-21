@@ -60,6 +60,12 @@ def baixar():
         versao = None
     if versao and ARQ.exists() and ARQ_VERSAO.exists() and ARQ_VERSAO.read_text(encoding="utf-8") == versao:
         return None
+    if versao and ARQ.exists() and not ARQ_VERSAO.exists():
+        # cópia anterior a este controle: se foi baixada depois da publicação, já é a versão atual
+        publicado = datetime.fromisoformat(versao[:19]).replace(tzinfo=timezone.utc)
+        if datetime.fromtimestamp(ARQ.stat().st_mtime, timezone.utc) > publicado:
+            ARQ_VERSAO.write_text(versao, encoding="utf-8")
+            return None
     parcial = ARQ.with_suffix(".parcial")  # o arquivo anterior só é trocado depois do download completo
     try:
         with requests.get(URL, timeout=300, stream=True) as r:

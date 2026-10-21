@@ -11,11 +11,16 @@ from urllib.parse import quote
 import pandas as pd
 import requests
 
+from config.config import RAW_DIR
 from pipeline import DIR_DADOS_SITE
 
 URL_SGS = "https://api.bcb.gov.br/dados/serie/bcdata.sgs.{codigo}/dados?formato=json&dataInicial={ini}&dataFinal={fim}"
 URL_FOCUS = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoAnuais"
 INICIO = 2000
+DIR_SGS = RAW_DIR / "sgs"  # cópia local das séries brutas (guardada no cache do GitHub Actions)
+DIR_SGS.mkdir(parents=True, exist_ok=True)
+REVISAO_SGS_ANOS = 3    # janela baixada nos dias comuns: cobre as revisões que o BC faz nas séries
+COMPLETA_SGS_DIAS = 7   # série inteira de novo uma vez por semana (o comparador de versões confere a diferença)
 
 SERIES = {
     "ipca": (433, "IPCA (mensal)", "% a.m."),
@@ -80,6 +85,41 @@ def _get(url, params=None, tentativas=4):
 
 
 def baixar_sgs(codigo, inicio=INICIO, janela=10):
+    """Série desde `inicio`, com cópia local (data/raw/sgs): nos dias comuns baixa só os últimos
+    REVISAO_SGS_ANOS anos e junta ao histórico guardado (as revisões do BC caem dentro dessa janela);
+    a cada COMPLETA_SGS_DIAS dias, sem cópia ou se o pedaço novo não se encaixar, baixa a série inteira."""
+    hoje = date.today()
+    arq = DIR_SGS / f"{codigo}_{inicio}.json"
+    try:
+        guardada = json.loads(arq.read_text(encoding="utf-8"))
+        antiga = pd.Series(guardada["valores"], index=pd.to_datetime(guardada["datas"]), dtype=float)
+        idade = (hoje - date.fromisoformat(guardada["completa_em"])).days
+    except (OSError, ValueError, KeyError):
+        antiga, idade = None, None
+
+    def guardar(serie, completa_em):
+        arq.write_text(json.dumps({"completa_em": completa_em, "datas": [d.strftime("%Y-%m-%d") for d in serie.index],
+                                   "valores": [float(v) for v in serie.values]}), encoding="utf-8")
+
+    if antiga is not None and not antiga.empty and idade < COMPLETA_SGS_DIAS:
+        corte = date(hoje.year - REVISAO_SGS_ANOS, 1, 1)
+        if corte.year > inicio:
+            recente = _baixar_sgs_janelas(codigo, corte.year, janela)
+            # série encerrada (nada novo na janela) fica como está; pedaço novo precisa encostar no histórico guardado
+            if recente.empty and antiga.index[-1] < pd.Timestamp(corte):
+                return antiga
+            if not recente.empty and recente.index[0] <= antiga.index[-1] + pd.Timedelta(days=400):
+                serie = pd.concat([antiga[antiga.index < pd.Timestamp(corte)], recente])
+                serie = serie[~serie.index.duplicated(keep="last")].sort_index()
+                guardar(serie, guardada["completa_em"])
+                return serie
+    serie = _baixar_sgs_janelas(codigo, inicio, janela)
+    if not serie.empty:
+        guardar(serie, hoje.isoformat())
+    return serie
+
+
+def _baixar_sgs_janelas(codigo, inicio=INICIO, janela=10):
     """Série completa desde `inicio` (2000), em janelas de `janela` anos (10 = limite da API para séries diárias;
     séries mensais aceitam janelas maiores, o que reduz o número de consultas)."""
     partes, hoje = [], date.today()

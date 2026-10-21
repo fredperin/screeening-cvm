@@ -367,8 +367,26 @@ def checar_atualizacao():
     return f"todas as etapas ok ({status['atualizado_em']})"
 
 
+def checar_comparacao():
+    """Comparador de versões (pipeline.comparar): nada sumiu, encurtou ou recuou em relação à execução anterior.
+    Problemas continuam visíveis por alguns dias, mesmo que a execução seguinte já os tome como referência."""
+    arq = DIR_INTERMEDIARIO / "comparacao.json"
+    assert arq.exists(), "comparação com a versão anterior não foi feita"
+    c = json.loads(arq.read_text(encoding="utf-8"))
+    assert _dias(c["verificado_em"]) <= 1, f"comparação parada desde {c['verificado_em']}"
+    if c.get("sem_anterior"):
+        return "sem versão anterior para comparar"
+    recentes = c.get("recentes", [])
+    assert not recentes, f"{len(recentes)} problema(s) nos últimos dias — " + "; ".join(
+        f"{p['em'][:10]} {p['arquivo']} {p['caminho']}: {p['detalhe']}" for p in recentes[:6])
+    rev = c.get("revisoes", {})
+    return f"{c['arquivos']} arquivos e {c['series']} séries sem perda" + (
+        f"; revisões da fonte em {len(rev)} arquivo(s): " + ", ".join(list(rev)[:5]) if rev else "")
+
+
 CHECAGENS = {
     "Atualização (pipeline)": checar_atualizacao,
+    "Dados — comparação com a versão anterior": checar_comparacao,
     "CVM — ITR/DFP": checar_cvm,
     "CVM — cadastro": checar_cvm_cadastro,
     "CVM — fatos relevantes e Formulário de Referência": checar_cvm_ipe_fre,

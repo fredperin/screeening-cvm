@@ -73,6 +73,19 @@ jobs:
           BLS_API_KEY: ${{ secrets.BLS_API_KEY }}
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
 
+      # Guarda o que foi baixado (arquivo oficial do Tesouro, preços do momento, manchetes): a próxima execução,
+      # a diária e a publicação de telas partem daqui em vez de baixar de novo ou voltar a dados mais antigos
+      - name: Salvar cache de dados
+        if: steps.diaria.outputs.seguir == 'sim'
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            data/raw
+            data/pipeline
+            site/dados
+            site/downloads
+          key: rvmapp-dados-${{ github.run_id }}
+
       - if: steps.diaria.outputs.seguir == 'sim'
         run: sed -i "s/__VERSAO__/i${{ github.run_number }}/g" site/index.html
 
