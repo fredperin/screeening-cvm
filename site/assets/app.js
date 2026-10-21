@@ -1313,27 +1313,28 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
     ["rtn_discricionarias", "Discricionárias do Executivo"]];
   const defsFiscal = (aba) => {
     if (aba === "arrecadacao") return [
-      { t: "Arrecadação federal por tributo — acumulado em 12 meses", info: "fiscal_arrecadacao", largo: true, alt: {
-        "Nominal": { eixoEsq: "reais", series: pilhaR("arr_total_12m", TRIBUTOS_GR, "arr", "_12m") },
-        "A preços de hoje (IPCA)": { eixoEsq: "reais", series: pilhaR("arr_total_12m_real", TRIBUTOS_GR, "arr", "_12m_real") } } },
-      { t: "Arrecadação federal: % do PIB e crescimento real (12 meses)", info: "fiscal_arrecadacao_pib", op: { eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
-        { nome: "% do PIB", valores: P(S.arr_total_12m_pib), tipo: "line", cor: COR.ambar },
-        { nome: "Crescimento real em 12 meses (eixo direito)", valores: P(S.arr_total_cresc_real), tipo: "line", eixo: "dir", cor: COR.verde }] } },
-      { t: "Arrecadação federal no mês, por tributo", info: "fiscal_arrecadacao", op: { eixoEsq: "reais", inicio: inicio(Math.min(JANELA_MACRO, 3)),
-        series: pilhaR("arr_total", TRIBUTOS_GR, "arrm") } },
-      { t: "Receita do Governo Central e transferências a estados e municípios — 12 meses", info: "fiscal_receitas_rtn", alt: {
+      // linha 1: arrecadação por tributo (um seletor: 12 meses, 12 meses a preços de hoje, mensal) | receita do Governo Central
+      { t: "Arrecadação federal por tributo", info: "fiscal_arrecadacao", alt: {
+        "12 meses": { eixoEsq: "reais", series: pilhaR("arr_total_12m", TRIBUTOS_GR, "arr", "_12m") },
+        "12 meses a preços de hoje": { eixoEsq: "reais", series: pilhaR("arr_total_12m_real", TRIBUTOS_GR, "arr", "_12m_real") },
+        "Mensal": { eixoEsq: "reais", inicio: inicio(Math.min(JANELA_MACRO, 3)), series: pilhaR("arr_total", TRIBUTOS_GR, "arrm") } } },
+      { t: "Receita do Governo Central e transferências — 12 meses", info: "fiscal_receitas_rtn", alt: {
         "R$": { eixoEsq: "reais", series: pilhaR("rtn_receita_total_12m", [["rtn_receita_liquida", "Receita líquida do Governo Central"],
           ["rtn_transferencias", "Transferências a estados e municípios"]], "rec", "_12m") },
         "% do PIB": { eixoEsq: "pctPronto", series: [
           { nome: "Receita total", valores: P(S.rtn_receita_total_12m_pib), tipo: "line", cor: COR.ambar },
           { nome: "Receita líquida", valores: P(S.rtn_receita_liquida_12m_pib), tipo: "line", cor: COR.azul },
           { nome: "Transferências a estados e municípios", valores: P(S.rtn_transferencias_12m_pib), tipo: "line", cor: COR.roxo }] } } },
-      { t: "Receitas não administradas pela Receita Federal — 12 meses", info: "fiscal_nao_administradas", op: { eixoEsq: "reais",
+      // linha 2: receitas não administradas | dividendos de estatais
+      { t: "Receitas não administradas — 12 meses", info: "fiscal_nao_administradas", op: { eixoEsq: "reais",
         series: pilhaR("rtn_receita_nao_adm_12m", [["rtn_concessoes", "Concessões e permissões"], ["rtn_dividendos", "Dividendos de estatais"],
           ["rtn_recursos_naturais", "Royalties e participações (recursos naturais)"], ["rtn_nao_adm_demais", "Demais"]], "na", "_12m") } },
       { t: "Dividendos de estatais pagos à União — 12 meses", info: "fiscal_dividendos", op: { eixoEsq: "reais",
         series: pilhaR("rtn_dividendos_12m", [["rtn_div_petrobras", "Petrobras"], ["rtn_div_bndes", "BNDES"], ["rtn_div_bb", "Banco do Brasil"],
           ["rtn_div_caixa", "Caixa"], ["rtn_div_eletrobras", "Eletrobras"], ["rtn_div_demais", "Demais empresas"]], "div", "_12m") } },
+      { t: "Arrecadação federal: % do PIB e crescimento real (12 meses)", info: "fiscal_arrecadacao_pib", largo: true, op: { eixoEsq: "pctPronto", eixoDir: "pctPronto", series: [
+        { nome: "% do PIB", valores: P(S.arr_total_12m_pib), tipo: "line", cor: COR.ambar },
+        { nome: "Crescimento real em 12 meses (eixo direito)", valores: P(S.arr_total_cresc_real), tipo: "line", eixo: "dir", cor: COR.verde }] } },
     ];
     return [  // despesas
       { t: "Despesa total do Governo Central por grupo — 12 meses", info: "fiscal_despesa_grupos", largo: true, alt: {

@@ -18,6 +18,7 @@ Uso: py -m pipeline.fiscal
 
 import io
 import json
+import re
 import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
@@ -83,6 +84,7 @@ RTN_RESTOS = {
 
 # ---------------- Receita Federal ----------------
 URL_ARRECADACAO = "https://www.gov.br/receitafederal/dados/arrecadacao-estado.csv"
+LEITURA_RECEITA = 2  # versão da leitura dos números do arquivo (2 = vírgula de milhar de 2001–2002 tratada)
 MESES_PT = {m: i for i, m in enumerate(["janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro",
                                         "outubro", "novembro", "dezembro"], start=1)}
 # grupo -> (coluna do total, colunas das partes): em cada época a Receita usa ou o total ou as partes, nunca os dois
@@ -203,10 +205,29 @@ def rtn(anterior, controle, hoje):
     return mensal
 
 
+def _numero_receita(v):
+    """O arquivo da Receita muda de formato com o tempo: 2000 sem separador; 2001–2002 com vírgula de milhar
+    ("284,833,637"); de 2003 em diante com vírgula decimal ("641672810,8"). Vírgula seguida de grupos de 3 dígitos = milhar."""
+    if not isinstance(v, str) or not v.strip():
+        return 0.0
+    v = v.strip()
+    if re.fullmatch(r"-?\d{1,3}(,\d{3})+", v):
+        v = v.replace(",", "")
+    else:
+        v = v.replace(".", "").replace(",", ".")
+    try:
+        return float(v)
+    except ValueError:
+        return 0.0
+
+
 def arrecadacao(anterior, controle, hoje):
     ult = ((anterior.get("series") or {}).get("arr_total") or {}).get("datas", [None])[-1]
-    if not _precisa(controle, "receita_federal", (ult or "")[:7], _mes_anterior(hoje, 2), hoje):
+    # leitura dos números mudou (formatos antigos do arquivo): refaz uma vez, mesmo já tendo consultado hoje
+    leitura_nova = (controle.get("receita_federal") or {}).get("leitura") != LEITURA_RECEITA
+    if not leitura_nova and not _precisa(controle, "receita_federal", (ult or "")[:7], _mes_anterior(hoje, 2), hoje):
         return None
+    controle.setdefault("receita_federal", {})
     controle["receita_federal"]["tentado_em"] = hoje.isoformat()
     d = pd.read_csv(io.BytesIO(_get(URL_ARRECADACAO, timeout=180).content), sep=";", encoding="latin1", dtype=str)
     d["mes"] = d["Mês"].str.strip().str.lower().map(MESES_PT)
@@ -215,7 +236,7 @@ def arrecadacao(anterior, controle, hoje):
     d["data"] = pd.to_datetime(dict(year=d["Ano"].astype(int), month=d["mes"].astype(int), day=1))
     colunas = [c for c in d.columns if c not in ("Ano", "Mês", "UF", "mes", "data")]
     for c in colunas:
-        d[c] = pd.to_numeric(d[c].str.replace(".", "", regex=False).str.replace(",", ".", regex=False), errors="coerce").fillna(0)
+        d[c] = d[c].map(_numero_receita)
     br = d.groupby("data")[colunas].sum().sort_index() / 1e6  # R$ milhões
     faltando = [c for g in TRIBUTOS.values() for c in ([g[1]] if g[1] else []) + g[2] if c not in br]
     if any(c in faltando for g in TRIBUTOS.values() for c in g[2][:1]):
@@ -230,7 +251,7 @@ def arrecadacao(anterior, controle, hoje):
     mensal["arr_total"] = br[colunas].sum(axis=1)
     for k, (_, cols) in IR_PARTES.items():
         mensal[f"ir_{k}"] = br[[c for c in cols if c in br]].sum(axis=1)
-    controle["receita_federal"]["ok_em"] = hoje.isoformat()
+    controle["receita_federal"].update(ok_em=hoje.isoformat(), leitura=LEITURA_RECEITA)
     return mensal
 
 
