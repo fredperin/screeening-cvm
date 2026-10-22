@@ -2074,8 +2074,8 @@ function desenharPaisOff(pais, off, cab, abas, mundo = null) {
 let IND_GLOBAL = "NGDP_RPCH";
 function desenharGlobal(mundo, cab, abas) {
   const G = mundo.global || {};
-  // o PIB em US$ (NGDPD) é usado só no Consolidado
-  const inds = Object.fromEntries(Object.entries(G.indicadores || {}).filter(([k]) => k !== "NGDPD")), paises = G.paises || {};
+  // o PIB em US$ (NGDPD) e o per capita (NGDPDPC) são usados só no Consolidado
+  const inds = Object.fromEntries(Object.entries(G.indicadores || {}).filter(([k]) => !["NGDPD", "NGDPDPC"].includes(k))), paises = G.paises || {};
   if (!inds[IND_GLOBAL]) IND_GLOBAL = Object.keys(inds)[0];
   const ind = inds[IND_GLOBAL];
   const ano = G.ano_corrente || new Date().getFullYear();
@@ -2744,11 +2744,12 @@ function juroReal(taxa, inflacao12m) {
   return inflacao12m.datas.map((d, i) => [d, t[i] == null ? null : ((1 + t[i] / 100) / (1 + inflacao12m.valores[i] / 100) - 1) * 100]).filter((p) => p[1] != null);
 }
 
+let PIB_CONS = "total";  // botão Total | Per capita do PIB no Consolidado
 async function paginaConsolidado() {
   const [macro, off, mundo] = await Promise.all([dados("dados/macro.json"), dados("dados/offshore.json").catch(() => null), dados("dados/mundo.json").catch(() => null)]);
   const S = macro.series, F = (off && off.fed) || {}, B = (off && off.bls) || {}, E = (off && off.bce) || {}, Z = (off && off.eurostat) || {};
   const CH = (mundo && mundo.china) || {}, BC = ((off && off.juros_mundo) || {}).bancos_centrais || {};
-  const G = (mundo && mundo.global) || {}, PIB = ((G.indicadores || {}).NGDPD) || null, paises = G.paises || {};
+  const G = (mundo && mundo.global) || {}, PIB = ((G.indicadores || {}).NGDPD) || null, PIB_PC = ((G.indicadores || {}).NGDPDPC) || null, paises = G.paises || {};
   const u = (s) => ultimo(s);
   const mes = (s) => (u(s).data ? `${MESES[Number(u(s).data.slice(5, 7)) - 1]}/${u(s).data.slice(2, 4)}` : "");
   const linha = (pais, nome, valores, extra = {}) => ({ nome, valores, tipo: "line", cor: PAISES[pais] ? PAISES[pais][1] : COR.vermelho, ...extra });
@@ -2765,18 +2766,34 @@ async function paginaConsolidado() {
       ${cartao("HICP 12m", pctPronto(u(Z.hicp_12m).valor, 1), mes(Z.hicp_12m))}
     </div>
     <div class="grade">
-      ${PIB ? painelG("gc-pib", "PIB nominal em US$ (FMI)", "pib_nominal_mundo", `<div class="nota">Anual, em dólares correntes; a partir de ${G.ano_corrente || new Date().getFullYear()} (inclusive), projeções do FMI.</div>`, "largo") : ""}
+      ${PIB ? `<div class="painel largo" data-info="pib_nominal_mundo"><div class="cabecalho" style="margin-bottom:6px">
+        <h2 style="margin:0">PIB nominal em US$ (FMI)</h2>${PIB_PC ? `<div class="seletor" id="pib-modo">${[["total", "Total"], ["pc", "Per capita"]].map(([k, n]) =>
+          `<button data-k="${k}" class="${PIB_CONS === k ? "ativo" : ""}">${n}</button>`).join("")}</div>` : ""}</div>
+        <div class="grafico alto" id="gc-pib"></div>
+        <div class="nota">Anual, em dólares correntes; a partir de ${G.ano_corrente || new Date().getFullYear()} (inclusive), projeções do FMI.</div></div>` : ""}
       ${painelG("gc-inf", "Inflação em 12 meses", "inflacao_mundo", "", "largo")}
       ${painelG("gc-juros", "Juros básicos dos bancos centrais", "juros_bancos_centrais", "", "largo")}
       ${painelG("gc-des", "Desemprego", "desemprego_mundo", "", "largo")}
     </div>`;
-  if (PIB) {
-    const CODIGOS = ["USA", "CHN", "EURO", "JPN", "DEU", "IND", "GBR", "FRA", "BRA", "ITA", "CAN", "MEX", "KOR"].filter((c) => PIB.valores[c]);
-    const anos = [...new Set(CODIGOS.flatMap((c) => Object.keys(PIB.valores[c])))].sort();
+  // botão Total | Per capita: mesmos países; o total vem em US$ bilhões, o per capita em US$ por habitante
+  const desenharPib = () => {
+    const ind = PIB_CONS === "pc" && PIB_PC ? PIB_PC : PIB, escala = ind === PIB ? 1e9 : 1;
+    const CODIGOS = ["USA", "CHN", "EURO", "JPN", "DEU", "IND", "GBR", "FRA", "BRA", "ITA", "CAN", "MEX", "KOR"].filter((c) => ind.valores[c]);
+    const anos = [...new Set(CODIGOS.flatMap((c) => Object.keys(ind.valores[c])))].sort();
     MOEDA = "US$";  // eixo e caixa de valores em dólares (a navegação seguinte volta para R$)
     grafico(document.getElementById("gc-pib"), { rotulos: anos, eixoEsq: "reais", janela: 40, series: CODIGOS.map((c, j) => ({
-      nome: paises[c], valores: anos.map((a) => (PIB.valores[c][a] != null ? PIB.valores[c][a] * 1e9 : null)), tipo: "line",
+      nome: paises[c], valores: anos.map((a) => (ind.valores[c][a] != null ? ind.valores[c][a] * escala : null)), tipo: "line",
       cor: c === "BRA" ? PAISES.br[1] : PALETA_GRAF[j % PALETA_GRAF.length] })) });
+  };
+  if (PIB) {
+    desenharPib();
+    const sel = document.getElementById("pib-modo");
+    if (sel) sel.addEventListener("click", (ev) => {
+      const b = ev.target.closest("button"); if (!b) return;
+      PIB_CONS = b.dataset.k;
+      sel.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
+      desenharPib();
+    });
   }
   grafico(document.getElementById("gc-inf"), { ...tempo(), series: [
     linha("br", "IPCA (Brasil)", Pares(S.ipca_12m)), linha("eua", "CPI (EUA)", Pares(B.cpi_12m)), linha("euro", "HICP (Zona do Euro)", Pares(Z.hicp_12m)),

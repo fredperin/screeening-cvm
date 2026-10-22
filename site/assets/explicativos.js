@@ -905,6 +905,7 @@ window.EXPLICATIVOS = {
   pib_nominal_mundo: {
     titulo: "PIB nominal em US$",
     html: `<p>Tamanho de cada economia em dólares correntes, por ano, segundo o World Economic Outlook do FMI (indicador NGDPD). Os anos a partir do corrente são projeções do FMI.</p>
+      <p><b>Per capita</b> (botão): PIB em dólares correntes dividido pela população, também do FMI (indicador NGDPDPC). Mostra o nível de renda média de cada país, e não o tamanho da economia.</p>
       <p>Como é em dólar corrente, a variação do câmbio também mexe no valor.</p>
       <p>Fonte: FMI, World Economic Outlook (API DataMapper).</p>`,
   },

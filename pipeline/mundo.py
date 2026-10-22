@@ -185,7 +185,7 @@ def china():
 # ---------------- Global (FMI, WEO) ----------------
 URL_FMI = "https://www.imf.org/external/datamapper/api/v1/{ind}"
 INDICADORES_FMI = {
-    "NGDP_RPCH": "Crescimento do PIB real (%)", "NGDPD": "PIB em US$ bilhões (valores correntes)", "PCPIPCH": "Inflação média ao consumidor (%)", "LUR": "Desemprego (%)",
+    "NGDP_RPCH": "Crescimento do PIB real (%)", "NGDPD": "PIB em US$ bilhões (valores correntes)", "NGDPDPC": "PIB per capita em US$ (valores correntes)", "PCPIPCH": "Inflação média ao consumidor (%)", "LUR": "Desemprego (%)",
     "GGXWDG_NGDP": "Dívida bruta do governo (% do PIB)", "GGXCNL_NGDP": "Resultado nominal do governo (% do PIB)",
     "BCA_NGDPD": "Conta corrente (% do PIB)",
 }
