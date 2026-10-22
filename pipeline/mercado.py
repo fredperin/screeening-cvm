@@ -165,7 +165,15 @@ def historico_yahoo(ticker):
         import yfinance as yf
         t = yf.Ticker(f"{ticker}.SA")
         proventos, cotacao = None, None
-        if guardado and idade < COMPLETO_YAHOO_DIAS and guardado["cotacao"].get("datas"):
+        dez_anos = pd.Timestamp(hoje) - pd.DateOffset(years=10)
+        corte = (dez_anos - pd.Timedelta(days=dez_anos.weekday())).strftime("%Y-%m-%d")
+        datas_guardadas = (guardado or {}).get("cotacao", {}).get("datas") or []
+        # data mais antiga já vista do papel: uma resposta que começa bem depois dela veio cortada (Yahoo, 22/10/2026:
+        # Localiza só a partir de dez/2025). Sem esse registro e com histórico curto, recarrega tudo uma vez para conferir.
+        inicio_conhecido = (guardado or {}).get("inicio_conhecido") or (datas_guardadas[0] if datas_guardadas else None)
+        conferir_corte = bool(guardado) and "inicio_conhecido" not in guardado and bool(datas_guardadas) and \
+            datas_guardadas[0] > (pd.Timestamp(corte) + pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+        if guardado and idade < COMPLETO_YAHOO_DIAS and datas_guardadas and not conferir_corte:
             hist = t.history(period="3mo", interval="1wk", auto_adjust=False)
             recente = _semanal(hist)
             antigo = dict(zip(guardado["cotacao"]["datas"], guardado["cotacao"]["fechamento"]))
@@ -177,15 +185,34 @@ def historico_yahoo(ticker):
             if comuns and all(antigo[d] == novo[d] for d in comuns) and prov_janela is not None \
                     and abs(prov_janela - prov_guardado) < 1e-6:
                 # mesma janela do completo: semana (começa na segunda) que contém o dia de 10 anos atrás
-                dez_anos = pd.Timestamp(hoje) - pd.DateOffset(years=10)
-                corte = (dez_anos - pd.Timedelta(days=dez_anos.weekday())).strftime("%Y-%m-%d")
                 junto = {d: v for d, v in antigo.items() if d < inicio and d >= corte} | novo
                 datas = sorted(junto)
                 proventos, cotacao = guardado["proventos"], {"datas": datas, "fechamento": [junto[d] for d in datas]}
-                arq.write_text(json.dumps({**guardado, "cotacao": cotacao}), encoding="utf-8")
+                arq.write_text(json.dumps({**guardado, "cotacao": cotacao, "inicio_conhecido": inicio_conhecido}), encoding="utf-8")
         if cotacao is None:
             proventos, cotacao = _historico_yahoo_completo(t)
-            arq.write_text(json.dumps({"completo_em": hoje.isoformat(), "proventos": proventos, "cotacao": cotacao}), encoding="utf-8")
+            datas_novas = (cotacao or {}).get("datas") or []
+            limite = (pd.Timestamp(max(inicio_conhecido or corte, corte)) + pd.Timedelta(days=30)).strftime("%Y-%m-%d")
+            if datas_guardadas and datas_novas and datas_novas[0] > limite:
+                # resposta cortada: o histórico guardado não é apagado. Junta as semanas novas se as semanas em comum batem;
+                # se não batem (desdobramento ou ajuste no meio), fica o guardado e o completo é tentado de novo amanhã
+                antigo = dict(zip(datas_guardadas, guardado["cotacao"]["fechamento"]))
+                novo = dict(zip(datas_novas, cotacao["fechamento"]))
+                comuns = [d for d in novo if d in antigo][:-1]
+                if comuns and all(abs(antigo[d] - novo[d]) <= 1e-6 * max(abs(antigo[d]), 1) for d in comuns):
+                    junto = {d: v for d, v in antigo.items() if d >= corte} | novo
+                    datas = sorted(junto)
+                    cotacao = {"datas": datas, "fechamento": [junto[d] for d in datas]}
+                    proventos = [list(x) for x in sorted({tuple(x) for x in guardado["proventos"] if x[0] < datas_novas[0]}
+                                                         | {tuple(x) for x in proventos or []})]
+                    arq.write_text(json.dumps({"completo_em": hoje.isoformat(), "proventos": proventos, "cotacao": cotacao,
+                                               "inicio_conhecido": inicio_conhecido}), encoding="utf-8")
+                else:
+                    proventos, cotacao = guardado["proventos"], guardado["cotacao"]
+            else:
+                inicio = min([x for x in (inicio_conhecido, datas_novas[0] if datas_novas else None) if x] or [None])
+                arq.write_text(json.dumps({"completo_em": hoje.isoformat(), "proventos": proventos, "cotacao": cotacao,
+                                           "inicio_conhecido": inicio}), encoding="utf-8")
     except Exception:
         return {}, {}
     por_ano = {}
