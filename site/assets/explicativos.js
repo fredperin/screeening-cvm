@@ -909,6 +909,15 @@ window.EXPLICATIVOS = {
       <p>Como é em dólar corrente, a variação do câmbio também mexe no valor.</p>
       <p>Fonte: FMI, World Economic Outlook (API DataMapper).</p>`,
   },
+  historico_ajustes: {
+    titulo: "Histórico de ajustes",
+    html: `<p>Mostra, para esta empresa, tudo o que foi feito para os números ficarem iguais ao que ela divulgou à CVM:</p>
+      <ul><li><b>Ajustes aplicados</b>: correções automáticas do pipeline (escala marcada errada no envio, individual no lugar de consolidado zerado, 4º trimestre
+        calculado com o ano e os 9 meses do mesmo conjunto de documentos quando há reapresentação, reenvio com erro descartado).</li>
+      <li><b>Pontos do validador</b>: checagens automáticas sem IA; quando um ponto já foi examinado, aparece o motivo (por exemplo, "igual à fonte").</li>
+      <li><b>Conferências manuais</b>: números conferidos contra o ITR/DFP publicado no RI da empresa.</li></ul>
+      <p>Não se usam números "ajustados" de release (EBITDA ajustado, lucro recorrente): só o que está no ITR/DFP.</p>`,
+  },
   inflacao_mundo: {
     titulo: "Inflação comparada",
     html: `<ul>

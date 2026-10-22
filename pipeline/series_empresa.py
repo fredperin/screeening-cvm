@@ -26,7 +26,7 @@ FLUXOS = {
 }
 SALDOS = {
     "ativo_total": "1", "ativo_circ": "1.01", "caixa": "1.01.01", "aplicacoes": "1.01.02",
-    "passivo_circ": "2.01", "emprest_cp": "2.01.04", "emprest_lp": "2.02.01", "pl": "2.03",
+    "passivo_total": "2", "passivo_circ": "2.01", "emprest_cp": "2.01.04", "emprest_lp": "2.02.01", "pl": "2.03",
 }
 
 

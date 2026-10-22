@@ -83,6 +83,7 @@ def _periodos_individuais(base):
 
 
 def processar(empresa, log):
+    cvm_itr.AJUSTES.clear()  # ajustes aplicados aos dados desta empresa (aba "Histórico de ajustes")
     # consolidado sempre que existir com números; individual só onde a empresa não consolida
     base = consolidado_ou_individual(corrigir_escala_trocada(carregar_empresa(empresa.CNPJ_CIA)))
     if base.empty:
@@ -108,6 +109,7 @@ def processar(empresa, log):
         **para_json(visoes),
         # DRE e Balanço com as contas do Excel (aba Resultados do site)
         "demonstracoes": demonstracoes(blocos, fator, base, visoes, dre_completa=dre_completa),
+        "ajustes": sorted(cvm_itr.AJUSTES, key=lambda a: a["periodo"], reverse=True),
     }
     return dados, blocos
 

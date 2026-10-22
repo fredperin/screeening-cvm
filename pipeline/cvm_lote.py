@@ -23,6 +23,7 @@ import requests
 
 from config.config import CVM_BASE_URL, CVM_BASE_URL_DFP, RAW_DIR
 from pipeline import DIR_INTERMEDIARIO
+from src import cvm_itr
 
 ANO_INICIAL = 2011
 SIGLAS = ("BPA", "BPP", "DRE", "DFC_MI")
@@ -180,6 +181,16 @@ def consolidado_ou_individual(base: pd.DataFrame) -> pd.DataFrame:
         # nenhum dos dois com números (ex.: DFC toda zerada de holding): fica como a fonte entregou
         | ~chave.isin(con_real | ind_real) & ((b["TIPO"] == "con") | ~chave.isin(tem_con))
     )
+    # registro para o "Histórico de ajustes": datas da DRE vindas do individual e consolidados zerados descartados
+    ind_dre = sorted(set(b.loc[usar & (b["TIPO"] == "ind") & (b["SIGLA"] == "DRE"), "DT_FIM_EXERC"].astype(str)))
+    if ind_dre:
+        cvm_itr.AJUSTES.append({"periodo": f"{ind_dre[0][:10]} a {ind_dre[-1][:10]}", "tipo": "Individual no lugar do consolidado",
+                                "detalhe": f"em {len(ind_dre)} data(s) a empresa não tinha consolidado com números (sem controladas, ou consolidado "
+                                           "entregue zerado): a DRE vem do individual, que nesse caso é a empresa inteira"})
+    zerados = sorted(set(b.loc[(b["TIPO"] == "con") & ~com_numero & chave.isin(con_real | ind_real), "DT_REFER"].astype(str)))
+    if zerados:
+        cvm_itr.AJUSTES.append({"periodo": f"{zerados[0][:10]} a {zerados[-1][:10]}", "tipo": "Consolidado zerado descartado",
+                                "detalhe": f"{len(zerados)} envio(s) com o consolidado zerado, quando havia outro envio com números para o mesmo período"})
     b = b[usar].copy()
     b["TIPO_ORIGEM"] = b["TIPO"]
     b["TIPO"] = "con"
@@ -216,6 +227,9 @@ def corrigir_escala_trocada(base: pd.DataFrame) -> pd.DataFrame:
                 doc = (b["FONTE"] == linha["FONTE"]) & (b["DT_REFER"] == linha["DT_REFER"]) & (b["VERSAO"] == linha["VERSAO"])
                 b.loc[doc, "ESCALA_MOEDA"] = nova[linha["ESCALA_MOEDA"]]
                 corrigidos.append(f"{linha['FONTE']} {linha['DT_REFER']}")
+                cvm_itr.AJUSTES.append({"periodo": str(linha["DT_REFER"])[:10], "tipo": "Escala corrigida",
+                                        "detalhe": f"{linha['FONTE']} entregue à CVM marcado em {linha['ESCALA_MOEDA'].lower()}, com os números em "
+                                                   f"{nova[linha['ESCALA_MOEDA']].lower()} (o ativo total ficava cerca de 1.000× fora dos envios vizinhos)"})
     if corrigidos:
         print(f"   ↪ escala marcada errada na CVM, corrigida: {', '.join(sorted(set(corrigidos)))}")
     return b

@@ -22,6 +22,7 @@
   "LAND3|2021-03-31|salto de escala na receita": "existente antes da verificação automática (22/10/2026), ainda não examinado — revisar com o agente validador",
   "LAVV3|2020-12-31|4º tri fora do padrão do ano": "existente antes da verificação automática (22/10/2026), ainda não examinado — revisar com o agente validador",
   "MDNE3|2018-12-31|4º tri fora do padrão do ano": "existente antes da verificação automática (22/10/2026), ainda não examinado — revisar com o agente validador",
+  "OFSA3|2021-12-31|balanço não fecha": "erro da própria empresa: os ITRs de mar/22 e set/22 trazem, no comparativo, o ativo de 31/12/21 em R$ 1.269,9 mi e o passivo em R$ 1.192,6 mi (o DFP de 2021 fecha em R$ 1.192,6 mi); igual à fonte (conferido em 22/10/2026)",
   "PATI3|2013-12-31|4º tri fora do padrão do ano": "existente antes da verificação automática (22/10/2026), ainda não examinado — revisar com o agente validador",
   "PDGR3|2012-12-31|4º tri fora do padrão do ano": "existente antes da verificação automática (22/10/2026), ainda não examinado — revisar com o agente validador",
   "PDGR3|2015-12-31|4º tri fora do padrão do ano": "existente antes da verificação automática (22/10/2026), ainda não examinado — revisar com o agente validador",

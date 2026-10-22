@@ -17,13 +17,19 @@ Uso: py -m pipeline.validar
 import json
 import statistics
 import sys
-from datetime import date
+from datetime import date, timedelta
 
 from pipeline import DIR_DADOS_SITE, RAIZ
 
 ARQ_CONFERIDAS = RAIZ / "config" / "empresas_conferidas.json"
-SERIOS = {"4º tri negativo", "4º tri fora do padrão do ano", "salto de escala na receita", "caixa maior que o ativo"}
+ARQ_AUDITORIAS = RAIZ / "config" / "auditorias_empresas.json"  # conferências manuais contra o ITR/DFP do RI (aba Histórico de ajustes)
+SERIOS = {"4º tri negativo", "4º tri fora do padrão do ano", "salto de escala na receita", "caixa maior que o ativo", "balanço não fecha"}
 FATOR_4T = 3  # 4º tri mais de 3× acima (ou abaixo) da mediana dos outros 3 trimestres do mesmo exercício
+
+
+def _mi(v):
+    """Valor em R$ milhões no padrão brasileiro (aparece na aba Histórico de ajustes do site)."""
+    return "R$ " + f"{v / 1e6:,.1f}".replace(",", "X").replace(".", ",").replace("X", ".") + " mi"
 
 
 def _pares(serie):
@@ -45,12 +51,12 @@ def checar_empresa(d):
     for i, v in _pares(receita):
         quarto = int(periodos[i][5:7]) == mes_fim
         if v < 0:
-            add("4º tri negativo" if quarto else "receita negativa publicada pela empresa", f"{v:,.0f}", periodos[i])
+            add("4º tri negativo" if quarto else "receita negativa publicada pela empresa", f"{_mi(v)}", periodos[i])
         outros = [x for x in receita[max(0, i - 3):i] if x is not None]
         if quarto and v > 0 and len(outros) == 3 and statistics.median(outros) > 50e6:
             m = statistics.median(outros)
             if v > FATOR_4T * m or v < m / FATOR_4T:
-                add("4º tri fora do padrão do ano", f"{v:,.0f} (mediana dos outros trimestres {m:,.0f})", periodos[i])
+                add("4º tri fora do padrão do ano", f"{_mi(v)} (mediana dos outros trimestres {_mi(m)})", periodos[i])
         if i and receita[i - 1] and receita[i - 1] > 0 and v > 0:
             razao = v / receita[i - 1]
             if razao > 100 or razao < 0.01:
@@ -70,12 +76,59 @@ def checar_empresa(d):
     for serie, nome in (("da", "D&A"), ("capex", "capex")):
         valores = ltm["series"].get(serie, [])
         if valores and valores[-1] is not None and valores[-1] < 0:
-            add(f"{nome} LTM negativo", f"{valores[-1]:,.0f}", ltm["periodos"][-1])
+            add(f"{nome} LTM negativo", f"{_mi(valores[-1])}", ltm["periodos"][-1])
 
     # 4) Balanço que não fecha: caixa maior que o ativo total
     for i, (caixa, ativo) in enumerate(zip(S.get("caixa", []), S.get("ativo_total", []))):
         if caixa and ativo and caixa > ativo * 1.01:
-            add("caixa maior que o ativo", f"caixa {caixa:,.0f} × ativo {ativo:,.0f}", periodos[i])
+            add("caixa maior que o ativo", f"caixa {_mi(caixa)} × ativo {_mi(ativo)}", periodos[i])
+
+    # 6) Balanço que não fecha: ativo total ≠ passivo total (identidade contábil — diferença indica dado misturado)
+    for i, (ativo, passivo) in enumerate(zip(S.get("ativo_total", []), S.get("passivo_total", []))):
+        if ativo and passivo and abs(ativo - passivo) > 0.005 * abs(ativo):
+            add("balanço não fecha", f"ativo total {_mi(ativo)} × passivo total {_mi(passivo)}", periodos[i])
+
+    # 7) DFC × balanço: variação de caixa da DFC (6.05) contra a variação do caixa e equivalentes do balanço (1.01.01),
+    # em trimestres seguidos. Diferença pode ser legítima (caixa da DFC com outra definição), por isso é só para conferir.
+    # Se a diferença aparece na maior parte dos trimestres, a DFC usa outra definição de caixa (ex.: inclui aplicações):
+    # vira um único registro, em vez de um por trimestre.
+    caixa, var = S.get("caixa", []), S.get("var_caixa", [])
+    ativos = S.get("ativo_total", [])
+    conferidos, diferentes = 0, []
+    for i in range(1, min(len(periodos), len(caixa), len(var))):
+        if None in (caixa[i - 1], caixa[i], var[i]):
+            continue
+        if (date.fromisoformat(periodos[i]) - date.fromisoformat(periodos[i - 1])).days > 100:
+            continue
+        conferidos += 1
+        variacao = caixa[i] - caixa[i - 1]
+        if abs(variacao - var[i]) > max(5e6, 0.01 * abs(ativos[i] or 0)):
+            diferentes.append((periodos[i], f"variação do caixa no balanço {_mi(variacao)} × DFC {_mi(var[i])}"))
+    if conferidos and len(diferentes) > 0.4 * conferidos:
+        add("DFC com outra definição de caixa", f"a variação de caixa da DFC difere da do balanço em {len(diferentes)} de {conferidos} trimestres "
+            "(a DFC da empresa usa outra definição de caixa e equivalentes)")
+    else:
+        for per, detalhe in diferentes:
+            add("DFC não fecha com o caixa", detalhe, per)
+
+    # 8) Soma dos 4 trimestres × ano oficial (DFP): diferença indica reapresentação de algum trimestre
+    anual = d.get("anual") or {}
+    mapa_tri = {p: i for i, p in enumerate(periodos)}
+    for serie, nome in (("receita", "receita"), ("lucro_liquido", "lucro líquido")):
+        valores_ano, valores_tri = (anual.get("series") or {}).get(serie, []), S.get(serie, [])
+        for j, fim in enumerate(anual.get("periodos") or []):
+            v_ano = valores_ano[j] if j < len(valores_ano) else None
+            f = date.fromisoformat(fim)
+            datas = [f]
+            for _ in range(3):
+                ant = date(datas[-1].year - (datas[-1].month <= 3), (datas[-1].month - 4) % 12 + 1, 1)
+                datas.append(date(ant.year + (ant.month == 12), ant.month % 12 + 1, 1) - timedelta(days=1))
+            idx = [mapa_tri.get(x.isoformat()) for x in datas]
+            if v_ano is None or None in idx or any(valores_tri[k] is None for k in idx):
+                continue
+            soma = sum(valores_tri[k] for k in idx)
+            if abs(soma - v_ano) > max(1e6, 0.005 * abs(v_ano)):
+                add("soma dos trimestres ≠ ano (reapresentação)", f"{nome}: ano oficial {_mi(v_ano)} × soma dos 4 trimestres {_mi(soma)}", fim)
 
     # 5) Sem DFC (empresa que só publica pelo método direto) ou sem LTM
     if not any(v is not None for v in S.get("fco", [])):
@@ -146,6 +199,8 @@ def main():
         "verificado_em": date.today().isoformat(), "periodo_mais_comum": mais_comum,
         "resumo": dict(sorted(contagem.items(), key=lambda x: -x[1])), "empresas": por_empresa,
         "serios_novos": novos, "serios_conhecidos": conhecidos, "graves": graves,
+        # conferências manuais contra o ITR/DFP publicado no RI, por empresa (config/auditorias_empresas.json)
+        "auditorias": json.loads(ARQ_AUDITORIAS.read_text(encoding="utf-8")).get("auditorias", {}) if ARQ_AUDITORIAS.exists() else {},
     }, ensure_ascii=False, indent=1), encoding="utf-8")
 
     print(f"Validação: {len(por_empresa)} empresas com algum ponto a conferir; achados sérios: {len(novos)} novos, {len(conhecidos)} já conferidos")

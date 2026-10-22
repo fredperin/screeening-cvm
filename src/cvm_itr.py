@@ -597,6 +597,11 @@ def _series_por_descricao(bruto: pd.DataFrame) -> dict:
     return saida
 
 
+# Ajustes aplicados aos dados da empresa em processamento (pipeline.gerar_empresas zera antes e grava no JSON,
+# para a aba "Histórico de ajustes" do site): {"periodo", "tipo", "detalhe"}
+AJUSTES = []
+
+
 def _ano_na_mesma_base_dos_9m(bruto: pd.DataFrame, escolhas: dict = None) -> tuple:
     """
     O 4º trimestre isolado é o ano (DFP) menos os 9 meses (ITR do 3º tri). O ano costuma
@@ -638,6 +643,8 @@ def _ano_na_mesma_base_dos_9m(bruto: pd.DataFrame, escolhas: dict = None) -> tup
                 # receita do ano zerada em todos os envios (Padtec 2024): sem 4º tri, em vez de um número errado
                 remover |= do_ano
                 anos.add(str(f)[:4])
+                AJUSTES.append({"periodo": str(f)[:10], "tipo": "4º tri não calculado",
+                                "detalhe": "receita do ano zerada no DFP em todos os envios, com os 9 meses preenchidos: o 4º tri fica em branco em vez de um número errado"})
                 continue
             if not a or not n or (len(set(a.values())) == 1 and len(set(n.values())) == 1):
                 continue
@@ -649,6 +656,10 @@ def _ano_na_mesma_base_dos_9m(bruto: pd.DataFrame, escolhas: dict = None) -> tup
                 continue
             _, _, _, ra, rn = min(candidatos)
             escolhas[(i, f)] = (ra, rn)
+            if (ra, rn) != (max(a), max(n)):
+                AJUSTES.append({"periodo": str(f)[:10], "tipo": "4º tri com documentos da mesma base",
+                                "detalhe": f"ano e 9 meses reapresentados em extensões diferentes (o ano mais recente, do envio de {max(a)}, e os 9 meses mais recentes, "
+                                           f"do envio de {max(n)}, não estão na mesma base); 4º tri = ano do envio de {ra} − 9 meses do envio de {rn}"})
         elif (i, f) not in escolhas:
             continue
         ra, rn = escolhas[(i, f)]
@@ -670,9 +681,12 @@ def _receita_negativa_reenviada(bruto: pd.DataFrame) -> pd.DataFrame:
         return bruto
     rec = bruto[bruto["CD_CONTA"] == "3.01"].sort_values(["DT_REFER", "VERSAO"])
     remover = pd.Series(False, index=bruto.index)
-    for _, g in rec.groupby(["DT_INI_EXERC", "DT_FIM_EXERC"]):
-        if len(g) > 1 and g["VL_CONTA"].iloc[0] > 0:
+    for (ini, fim), g in rec.groupby(["DT_INI_EXERC", "DT_FIM_EXERC"]):
+        if len(g) > 1 and g["VL_CONTA"].iloc[0] > 0 and (g["VL_CONTA"] < 0).any():
             remover.loc[g.index[g["VL_CONTA"] < 0]] = True
+            envios = ", ".join(sorted(set(g.loc[g["VL_CONTA"] < 0, "DT_REFER"].astype(str))))
+            AJUSTES.append({"periodo": str(fim)[:10], "tipo": "Reenvio com receita negativa descartado",
+                            "detalhe": f"o envio de {envios} trouxe a receita de {ini} a {fim} negativa, e o original era positiva: fica o original"})
     return bruto[~remover]
 
 

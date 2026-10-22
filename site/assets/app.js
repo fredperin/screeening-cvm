@@ -625,7 +625,7 @@ let FC_SEL = "todos";
 let DIV_IFRS16 = false;
 let ABA_EMPRESA = "negocio";
 let NOTICIAS_CACHE = null;
-const ABAS_EMPRESA = [["negocio", "Negócio"], ["eventos", "Eventos e notícias"], ["cotacao", "Cotação"], ["resultados", "Resultados"], ["graficos", "Gráficos"], ["dividendos", "Dividendos"]];
+const ABAS_EMPRESA = [["negocio", "Negócio"], ["eventos", "Eventos e notícias"], ["cotacao", "Cotação"], ["resultados", "Resultados"], ["graficos", "Gráficos"], ["dividendos", "Dividendos"], ["ajustes", "Histórico de ajustes"]];
 let JANELA_COTACAO = 5;
 const INFO_EMPRESA = {
   "Receita líquida": "receita", "Lucro bruto e margem bruta": "lucro_bruto", "EBITDA e margem EBITDA": "ebitda",
@@ -730,6 +730,11 @@ async function paginaEmpresa(id) {
     dividendos: () => {
       document.getElementById("aba-empresa").innerHTML = `<div class="grade" id="dividendos"></div>`;
       desenharDividendos(emp, prov, m);
+    },
+    ajustes: async () => {
+      document.getElementById("aba-empresa").innerHTML = `<div class="grade grade-empilhada" id="ajustes-empresa"><p class="sub">Carregando…</p></div>`;
+      const val = await dados("dados/validacao.json").catch(() => null);
+      desenharAjustes(emp, val);
     },
     negocio: () => {
       document.getElementById("aba-empresa").innerHTML = `<div id="resumo-aprofundado"></div>
@@ -1082,6 +1087,37 @@ function desenharDreBalanco(emp) {
   const ativo = linha(dm.bp, "1");
   document.getElementById("tab-bp").innerHTML = tabela(dm.bp, ativo) + `<div class="nota">Mesmas contas da aba Demonstrações do Excel (padrão da CVM),
     posição no fim de cada exercício e, na coluna LTM, no último trimestre. AV em % do ativo total (igual ao passivo total). Contas zeradas em todas as datas ficam de fora.</div>`;
+}
+
+// Aba Histórico de ajustes: o que o pipeline corrigiu nos dados da empresa, o que o validador automático apontou
+// (e o motivo, quando já foi examinado) e as conferências manuais contra o ITR/DFP do RI.
+function desenharAjustes(emp, val) {
+  const el = document.getElementById("ajustes-empresa"); if (!el) return;
+  const id = emp.id, aj = emp.ajustes || [];
+  const achados = ((val && val.empresas && val.empresas[id]) || {}).achados || [];
+  const motivos = {};
+  ((val && val.serios_conhecidos) || []).filter((c) => c.empresa === id).forEach((c) => (motivos[`${c.periodo}|${c.tipo}`] = c.motivo));
+  const auds = ((val && val.auditorias) || {})[id] || [];
+  const dataBr = (p) => (p && /^\d{4}-\d{2}-\d{2}$/.test(p) ? dataBR(p) : esc(p || "—"));
+  const tab = (cab, linhas) => `<table class="tabela"><tr>${cab.map((c) => `<th style="text-align:left">${c}</th>`).join("")}</tr>
+    ${linhas.map((l) => `<tr>${l.map((x) => `<td style="text-align:left;white-space:normal">${x}</td>`).join("")}</tr>`).join("")}</table>`;
+  el.innerHTML = `
+    <div class="painel" data-info="historico_ajustes"><h2>Ajustes aplicados aos dados da CVM</h2>
+      ${aj.length ? `<div class="rolagem">${tab(["Período", "Ajuste", "Detalhe"], aj.map((a) => [dataBr(a.periodo), esc(a.tipo), esc(a.detalhe)]))}</div>`
+        : `<p class="sub">Nenhum ajuste: os números vêm da CVM como a empresa entregou.</p>`}
+      <div class="nota">Correções automáticas feitas a cada atualização para que o número fique igual ao que a empresa divulgou: escala marcada errada,
+        individual no lugar de um consolidado vazio ou zerado, 4º trimestre calculado com documentos da mesma base quando há reapresentação, reenvio com
+        erro descartado. Os números em si não são alterados.</div></div>
+    <div class="painel" data-info="historico_ajustes"><h2>Pontos apontados pelo validador automático</h2>
+      ${achados.length ? `<div class="rolagem">${tab(["Período", "Ponto", "Detalhe", "Situação"], achados.map((a) => {
+        const mot = motivos[`${a.periodo}|${a.tipo}`];
+        return [dataBr(a.periodo), esc(a.tipo), esc(a.detalhe), mot ? esc(mot) : "—"];
+      }))}</div>` : `<p class="sub">Nenhum ponto a conferir.</p>`}
+      <div class="nota">Checagens sem IA a cada atualização (receita negativa, 4º trimestre fora do padrão, balanço que não fecha, DFC que não fecha com o caixa,
+        soma dos trimestres diferente do ano etc.). "Situação" traz o motivo quando o ponto já foi examinado (ex.: igual à fonte, erro da própria empresa na CVM).</div></div>
+    <div class="painel" data-info="historico_ajustes"><h2>Conferências manuais com o ITR/DFP</h2>
+      ${auds.length ? `<div class="rolagem">${tab(["Data", "Documento", "Resultado", "Observação"], auds.map((a) => [dataBr(a.data), esc(a.documento), esc(a.resultado), esc(a.observacao || "")]))}</div>`
+        : `<p class="sub">Ainda não conferida manualmente contra o ITR/DFP publicado pela empresa.</p>`}</div>`;
 }
 
 function desenharDreBalancoResumido(emp) {
