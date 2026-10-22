@@ -2788,6 +2788,10 @@ async function paginaConsolidado() {
     linha("br", "Brasil (PNAD Contínua)", Pares(S.desemprego)), linha("eua", "EUA", Pares(B.desemprego)), linha("euro", "Zona do Euro", Pares(Z.desemprego)),
     ...china(CH.desemprego, "China (urbano; série descontinuada)")] });
 }
+
+/* ============ Eleições 2026 (Onshore · Notícias e agenda) ============ */
+// A aba só existe em ano eleitoral (o pipeline marca "ativo" pelo calendário do TSE); depois das eleições some sozinha
+let ELEICOES_ATIVAS = null;
 async function eleicoesAtivas() {
   if (ELEICOES_ATIVAS === null) ELEICOES_ATIVAS = await dados("dados/eleicoes.json").then((e) => (e.ativo ? e : false)).catch(() => false);
   return ELEICOES_ATIVAS;
