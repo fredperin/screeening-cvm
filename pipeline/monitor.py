@@ -341,6 +341,20 @@ def checar_setor_externo():
     return "balanço de pagamentos e comércio exterior em dia"
 
 
+def checar_validacao_empresas():
+    """Achados sérios NOVOS do validador (pipeline.validar) nos dados das empresas brasileiras: 4º tri negativo ou muito
+    fora do padrão, salto de escala, caixa maior que o ativo. Os já examinados ficam em config/empresas_conferidas.json."""
+    arq = DIR_DADOS_SITE / "validacao.json"
+    assert arq.exists(), "validacao.json não foi gerado"
+    d = json.loads(arq.read_text(encoding="utf-8"))
+    novos, graves = d.get("serios_novos") or [], d.get("graves") or []
+    exemplos = "; ".join(f"{n['empresa']} {n['periodo']} ({n['tipo']})" for n in novos[:5])
+    problemas = graves + ([f"{len(novos)} ponto(s) novo(s) a conferir nos dados das empresas: {exemplos}" + (" ..." if len(novos) > 5 else "")]
+                          if novos else [])
+    assert not problemas, " | ".join(problemas)
+    return f"nenhum ponto novo; {len(d.get('serios_conhecidos') or [])} já conferidos"
+
+
 def checar_sp500():
     """S&P 500 como um todo (pipeline.sp500): gerado na atualização e com o último trimestre completo recente."""
     arq = DIR_DADOS_SITE / "sp500.json"
@@ -458,6 +472,7 @@ CHECAGENS = {
     "Yahoo Finance": checar_yahoo,
     "Agenda (Banco Central, IBGE, FGV)": checar_agenda,
     "Notícias (Banco Central, IBGE, CVM, Agência Brasil)": checar_noticias,
+    "Dados das empresas (Brasil)": checar_validacao_empresas,
 }
 
 

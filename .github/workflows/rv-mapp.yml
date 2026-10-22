@@ -88,17 +88,18 @@ jobs:
           SEC_USER_AGENT: ${{ secrets.SEC_USER_AGENT }}
 
       # Agentes automáticos (sem IA): saúde das fontes e anomalias nos dados gerados
-      - name: Monitorar fontes
-        if: always()
-        continue-on-error: true
-        run: python -m pipeline.monitor
-        env:
-          PYTHONUTF8: "1"
-
+      # o validador roda antes do monitor: o monitor leva os achados novos às Observações do site
       - name: Validar dados
         if: always()
         continue-on-error: true
         run: python -m pipeline.validar
+        env:
+          PYTHONUTF8: "1"
+
+      - name: Monitorar fontes
+        if: always()
+        continue-on-error: true
+        run: python -m pipeline.monitor
         env:
           PYTHONUTF8: "1"
 

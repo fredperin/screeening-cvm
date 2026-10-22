@@ -287,7 +287,7 @@ def adicionar_indicadores(visoes, aliquota=0.34):
     return visoes
 
 
-def demonstracoes(blocos, fator, base, visoes, anos=4):
+def demonstracoes(blocos, fator, base, visoes, anos=4, dre_completa=None):
     """
     DRE e Balanço com as mesmas contas da aba "Demonstrações" do Excel (sem abrir mais contas),
     nos últimos `anos` exercícios fechados e no último LTM — para a aba Resultados do site.
@@ -347,8 +347,77 @@ def demonstracoes(blocos, fator, base, visoes, anos=4):
             saida.append({"c": cd, "r": str(ds).strip(), "v": v})
         return saida
 
-    return {"colunas": [{"data": c["data"].isoformat(), "ltm": c["ltm"]} for c in colunas],
-            "dre": linhas(dre_bloco, valor_dre), "bp": linhas(bp_bloco, valor_bp)}
+    saida = {"colunas": [{"data": c["data"].isoformat(), "ltm": c["ltm"]} for c in colunas],
+             "dre": linhas(dre_bloco, valor_dre), "bp": linhas(bp_bloco, valor_bp)}
+    if dre_completa is not None and not dre_completa.empty:
+        saida["dre_completa"] = _dre_completa(dre_completa * fator, dre_completa.attrs.get("descricao", {}), base, dfp, oficial, colunas)
+    return saida
+
+
+def _chave_codigo(cd):
+    return [int(x) if x.isdigit() else 0 for x in cd.split("~")[0].split(".")]
+
+
+def _dre_completa(q, descricao, base, dfp, oficial, colunas):
+    """
+    Todas as linhas da DRE como a empresa entregou à CVM. Anos fechados: número oficial da DFP; LTM: soma
+    dos 4 últimos trimestres. "f" = conta padronizada pela CVM (ST_CONTA_FIXA = S; abre por padrão no site),
+    o resto são as linhas próprias da empresa. Cada ano usa a descrição do próprio documento: se um código
+    próprio muda de significado entre anos, vira linhas separadas. Lucro por ação (3.99) em R$ por ação, só
+    nos anos fechados (a CVM informa em reais mesmo com a escala marcada em milhares; não se soma em 12 meses).
+    """
+    from src.cvm_itr import _mesma_conta
+
+    dre_base = base[base["SIGLA"] == "DRE"].sort_values(["DT_REFER", "VERSAO"])
+    fixa = dre_base.drop_duplicates("CD_CONTA", keep="last").set_index("CD_CONTA")["ST_CONTA_FIXA"].to_dict()
+    ds_ano, lpa = {}, {}
+    if not dfp.empty:
+        ds_ano = dfp.set_index(["CD_CONTA", "DT_FIM_EXERC"])["DS_CONTA"].to_dict()
+        por_acao = dfp[dfp["CD_CONTA"].str.startswith("3.99")]
+        lpa = por_acao.set_index(["CD_CONTA", "DT_FIM_EXERC"])["VL_CONTA"].to_dict()
+
+    def valor(cd, col):
+        if cd.startswith("3.99"):
+            return None if col["ltm"] else lpa.get((cd, col["data"]))
+        if not col["ltm"] and cd in oficial.index and col["data"] in oficial.columns and pd.notna(oficial.loc[cd, col["data"]]):
+            return oficial.loc[cd, col["data"]]
+        if not all(col["tri"]) or cd not in q.index or not all(d in q.columns for d in col["tri"]):
+            return None
+        return q.loc[cd, col["tri"]].sum(min_count=4)
+
+    def rotulo(cd, ds):
+        ds = str(ds).strip()
+        if cd.startswith("3.99.01.") or cd.startswith("3.99.02."):
+            return f"Lucro {'básico' if cd.startswith('3.99.01') else 'diluído'} por ação (R$) — {ds}"
+        return ds
+
+    codigos = sorted({c for c in set(q.index) | set(oficial.index) | set(lpa_cd for lpa_cd, _ in lpa) if str(c).startswith("3")}, key=_chave_codigo)
+    linhas = []
+    for cd in codigos:
+        if cd in ("3.99", "3.99.01", "3.99.02"):
+            continue  # cabeçalhos do lucro por ação, sempre zerados
+        valores = [_limpar(valor(cd, c)) for c in colunas]
+        if all(v in (None, 0) for v in valores):
+            continue
+        # descrição de cada coluna: a do DFP daquele ano; LTM e anos sem DFP, a mais recente
+        recente = descricao.get(cd) or next((ds_ano[k] for k in sorted(ds_ano, key=lambda k: k[1], reverse=True) if k[0] == cd), cd)
+        ds_col = [recente if c["ltm"] else ds_ano.get((cd, c["data"]), recente) for c in colunas]
+        grupos = []  # [(descrição, [índices das colunas])]
+        for i, ds in enumerate(ds_col):
+            g = next((g for g in grupos if _mesma_conta(ds, g[0])), None)
+            if g is None:
+                grupos.append((ds, [i]))
+            else:
+                g[1].append(i)
+        for ds, idx in grupos:
+            v = [valores[i] if i in idx else None for i in range(len(colunas))]
+            if all(x in (None, 0) for x in v):
+                continue
+            item = {"c": cd, "r": rotulo(cd, ds), "v": v, "f": fixa.get(cd) == "S" or cd.startswith("3.99.01.")}
+            if cd.startswith("3.99"):
+                item["u"] = "acao"
+            linhas.append(item)
+    return linhas
 
 
 def _limpar(v):

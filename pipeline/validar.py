@@ -5,6 +5,12 @@ Procura nos dados gerados sinais típicos de erro — não corrige nada, só lis
 conferir. Grava site/dados/validacao.json. Problemas graves (que afetam muitas
 empresas, como base sem trimestre novo) também entram no alerta do monitor.
 
+Achados sérios (4º tri negativo ou muito fora do padrão do ano, salto de escala, caixa maior
+que o ativo) são comparados com config/empresas_conferidas.json, a lista de casos já
+examinados (com o motivo: igual à fonte, erro da própria empresa na CVM...). Só os NOVOS
+viram observação no site (checagem "Dados das empresas (Brasil)" do monitor); os conhecidos
+continuam listados em validacao.json.
+
 Uso: py -m pipeline.validar
 """
 
@@ -13,9 +19,11 @@ import statistics
 import sys
 from datetime import date
 
-from pipeline import DIR_DADOS_SITE, DIR_INTERMEDIARIO
+from pipeline import DIR_DADOS_SITE, RAIZ
 
-ARQ_ALERTA = DIR_INTERMEDIARIO / "alerta.md"
+ARQ_CONFERIDAS = RAIZ / "config" / "empresas_conferidas.json"
+SERIOS = {"4º tri negativo", "4º tri fora do padrão do ano", "salto de escala na receita", "caixa maior que o ativo"}
+FATOR_4T = 3  # 4º tri mais de 3× acima (ou abaixo) da mediana dos outros 3 trimestres do mesmo exercício
 
 
 def _pares(serie):
@@ -30,11 +38,19 @@ def checar_empresa(d):
     def add(tipo, detalhe, periodo=None):
         achados.append({"tipo": tipo, "detalhe": detalhe, "periodo": periodo})
 
-    # 1) Receita negativa ou salto de escala (×100 de um trimestre para o outro)
+    # 1) Receita negativa ou salto de escala (×100 de um trimestre para o outro). O 1º, 2º e 3º tri
+    # isolados vêm publicados pela empresa; o 4º é calculado (ano − 9 meses), por isso pesa mais.
     receita = S.get("receita", [])
+    mes_fim = d.get("mes_fim_exercicio") or 12
     for i, v in _pares(receita):
+        quarto = int(periodos[i][5:7]) == mes_fim
         if v < 0:
-            add("receita negativa", f"{v:,.0f}", periodos[i])
+            add("4º tri negativo" if quarto else "receita negativa publicada pela empresa", f"{v:,.0f}", periodos[i])
+        outros = [x for x in receita[max(0, i - 3):i] if x is not None]
+        if quarto and v > 0 and len(outros) == 3 and statistics.median(outros) > 50e6:
+            m = statistics.median(outros)
+            if v > FATOR_4T * m or v < m / FATOR_4T:
+                add("4º tri fora do padrão do ano", f"{v:,.0f} (mediana dos outros trimestres {m:,.0f})", periodos[i])
         if i and receita[i - 1] and receita[i - 1] > 0 and v > 0:
             razao = v / receita[i - 1]
             if razao > 100 or razao < 0.01:
@@ -102,28 +118,42 @@ def main():
         for a in info["achados"]:
             contagem[a["tipo"]] = contagem.get(a["tipo"], 0) + 1
 
-    (DIR_DADOS_SITE / "validacao.json").write_text(json.dumps({
-        "verificado_em": date.today().isoformat(), "periodo_mais_comum": mais_comum,
-        "resumo": dict(sorted(contagem.items(), key=lambda x: -x[1])), "empresas": por_empresa,
-    }, ensure_ascii=False, indent=1), encoding="utf-8")
-
-    print(f"Validação: {len(por_empresa)} empresas com algum ponto a conferir")
-    for tipo, n in sorted(contagem.items(), key=lambda x: -x[1]):
-        print(f"   {n:4d}  {tipo}")
+    # Achados sérios: novos (ainda não examinados) × conhecidos (na lista de conferidos, com o motivo)
+    conferidas = json.loads(ARQ_CONFERIDAS.read_text(encoding="utf-8")).get("casos", {}) if ARQ_CONFERIDAS.exists() else {}
+    novos, conhecidos = [], []
+    for id_, info in por_empresa.items():
+        for a in info["achados"]:
+            if a["tipo"] not in SERIOS:
+                continue
+            chave = f"{id_}|{a['periodo']}|{a['tipo']}"
+            item = {"chave": chave, "empresa": id_, "periodo": a["periodo"], "tipo": a["tipo"], "detalhe": a["detalhe"]}
+            if chave in conferidas:
+                conhecidos.append({**item, "motivo": conferidas[chave]})
+            else:
+                novos.append(item)
 
     # Grave o bastante para virar alerta: muitas empresas sem trimestre novo de uma vez
-    # (sinal de que a base da CVM não foi atualizada) ou muitas sem market cap (B3 fora)
+    # (sinal de que a base da CVM não foi atualizada) ou muitas sem market cap (B3 fora).
+    # Vai no validacao.json; o monitor (que roda depois) leva às Observações e ao alerta por e-mail.
     graves = []
     if len(atrasadas) > 0.2 * len(indice):
         graves.append(f"{len(atrasadas)} empresas sem o trimestre mais recente ({mais_comum})")
     sem_mcap = contagem.get("sem market cap", 0)
     if sem_mcap > 0.2 * len(indice):
         graves.append(f"{sem_mcap} empresas sem market cap")
-    if graves:
-        texto = "\n".join(["", "**Validação dos dados:**", *[f"- {g}" for g in graves]])
-        anterior = ARQ_ALERTA.read_text(encoding="utf-8") if ARQ_ALERTA.exists() else \
-            f"O validador da R.V. Mapp encontrou problemas em {date.today():%d/%m/%Y}:"
-        ARQ_ALERTA.write_text(anterior + "\n" + texto, encoding="utf-8")
+
+    (DIR_DADOS_SITE / "validacao.json").write_text(json.dumps({
+        "verificado_em": date.today().isoformat(), "periodo_mais_comum": mais_comum,
+        "resumo": dict(sorted(contagem.items(), key=lambda x: -x[1])), "empresas": por_empresa,
+        "serios_novos": novos, "serios_conhecidos": conhecidos, "graves": graves,
+    }, ensure_ascii=False, indent=1), encoding="utf-8")
+
+    print(f"Validação: {len(por_empresa)} empresas com algum ponto a conferir; achados sérios: {len(novos)} novos, {len(conhecidos)} já conferidos")
+    for n in novos[:30]:
+        print(f"   🆕 {n['empresa']} {n['periodo']}: {n['tipo']} — {n['detalhe']}")
+    for tipo, n in sorted(contagem.items(), key=lambda x: -x[1]):
+        print(f"   {n:4d}  {tipo}")
+
     return 0
 
 

@@ -1014,6 +1014,7 @@ function desenharCotacao(prov, m) {
 
 // Aba Resultados: DRE e balanço com as contas do Excel (CVM), últimos 4 anos fechados + LTM, análise vertical ao lado.
 // Enquanto a empresa não foi reprocessada com essas contas, mostra a versão resumida (desenharDreBalancoResumido).
+const DRE_ABERTAS = new Set();  // aba Resultados: contas da DRE abertas ("*" = todas)
 function desenharDreBalanco(emp) {
   const dm = emp.demonstracoes;
   if (!dm || !dm.dre || !dm.dre.length) return desenharDreBalancoResumido(emp);
@@ -1033,9 +1034,51 @@ function desenharDreBalanco(emp) {
   const simples = PRINCIPAIS.map((c) => dm.dre.find((l) => l.c === c)).filter(Boolean)
     .map((l) => ({ ...l, estilo: ["3.01", "3.11"].includes(l.c) ? "total" : ["3.03", "3.05", "3.07"].includes(l.c) ? "subtotal" : "" }));
   const receita = linha(dm.dre, "3.01");
-  document.getElementById("tab-dre").innerHTML = tabela(simples, receita) + `<div class="nota">Linhas principais da DRE da CVM (as mesmas do Excel).
+  if (dm.dre_completa && dm.dre_completa.length) {
+    // DRE completa em árvore: abre nas linhas principais (3.01 a 3.11 e lucro básico por ação); ▸ abre as contas de baixo
+    const TOTAIS = ["3.01", "3.11"], SUBTOTAIS = ["3.03", "3.05", "3.07", "3.09"];
+    const ls = dm.dre_completa, rec = linha(ls, "3.01");
+    const codigos = new Set(ls.map((l) => l.c));
+    const pai = (c) => { const p = c.split("."); while (p.length > 2) { p.pop(); if (codigos.has(p.join("."))) return p.join("."); } return null; };
+    const temFilhos = new Set(ls.map((l) => pai(l.c)).filter(Boolean));
+    const visivel = (l) => {
+      if (l.c.startsWith("3.99")) return l.c.startsWith("3.99.01.") || DRE_ABERTAS.has("*");  // lucro diluído só em "Expandir"
+      for (let p = pai(l.c); p; p = pai(p)) if (!DRE_ABERTAS.has(p) && !DRE_ABERTAS.has("*")) return false;
+      return true;
+    };
+    const desenharDre = () => {
+      const aberto = (c) => DRE_ABERTAS.has(c) || DRE_ABERTAS.has("*");
+      document.getElementById("tab-dre-tabela").innerHTML = `<table class="tabela tabela-av">
+        <tr><th style="text-align:left">R$ milhões</th>${cols.map((c) => `<th>${c}</th><th class="sub">AV</th>`).join("")}</tr>
+        ${ls.filter(visivel).map((l) => `<tr class="${TOTAIS.includes(l.c) ? "total" : SUBTOTAIS.includes(l.c) ? "subtotal" : ""}${l.f ? "" : " detalhe"}">
+          <td style="text-align:left;padding-left:${6 + Math.max(0, nivel(l.c) - 1) * 14}px">${temFilhos.has(l.c)
+            ? `<span class="abre-conta" data-c="${l.c}" title="${aberto(l.c) ? "Fechar" : "Abrir"} as contas de baixo">${aberto(l.c) ? "▾" : "▸"} ${esc(l.r)}</span>` : esc(l.r)}</td>
+          ${l.v.map((x, i) => (l.u === "acao" ? `<td>${x == null ? "—" : num(x, 2)}</td><td class="sub">—</td>` : `<td>${mi(x)}</td><td class="sub">${av(x, rec[i])}</td>`)).join("")}</tr>`).join("")}</table>`;
+      document.getElementById("dre-tudo").textContent = DRE_ABERTAS.has("*") ? "Recolher" : "Expandir";
+    };
+    document.getElementById("tab-dre").innerHTML = `<div class="seletor" style="margin:0 0 8px"><button id="dre-tudo">Expandir</button></div>
+      <div id="tab-dre-tabela"></div>
+      <div class="nota">DRE completa como a empresa entregou à CVM (consolidado; individual só quando a empresa não consolida). Clique em ▸ para abrir
+      as contas de baixo. Em cinza, as linhas próprias da empresa (fora do plano padronizado da CVM), com o nome usado no documento de cada ano
+      (se uma linha muda de significado entre anos, aparece separada). Anos fechados: número oficial da DFP; LTM: soma dos últimos 4 trimestres.
+      AV em % da receita líquida. Lucro por ação em R$ por ação, só nos anos fechados. Custos e despesas incluem a depreciação e amortização.</div>`;
+    document.getElementById("tab-dre-tabela").addEventListener("click", (ev) => {
+      const s = ev.target.closest(".abre-conta"); if (!s) return;
+      const c = s.dataset.c;
+      if (DRE_ABERTAS.has("*")) { DRE_ABERTAS.clear(); codigos.forEach((x) => temFilhos.has(x) && x !== c && DRE_ABERTAS.add(x)); }
+      else if (DRE_ABERTAS.has(c)) DRE_ABERTAS.delete(c); else DRE_ABERTAS.add(c);
+      desenharDre();
+    });
+    document.getElementById("dre-tudo").addEventListener("click", () => {
+      if (DRE_ABERTAS.has("*")) DRE_ABERTAS.clear(); else DRE_ABERTAS.add("*");
+      desenharDre();
+    });
+    desenharDre();
+  } else {
+    document.getElementById("tab-dre").innerHTML = tabela(simples, receita) + `<div class="nota">Linhas principais da DRE da CVM (as mesmas do Excel).
     Anos fechados: número oficial da DFP; LTM: soma dos últimos 4 trimestres. AV em % da receita líquida.
     Custos e despesas incluem a depreciação e amortização (a CVM não a separa); EBIT = resultado antes do resultado financeiro e dos tributos.</div>`;
+  }
   const ativo = linha(dm.bp, "1");
   document.getElementById("tab-bp").innerHTML = tabela(dm.bp, ativo) + `<div class="nota">Mesmas contas da aba Demonstrações do Excel (padrão da CVM),
     posição no fim de cada exercício e, na coluna LTM, no último trimestre. AV em % do ativo total (igual ao passivo total). Contas zeradas em todas as datas ficam de fora.</div>`;
@@ -2951,8 +2994,21 @@ function periodosDF(trimestres, tipo) {
   return saida;
 }
 
-function tabelaDF(linhas, periodos, fluxo, baseK, escala) {
+// Contas abertas em cada tabela das DFs dos bancos (índice da linha; "*" = todas, botão Expandir). Abrem nas linhas principais.
+const DF_ABERTAS = { ativo: new Set(), passivo: new Set(), dre: new Set() };
+
+function tabelaDF(linhas, periodos, fluxo, baseK, escala, nome) {
   // fluxo (DRE): soma dos trimestres; estoque (balanço): saldo do último trimestre do período
+  // Árvore: a conta-mãe de uma linha é a anterior mais próxima com um nível a menos (níveis negativos = totais, sempre à vista)
+  const pais = linhas.map((l, i) => {
+    if (l.n <= 0) return -1;
+    for (let j = i - 1; j >= 0; j--) { if (linhas[j].n === l.n - 1) return j; if (linhas[j].n < l.n - 1) return -1; }
+    return -1;
+  });
+  const temFilhos = new Set(pais.filter((x) => x >= 0));
+  const abertas = (nome && DF_ABERTAS[nome]) || null;
+  const aberta = (i) => !abertas || abertas.has("*") || abertas.has(i);
+  const visivel = (i) => { for (let p = pais[i]; p >= 0; p = pais[p]) if (!aberta(p)) return false; return true; };
   const valor = (l, p) => {
     if (!fluxo) return l.v[p.idx[p.idx.length - 1]];
     const xs = p.idx.map((i) => l.v[i]);
@@ -2961,15 +3017,22 @@ function tabelaDF(linhas, periodos, fluxo, baseK, escala) {
   const base = linhas.find((l) => l.k === baseK);
   const fmt = (v) => (v == null ? "—" : num(v / escala, 0));
   return `<table class="tabela tabela-df"><tr><th></th>${periodos.map((p) => `<th>${p.rotulo}</th><th class="sub">(%)</th>`).join("")}<th>∆P (%)</th></tr>
-    ${linhas.map((l) => {
+    ${linhas.map((l, i) => {
+      if (!visivel(i)) return "";
       const vs = periodos.map((p) => valor(l, p)), bs = periodos.map((p) => (base ? valor(base, p) : null));
       const ini = vs[0], fim = vs[vs.length - 1];
       const delta = ini != null && fim != null && ini !== 0 && periodos.length > 1 ? (fim - ini) / Math.abs(ini) : null;
       const estilo = l.n < 0 ? "font-weight:700;color:var(--texto-forte)" : "";
-      return `<tr><td style="text-align:left;padding-left:${8 + Math.max(l.n, 0) * 14}px;${estilo}">${esc(l.r)}</td>
+      const rotulo = abertas && temFilhos.has(i)
+        ? `<span class="abre-conta" data-df="${nome}" data-i="${i}">${aberta(i) ? "▾" : "▸"} ${esc(l.r)}</span>` : esc(l.r);
+      return `<tr><td style="text-align:left;padding-left:${8 + Math.max(l.n, 0) * 14}px;${estilo}">${rotulo}</td>
         ${vs.map((v, j) => `<td style="${estilo}">${fmt(v)}</td><td class="sub">${l.k === baseK || v == null || !bs[j] ? "" : pct(v / bs[j])}</td>`).join("")}
         <td class="${delta == null ? "" : classeSinal(delta)}">${delta == null ? "—" : pct(delta)}</td></tr>`;
     }).join("")}</table>`;
+}
+
+function botaoTudoDF(nome) {  // mesmo botão da DRE das empresas: Expandir / Recolher, acima da tabela
+  return `<div class="seletor" style="margin:0 0 8px"><button class="df-tudo" data-df="${nome}">${DF_ABERTAS[nome].has("*") ? "Recolher" : "Expandir"}</button></div>`;
 }
 
 async function paginaBanco(id) {
@@ -3122,11 +3185,12 @@ async function paginaBanco(id) {
         document.getElementById("df-fim").innerHTML = todos.map((p, i) => `<option value="${esc(p.rotulo)}" ${i === fim ? "selected" : ""}>${esc(p.rotulo)}</option>`).join("");
         const sel = todos.slice(Math.max(0, fim - 4), fim + 1);
         document.getElementById("df-corpo").innerHTML = `
-          <div class="painel largo" data-info="dfs_banco"><h2>Ativo (R$ mil)</h2><div class="rolagem">${tabelaDF(bk.ativo, sel, false, soCvm ? "1" : "k", 1e3)}</div></div>
-          <div class="painel largo" data-info="dfs_banco"><h2>Passivo (R$ mil)</h2><div class="rolagem">${tabelaDF(bk.passivo, sel, false, soCvm ? "2" : "k", 1e3)}</div></div>
-          <div class="painel largo" data-info="dfs_banco"><h2>DRE (R$ mil) — ${{ trimestre: "trimestre", semestre: "semestre", anual: "ano", ltm: "últimos 12 meses" }[PERIODO_DF.tipo]}</h2>
-            <div class="rolagem">${tabelaDF(bk.dre, sel, true, soCvm ? (bk.dre[0] || {}).k : "=receitas", 1e3)}</div>
-            <div class="nota">(%) da DRE = sobre as receitas da intermediação financeira; (%) do balanço = sobre o total. ∆P = variação entre a primeira e a última coluna.</div></div>`;
+          <div class="painel largo" data-info="dfs_banco"><h2>Ativo (R$ mil)</h2>${botaoTudoDF("ativo")}<div class="rolagem">${tabelaDF(bk.ativo, sel, false, soCvm ? "1" : "k", 1e3, "ativo")}</div></div>
+          <div class="painel largo" data-info="dfs_banco"><h2>Passivo (R$ mil)</h2>${botaoTudoDF("passivo")}<div class="rolagem">${tabelaDF(bk.passivo, sel, false, soCvm ? "2" : "k", 1e3, "passivo")}</div></div>
+          <div class="painel largo" data-info="dfs_banco"><h2>DRE (R$ mil) — ${{ trimestre: "trimestre", semestre: "semestre", anual: "ano", ltm: "últimos 12 meses" }[PERIODO_DF.tipo]}</h2>${botaoTudoDF("dre")}
+            <div class="rolagem">${tabelaDF(bk.dre, sel, true, soCvm ? (bk.dre[0] || {}).k : "=receitas", 1e3, "dre")}</div>
+            <div class="nota">Clique em ▸ para abrir as contas de baixo. (%) da DRE = sobre as receitas da intermediação financeira; (%) do balanço = sobre o total.
+              ∆P = variação entre a primeira e a última coluna.</div></div>`;
       };
       area().innerHTML = `<div class="cabecalho" style="margin-bottom:8px"><div class="seletor" id="df-tipo">${tipos.map(([k, r]) => `<button data-k="${k}" class="${k === PERIODO_DF.tipo ? "ativo" : ""}">${r}</button>`).join("")}</div>
         <label class="sub">Até: <select id="df-fim" class="filtro" style="width:auto;display:inline-block"></select></label></div>
@@ -3145,6 +3209,21 @@ async function paginaBanco(id) {
         desenhar();
       });
       document.getElementById("df-fim").addEventListener("change", (ev) => { PERIODO_DF.fim = ev.target.value; desenhar(); });
+      // ▸ abre/fecha as contas de baixo; "Expandir" abre a tabela inteira
+      document.getElementById("df-corpo").addEventListener("click", (ev) => {
+        const tudo = ev.target.closest(".df-tudo"), conta = ev.target.closest(".abre-conta[data-df]");
+        if (tudo) {
+          const s = DF_ABERTAS[tudo.dataset.df];
+          if (s.has("*")) s.clear(); else s.add("*");
+        } else if (conta) {
+          const s = DF_ABERTAS[conta.dataset.df], i = Number(conta.dataset.i);
+          if (s.has("*")) {  // estava tudo aberto: fecha só esta
+            s.clear();
+            document.querySelectorAll(`.abre-conta[data-df="${conta.dataset.df}"]`).forEach((x) => Number(x.dataset.i) !== i && s.add(Number(x.dataset.i)));
+          } else if (s.has(i)) s.delete(i); else s.add(i);
+        } else return;
+        desenhar();
+      });
       desenhar();
     },
     carteira_resumo: () => {

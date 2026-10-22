@@ -16,7 +16,7 @@ from datetime import date
 import pandas as pd
 
 from pipeline import DIR_DADOS_SITE, DIR_DOWNLOADS_SITE, DIR_INTERMEDIARIO
-from pipeline.cvm_lote import atualizar_base_cvm, carregar_empresa
+from pipeline.cvm_lote import atualizar_base_cvm, carregar_empresa, consolidado_ou_individual, corrigir_escala_trocada
 from pipeline.series_empresa import adicionar_indicadores, aplicar_anual_dfp, demonstracoes, montar_trimestral, montar_visoes, para_json
 from src import cvm_itr
 from src.cvm_itr import buscar_dados_cadastrais, buscar_dados_fca, buscar_itr, montar_documento_padrao
@@ -34,13 +34,32 @@ def id_empresa(tickers):
 
 
 def montar_blocos(base, tipo="con"):
-    """Blocos do documento padrão (histórico completo) a partir da base em memória."""
+    """Blocos do documento padrão (histórico completo) a partir da base em memória, e a DRE completa
+    (todas as contas, trimestre isolado) para a aba Resultados do site."""
     cvm_itr.usar_base_pre_carregada(base)
     try:
         anos = list(range(ANO_INICIAL, date.today().year + 1))
-        return montar_documento_padrao(buscar_itr(base["CNPJ_CIA"].iloc[0], anos, tipo=tipo), ano_inicio=ANO_INICIAL)
+        dem = buscar_itr(base["CNPJ_CIA"].iloc[0], anos, tipo=tipo)
+        return montar_documento_padrao(dem, ano_inicio=ANO_INICIAL), dre_trimestral_completa(dem)
     finally:
         cvm_itr.usar_base_pre_carregada(None)
+
+
+def dre_trimestral_completa(dem):
+    """DRE com todas as contas (sem limite de nível), trimestre isolado; índice = código, colunas = data de fim.
+    attrs["descricao"] guarda a descrição de cada código."""
+    from src.padrao_visual import filtrar_data_minima, isolar_trimestres
+    dre = dem.get("Demonstração do Resultado", pd.DataFrame())
+    if dre.empty:
+        return pd.DataFrame()
+    iso = filtrar_data_minima(isolar_trimestres(dre), f"{ANO_INICIAL}-01-01")
+    codigos = list(iso.index.get_level_values("CD_CONTA"))
+    descricao = dict(zip(codigos, iso.index.get_level_values("DS_CONTA")))
+    iso.index = codigos
+    iso.columns = [date.fromisoformat(c.split(" a ")[1]) for c in iso.columns]
+    iso = iso[~iso.index.duplicated(keep="last")]
+    iso.attrs["descricao"] = descricao
+    return iso
 
 
 def fator_escala(base):
@@ -57,14 +76,21 @@ def mes_fim_exercicio(base):
     return int(pd.to_datetime(anual).dt.month.mode().iloc[0]) if not anual.empty else 12
 
 
+def _periodos_individuais(base):
+    """Datas em que a DRE vem do individual (a empresa não consolidava): fica registrado no JSON."""
+    ind = base[(base["TIPO_ORIGEM"] == "ind") & (base["SIGLA"] == "DRE")]
+    return sorted(ind["DT_FIM_EXERC"].astype(str).unique().tolist())
+
+
 def processar(empresa, log):
-    base = carregar_empresa(empresa.CNPJ_CIA)
+    # consolidado sempre que existir com números; individual só onde a empresa não consolida
+    base = consolidado_ou_individual(corrigir_escala_trocada(carregar_empresa(empresa.CNPJ_CIA)))
     if base.empty:
         log.write(f"[{empresa.DENOM_SOCIAL}] sem dados na base da CVM\n")
         return None, None
 
     with contextlib.redirect_stdout(log):
-        blocos = montar_blocos(base)
+        blocos, dre_completa = montar_blocos(base)
     fator = fator_escala(base)
 
     q, notas = montar_trimestral(blocos, fator, base)
@@ -78,10 +104,10 @@ def processar(empresa, log):
         "unidade": "R$",
         "mes_fim_exercicio": mes_fim_exercicio(base),
         "gerado_em": date.today().isoformat(),
-        "notas": notas,
+        "notas": {**notas, "individual": _periodos_individuais(base)},
         **para_json(visoes),
         # DRE e Balanço com as contas do Excel (aba Resultados do site)
-        "demonstracoes": demonstracoes(blocos, fator, base, visoes),
+        "demonstracoes": demonstracoes(blocos, fator, base, visoes, dre_completa=dre_completa),
     }
     return dados, blocos
 

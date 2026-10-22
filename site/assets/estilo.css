@@ -195,3 +195,8 @@ body.sem-rolagem { overflow: hidden; }
   .grafico, .grafico.alto, .painel.largo .grafico, .grade > .painel.sozinho .grafico { height: 280px; }
   h1 { font-size: 15px; }
 }
+
+/* DRE completa: linhas próprias da empresa (fora do plano padronizado da CVM) e o ▸ que abre as contas de baixo */
+.tabela-av tr.detalhe td{color:var(--texto-fraco);font-size:.95em}
+.abre-conta{cursor:pointer}
+.abre-conta:hover{color:var(--ambar)}

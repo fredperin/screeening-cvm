@@ -141,3 +141,81 @@ def carregar_empresa(cnpj: str) -> pd.DataFrame:
         _DATASET = ds.dataset(sorted(str(p) for p in DIR_CVM.glob("*.parquet")), format="parquet")
     alvo = re.sub(r"\D", "", cnpj)
     return _DATASET.to_table(filter=ds.field("CNPJ_CIA") == alvo).to_pandas()
+
+
+CONTAS_TOTAL = {"1", "2", "3.01", "3.03", "3.05", "3.07", "3.09", "3.11"}
+
+
+def consolidado_ou_individual(base: pd.DataFrame) -> pd.DataFrame:
+    """
+    Uma única visão por período, sempre o CONSOLIDADO quando ele existe com números.
+    - Demonstração entregue zerada não vale quando há outra com números para o mesmo período:
+      empresas sem controladas mandam o consolidado zerado à CVM (ex.: TIM, Sabesp até 2024)
+      e o número real está no individual. Sem alternativa, fica como a fonte entregou.
+    - Para cada demonstração e data de fim, se há consolidado com números em qualquer
+      envio, usa só o consolidado; o individual entra apenas onde a empresa não
+      consolida (aí o individual é a empresa inteira). Nunca mistura os dois no mesmo
+      período. As linhas escolhidas ficam marcadas como "con" (TIPO_ORIGEM guarda a origem).
+    """
+    if base.empty:
+        return base
+    b = base.copy()
+    doc = ["TIPO", "SIGLA", "FONTE", "DT_REFER", "VERSAO", "DT_FIM_EXERC", "DT_INI_EXERC"]
+    # documento "com números" = alguma conta de total diferente de zero (há consolidados zerados
+    # com uma ou outra linha solta preenchida, como o balanço da TIM em 2024)
+    # (na DFC vale qualquer linha: há empresas pequenas com os totais da DFC zerados e o detalhe preenchido)
+    total = b["CD_CONTA"].isin(CONTAS_TOTAL) | b["SIGLA"].isin(["DMPL", "DFC_MI", "DFC_MD"])
+    nao_zero = pd.Series((pd.to_numeric(b["VL_CONTA"], errors="coerce").fillna(0).to_numpy() != 0) & total.to_numpy(), index=b.index)
+    # (o balanço não tem data de início: a chave vazia não pode sumir do agrupamento)
+    com_numero = nao_zero.groupby([b[c].astype("string").fillna("") for c in doc], dropna=False).transform("any").astype(bool)
+    # por demonstração, tipo de documento (ITR/DFP) e data: o balanço de fim de ano sai do comparativo
+    # do ITR seguinte, que pode ser só individual mesmo quando o DFP tinha consolidado (Bradespar 2023)
+    chave = b["SIGLA"] + "|" + b["FONTE"] + "|" + b["DT_FIM_EXERC"].astype(str)
+    con_real = set(chave[(b["TIPO"] == "con") & com_numero])
+    ind_real = set(chave[(b["TIPO"] == "ind") & com_numero])
+    tem_con = set(chave[b["TIPO"] == "con"])
+    usar = (
+        chave.isin(con_real) & (b["TIPO"] == "con") & com_numero                          # consolidado com números
+        | ~chave.isin(con_real) & chave.isin(ind_real) & (b["TIPO"] == "ind") & com_numero  # só o individual tem números
+        # nenhum dos dois com números (ex.: DFC toda zerada de holding): fica como a fonte entregou
+        | ~chave.isin(con_real | ind_real) & ((b["TIPO"] == "con") | ~chave.isin(tem_con))
+    )
+    b = b[usar].copy()
+    b["TIPO_ORIGEM"] = b["TIPO"]
+    b["TIPO"] = "con"
+    return b.reset_index(drop=True)
+
+
+ESCALA_NUM = {"MIL": 1000, "UNIDADE": 1}
+
+
+def corrigir_escala_trocada(base: pd.DataFrame) -> pd.DataFrame:
+    """
+    Envio com a escala marcada errada na CVM: a Padtec mandou os DFPs de 2024 e 2025 marcados
+    "UNIDADE" com os números em milhares (o ativo total fica 1.000× menor que nos ITRs vizinhos).
+    Para cada envio, compara o ativo total na data do próprio envio com os envios vizinhos (2 antes
+    e 2 depois): se fica perto de 1.000× (ou 1/1.000×) da mediana deles, a marcação é trocada.
+    Só a marcação muda; os números são os da fonte.
+    """
+    if base.empty:
+        return base
+    b = base.copy()
+    corrigidos = []
+    for tipo in b["TIPO"].dropna().unique():
+        at = b[(b["TIPO"] == tipo) & (b["SIGLA"] == "BPA") & (b["CD_CONTA"] == "1") & (b["DT_FIM_EXERC"] == b["DT_REFER"])].copy()
+        at = at.sort_values(["DT_REFER", "VERSAO"]).drop_duplicates(["FONTE", "DT_REFER", "VERSAO"], keep="last")
+        at["REAIS"] = pd.to_numeric(at["VL_CONTA"], errors="coerce") * at["ESCALA_MOEDA"].map(ESCALA_NUM)
+        at = at[at["REAIS"] > 0].sort_values("DT_REFER").reset_index(drop=True)
+        for i, linha in at.iterrows():
+            vizinhos = pd.concat([at["REAIS"].iloc[max(0, i - 2):i], at["REAIS"].iloc[i + 1:i + 3]])
+            if len(vizinhos) < 2:
+                continue
+            razao = vizinhos.median() / linha["REAIS"]
+            nova = {"UNIDADE": "MIL"} if 500 <= razao <= 2000 else {"MIL": "UNIDADE"} if 1 / 2000 <= razao <= 1 / 500 else {}
+            if linha["ESCALA_MOEDA"] in nova:
+                doc = (b["FONTE"] == linha["FONTE"]) & (b["DT_REFER"] == linha["DT_REFER"]) & (b["VERSAO"] == linha["VERSAO"])
+                b.loc[doc, "ESCALA_MOEDA"] = nova[linha["ESCALA_MOEDA"]]
+                corrigidos.append(f"{linha['FONTE']} {linha['DT_REFER']}")
+    if corrigidos:
+        print(f"   ↪ escala marcada errada na CVM, corrigida: {', '.join(sorted(set(corrigidos)))}")
+    return b

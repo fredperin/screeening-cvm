@@ -597,6 +597,85 @@ def _series_por_descricao(bruto: pd.DataFrame) -> dict:
     return saida
 
 
+def _ano_na_mesma_base_dos_9m(bruto: pd.DataFrame, escolhas: dict = None) -> tuple:
+    """
+    O 4º trimestre isolado é o ano (DFP) menos os 9 meses (ITR do 3º tri). O ano costuma
+    existir em dois envios (o DFP do próprio ano e o comparativo do DFP seguinte), e os 9
+    meses também (ITR do 3º tri e o comparativo do ITR seguinte). Quando a empresa reapresenta
+    (ex.: uma operação passa a descontinuada), cada documento incorpora a mudança num momento
+    diferente, e juntar o ano de um documento com os 9 meses de outro pode misturar duas bases:
+    a Vamos ficou com receita de −1,1 bi no 4º tri de 2023 (ano sem a Automob − 9 meses com ela).
+
+    Regra: sem reapresentação na receita, nada muda (vale o envio mais recente). Com
+    reapresentação, há dois pares possíveis, cada um de uma mesma geração de documentos: ano e
+    9 meses como publicados originalmente (DFP do ano e ITR do 3º tri do ano) ou ano e 9 meses na
+    versão mais recente (comparativos do ano seguinte). Fica o par que dá um 4º tri de receita
+    coerente com o próprio ano (o mais perto de 1/4 dele), com preferência pelo mais recente no empate. A escolha vale para todas as contas
+    do período (a DRE inteira na mesma base) e é repassada à DFC do mesmo ano (`escolhas`).
+    Ano de receita zerado com 9 meses preenchidos não vira 4º tri (fica em branco).
+    """
+    escolhas = {} if escolhas is None else escolhas
+    if bruto.empty or "DT_INI_EXERC" not in bruto.columns:
+        return bruto, escolhas
+    ini, fim = pd.to_datetime(bruto["DT_INI_EXERC"]), pd.to_datetime(bruto["DT_FIM_EXERC"])
+    dias = (fim - ini).dt.days
+    ultima = bruto["VERSAO"] == bruto.groupby(["DT_REFER", "DT_INI_EXERC", "DT_FIM_EXERC"])["VERSAO"].transform("max")
+    eh_dre = (bruto["CD_CONTA"] == "3.01").any()
+
+    def por_envio(mascara, conta):
+        sub = bruto[mascara & ultima & (bruto["CD_CONTA"] == conta)]
+        return {r: float(v) for r, v in zip(sub["DT_REFER"], sub["VL_CONTA"]) if pd.notna(v)}
+
+    remover = pd.Series(False, index=bruto.index)
+    anos = set()
+    for (i, f), _ in bruto[dias >= 360].groupby(["DT_INI_EXERC", "DT_FIM_EXERC"]):
+        do_ano = (bruto["DT_INI_EXERC"] == i) & (bruto["DT_FIM_EXERC"] == f)
+        fim_9m = pd.Timestamp(f) - pd.DateOffset(months=3) + pd.offsets.MonthEnd(0)
+        dos_9m = (bruto["DT_INI_EXERC"] == i) & ((fim - fim_9m).dt.days.abs() <= 5) & dias.between(260, 285)
+        if eh_dre:
+            a, n = por_envio(do_ano, "3.01"), por_envio(dos_9m, "3.01")
+            if a and n and not any(a.values()) and any(n.values()):
+                # receita do ano zerada em todos os envios (Padtec 2024): sem 4º tri, em vez de um número errado
+                remover |= do_ano
+                anos.add(str(f)[:4])
+                continue
+            if not a or not n or (len(set(a.values())) == 1 and len(set(n.values())) == 1):
+                continue
+            # só pares de uma mesma geração: os dois como publicados originalmente, ou os dois na versão mais recente
+            pares = {(min(a), min(n)), (max(a), max(n))}
+            candidatos = [(abs((a[ra] - n[rn]) - a[ra] / 4) / abs(a[ra]), -int(ra.replace("-", "")), -int(rn.replace("-", "")), ra, rn)
+                          for ra, rn in pares if a[ra]]
+            if not candidatos:
+                continue
+            _, _, _, ra, rn = min(candidatos)
+            escolhas[(i, f)] = (ra, rn)
+        elif (i, f) not in escolhas:
+            continue
+        ra, rn = escolhas[(i, f)]
+        if (do_ano & (bruto["DT_REFER"] == ra)).any():
+            remover |= do_ano & (bruto["DT_REFER"] != ra)
+        if (dos_9m & (bruto["DT_REFER"] == rn)).any():
+            remover |= dos_9m & (bruto["DT_REFER"] != rn)
+        if (do_ano & remover).any() or (dos_9m & remover).any():
+            anos.add(str(f)[:4])
+    if anos:
+        print(f"   ↪ ano e 9 meses de envios diferentes ({', '.join(sorted(anos))}): 4º tri com os documentos na mesma base")
+    return bruto[~remover], escolhas
+
+
+def _receita_negativa_reenviada(bruto: pd.DataFrame) -> pd.DataFrame:
+    """Receita líquida (3.01) não fica negativa num reenvio se o envio original era positiva (Hapvida: o
+    comparativo do 1º tri de 2022 veio como −593 mi no ITR de 2023; o original era +4.842 mi). Fica o original."""
+    if bruto.empty or "DT_INI_EXERC" not in bruto.columns:
+        return bruto
+    rec = bruto[bruto["CD_CONTA"] == "3.01"].sort_values(["DT_REFER", "VERSAO"])
+    remover = pd.Series(False, index=bruto.index)
+    for _, g in rec.groupby(["DT_INI_EXERC", "DT_FIM_EXERC"]):
+        if len(g) > 1 and g["VL_CONTA"].iloc[0] > 0:
+            remover.loc[g.index[g["VL_CONTA"] < 0]] = True
+    return bruto[~remover]
+
+
 def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
     """
     Busca as 5 demonstrações do ITR (BPA, BPP, DRE, DFC_MI, DMPL) para uma
@@ -619,7 +698,7 @@ def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
     if isinstance(anos, int):
         anos = [anos]
 
-    resultado = {}
+    resultado, escolhas_4t = {}, {}
     for sigla, titulo in DEMONSTRACOES_ITR.items():
         blocos = []
         for ano in anos:
@@ -651,6 +730,10 @@ def buscar_itr(cnpj: str, anos, tipo: str = "con") -> dict:
         if not bruto_total.empty:
             bruto_total, escala = _unificar_escala(bruto_total)
             bruto_total = _validar_periodos(bruto_total, sigla)
+            if sigla == "DRE":
+                bruto_total = _receita_negativa_reenviada(bruto_total)
+            if sigla in ("DRE", "DFC_MI"):  # a DRE decide quais documentos formam o 4º tri; a DFC segue
+                bruto_total, escolhas_4t = _ano_na_mesma_base_dos_9m(bruto_total, escolhas_4t)
             if sigla in ("BPA", "BPP", "DFC_MI"):
                 bruto_total = _manter_ultimo_envio_por_periodo(bruto_total)
                 if sigla == "DFC_MI":
