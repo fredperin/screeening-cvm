@@ -56,8 +56,19 @@ REGRAS_SETOR = [  # (de, até, setor) — a primeira faixa que contém o código
 
 # Empresas conhecidas em que o SIC destoa do setor usado pelo mercado
 SETOR_POR_TICKER = {
-    **{k: "Financeiro" for k in ("V", "MA", "PYPL", "FIS", "FI", "GPN", "CPAY", "AXP", "COF", "SYF")},
-    **{k: "Comunicação" for k in ("GOOGL", "META", "DIS", "EA", "TTWO", "WBD", "PARA", "FOXA", "NWSA", "OMC", "IPG", "LYV", "MTCH", "CHTR", "CMCSA")},
+    **{k: "Financeiro" for k in ("V", "MA", "PYPL", "FIS", "FI", "FISV", "GPN", "CPAY", "AXP", "COF", "SYF", "XYZ", "JKHY",
+                                 "SPGI", "MCO", "MSCI", "FDS")},
+    **{k: "Comunicação" for k in ("GOOGL", "META", "DIS", "EA", "TTWO", "WBD", "PARA", "FOXA", "NWSA", "OMC", "IPG", "LYV", "MTCH", "CHTR", "CMCSA",
+                                  "RDDT", "TKO")},
+    **{k: "Consumo discricionário" for k in ("ABNB", "BKNG", "EXPE", "CCL", "RCL", "NCLH", "EBAY", "DASH", "NKE", "DECK", "GRMN", "DPZ")},
+    **{k: "Tecnologia" for k in ("ACN", "AKAM", "IT", "FICO", "LRCX", "GLW", "CDW", "TEL", "ZBRA")},
+    **{k: "Industrial" for k in ("NOC", "LHX", "TDY", "TT", "MMM", "AME", "ROK", "FTV", "HUBB", "CTAS", "FAST", "GWW", "FERG", "ADP", "VLTO",
+                                 "LDOS", "VRSK", "CPRT", "PCAR", "AOS")},
+    **{k: "Saúde" for k in ("DHR", "TMO", "A", "ILMN", "MTD", "WAT", "RVTY")},
+    **{k: "Materiais" for k in ("ECL", "SHW", "AMCR")},
+    **{k: "Consumo básico" for k in ("KMB",)},
+    **{k: "Energia" for k in ("TPL",)},
+    **{k: "Imobiliário" for k in ("CSGP",)},
 }
 
 

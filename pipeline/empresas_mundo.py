@@ -7,6 +7,8 @@ Mundo → Empresas: as empresas do S&P 500 com a mesma estrutura das empresas do
   10-Q), convertidas para as mesmas séries das empresas brasileiras (receita, EBIT, lucro, caixa, dívida...)
   e para os mesmos indicadores (pipeline.series_empresa). Trimestres isolados por diferença dos acumulados
   do ano (o 4º tri = ano − 9 meses), anos pelos números do 10-K e LTM pela soma de 4 trimestres.
+  Quando o companyfacts ainda não incorporou um 10-Q/10-K já entregue (acontece por semanas em algumas empresas),
+  os números desse documento vêm do arquivo XBRL do próprio documento, a mesma origem do companyfacts.
 - Cadastro e documentos (8-K, 10-K, 10-Q): SEC EDGAR, API "submissions".
 - Cotação: Yahoo Finance (não oficial), como o histórico de cotações das empresas brasileiras.
 
@@ -23,6 +25,7 @@ import math
 import os
 import sys
 import time
+import xml.etree.ElementTree as ET
 from datetime import date, datetime, timedelta
 
 import pandas as pd
@@ -38,6 +41,7 @@ URL_FATOS = "https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json"
 # (a página de cada empresa ficou só com Negócio e Documentos); desligado para consultar menos a SEC. True religa.
 BAIXAR_DEMONSTRACOES_SEC = False
 URL_SUBMISSOES = "https://data.sec.gov/submissions/CIK{cik:010d}.json"
+URL_ARQUIVO = "https://www.sec.gov/Archives/edgar/data/{cik}/{pasta}/{nome}"
 URL_INDICE_DIA = "https://www.sec.gov/Archives/edgar/daily-index/{ano}/QTR{tri}/form.{dia:%Y%m%d}.idx"
 DIR_EMP = DIR_DADOS_SITE / "mundo_empresas"
 ARQ_INDICE = DIR_DADOS_SITE / "mundo_empresas.json"
@@ -249,6 +253,100 @@ def _juntar_fatos(antigo, novo):
     return saida
 
 
+# ---------------- documentos que o companyfacts ainda não incorporou ----------------
+FORMS_COMPLETAR = {"10-K", "10-Q", "10-KT", "10-QT"}  # correções (/A) costumam trazer só a capa
+JANELA_COMPLETAR = 2 * 365   # só documentos dos últimos 2 anos
+MAX_COMPLETAR = 6            # no máximo 6 documentos por empresa e por rodada
+NS_INST = "{http://www.xbrl.org/2003/instance}"
+NS_DIM = "{http://xbrl.org/2006/xbrldi}"
+
+
+def _faltando_no_companyfacts(fj, sub):
+    """10-Q/10-K dos últimos 2 anos que constam nos documentos entregues e não aparecem em nenhum fato do companyfacts."""
+    accns = {f.get("accn") for tax in fj.get("facts", {}).values() for c in tax.values()
+             for lista in (c.get("units") or {}).values() for f in lista}
+    rec = (sub or {}).get("filings", {}).get("recent", {})
+    limite = (date.today() - timedelta(days=JANELA_COMPLETAR)).isoformat()
+    xbrl = rec.get("isXBRL") or [1] * len(rec.get("form", []))
+    return [(rec["accessionNumber"][i], form, rec["filingDate"][i], rec["primaryDocument"][i])
+            for i, form in enumerate(rec.get("form", []))
+            if form in FORMS_COMPLETAR and rec["filingDate"][i] >= limite and xbrl[i] and rec["accessionNumber"][i] not in accns][:MAX_COMPLETAR]
+
+
+def _unidade(u):
+    medida = lambda el: (el.text or "").split(":")[-1]  # noqa: E731
+    m = u.find(f"{NS_INST}measure")
+    if m is not None:
+        return {"USD": "USD", "shares": "shares"}.get(medida(m))
+    num, den = u.find(f"{NS_INST}divide/{NS_INST}unitNumerator/{NS_INST}measure"), u.find(f"{NS_INST}divide/{NS_INST}unitDenominator/{NS_INST}measure")
+    if num is not None and den is not None and medida(num) == "USD" and medida(den) == "shares":
+        return "USD/shares"
+    return None
+
+
+def _fatos_do_documento(cik, accn, form, filed, primario):
+    """Fatos do arquivo XBRL de um documento no formato do companyfacts (só os sem dimensão, como no companyfacts;
+    ações em circulação por classe entram como no companyfacts)."""
+    pasta = accn.replace("-", "")
+    r = _get_sec(URL_ARQUIVO.format(cik=cik, pasta=pasta, nome=primario.rsplit(".", 1)[0] + "_htm.xml"))
+    if r is None:  # instância com outro nome: procura na pasta do documento
+        idx = _get_sec(URL_ARQUIVO.format(cik=cik, pasta=pasta, nome="index.json"))
+        nomes = [x["name"] for x in idx.json()["directory"]["item"]] if idx is not None else []
+        cand = [n for n in nomes if n.endswith(".xml") and n != "FilingSummary.xml" and not n.endswith(("_cal.xml", "_def.xml", "_lab.xml", "_pre.xml"))]
+        r = _get_sec(URL_ARQUIVO.format(cik=cik, pasta=pasta, nome=cand[0])) if cand else None
+    if r is None:
+        return {}
+    raiz = ET.fromstring(r.content)
+    contextos = {}
+    for c in raiz.iter(f"{NS_INST}context"):
+        dims = [m.get("dimension", "").split(":")[-1] for m in c.iter(f"{NS_DIM}explicitMember")] +                [m.get("dimension", "").split(":")[-1] for m in c.iter(f"{NS_DIM}typedMember")]
+        per = c.find(f"{NS_INST}period")
+        ini, fim, inst = (per.findtext(f"{NS_INST}{x}") for x in ("startDate", "endDate", "instant"))
+        contextos[c.get("id")] = (ini, fim or inst, dims)
+    unidades = {u.get("id"): _unidade(u) for u in raiz.iter(f"{NS_INST}unit")}
+    fatos, por_classe = {}, {}
+    for el in raiz:
+        if not el.tag.startswith("{") or el.get("contextRef") not in contextos:
+            continue
+        ns, nome = el.tag[1:].split("}")
+        tax = "us-gaap" if ns.startswith("http://fasb.org/us-gaap/") else "dei" if ns.startswith("http://xbrl.sec.gov/dei/") else None
+        un = unidades.get(el.get("unitRef"))
+        if tax is None or un is None or not (el.text or "").strip():
+            continue
+        ini, fim, dims = contextos[el.get("contextRef")]
+        try:
+            val = float(el.text.strip())
+        except ValueError:
+            continue
+        fato = {"end": fim, "val": val, "accn": accn, "form": form, "filed": filed, **({"start": ini} if ini else {})}
+        if not dims:
+            destino = fatos
+        elif nome == "EntityCommonStockSharesOutstanding" and set(dims) == {"StatementClassOfStockAxis"}:
+            destino = por_classe
+        else:
+            continue
+        lista = destino.setdefault(tax, {}).setdefault(nome, {"units": {}})["units"].setdefault(un, [])
+        if fato not in lista:
+            lista.append(fato)
+    if por_classe and "EntityCommonStockSharesOutstanding" not in fatos.get("dei", {}):
+        fatos.setdefault("dei", {}).update(por_classe["dei"])
+    return fatos
+
+
+def completar_fatos(cik, fj, sub):
+    """Junta ao companyfacts os documentos que ele ainda não incorporou. Devolve (fatos, documentos usados)."""
+    usados = []
+    for accn, form, filed, primario in _faltando_no_companyfacts(fj, sub):
+        try:
+            extra = _fatos_do_documento(cik, accn, form, filed, primario)
+        except (RuntimeError, ET.ParseError, ValueError, KeyError):
+            continue
+        if extra.get("us-gaap"):
+            fj = _juntar_fatos(fj, {"facts": extra})
+            usados.append(f"{form} entregue em {filed}")
+    return fj, usados
+
+
 def montar_empresa(fatos):
     global _MESES_TRIMESTRE
     gaap = fatos.get("facts", {}).get("us-gaap", {})
@@ -380,11 +478,15 @@ ITENS_8K = {"1.01": "Contrato relevante", "1.02": "Fim de contrato relevante", "
             "7.01": "Divulgação ao mercado (Reg FD)", "8.01": "Outros eventos", "9.01": "Demonstrações e anexos"}
 
 
-def cadastro_e_documentos(cik):
+def submissoes(cik):
     r = _get_sec(URL_SUBMISSOES.format(cik=cik))
-    if r is None:
+    return r.json() if r is not None else None
+
+
+def cadastro_e_documentos(cik, s=None):
+    s = s if s is not None else submissoes(cik)
+    if s is None:
         return {}, []
-    s = r.json()
     cad = {"setor": s.get("sicDescription"), "sic": s.get("sic"), "estado": s.get("stateOfIncorporation"), "exercicio_termina": s.get("fiscalYearEnd"),
            "tickers": s.get("tickers"), "bolsas": s.get("exchanges"), "categoria": s.get("category"),
            "sede": ", ".join(x for x in [(s.get("addresses", {}).get("business") or {}).get("city"), (s.get("addresses", {}).get("business") or {}).get("stateOrCountry")] if x)}
@@ -573,11 +675,13 @@ def gerar(tudo=False, filtro=None):
                 antigo = _get_sec(URL_FATOS.format(cik=CIK_ANTERIOR[e["ticker"]]))
                 if antigo is not None:
                     fj = _juntar_fatos(antigo.json(), fj)
+            sub = submissoes(e["cik"])
+            fj, completados = completar_fatos(e["cik"], fj, sub)
             montado = montar_empresa(fj) if fj.get("facts") else None
             if not montado:
                 raise RuntimeError("sem demonstrações suficientes no XBRL")
             q, visoes, mes_fim, tri, anos, saldos = montado
-            cad, docs = cadastro_e_documentos(e["cik"])
+            cad, docs = cadastro_e_documentos(e["cik"], sub)
             if e["ticker"] in CIK_ANTERIOR:  # documentos do registro antigo (ex.: último 10-K antes da reorganização)
                 _, docs_ant = cadastro_e_documentos(CIK_ANTERIOR[e["ticker"]])
                 docs = sorted(docs + docs_ant, key=lambda x: x["data"], reverse=True)[:200]
@@ -607,7 +711,9 @@ def gerar(tudo=False, filtro=None):
                 "acoes_hist": _acoes_historico(acoes),
                 "dividendo_por_acao_ano": dps_unid,
                 "notas": {"fonte": "SEC EDGAR — companyfacts (XBRL dos 10-K e 10-Q)",
-                          "ebit_estimado": bool(q["ebit_estimado"].tail(4).sum())},
+                          "ebit_estimado": bool(q["ebit_estimado"].tail(4).sum()),
+                          # documentos lidos do arquivo XBRL porque o companyfacts ainda não os tinha incorporado
+                          "lidos_do_documento": completados},
                 **para_json(visoes),
                 "demonstracoes_sec": demons_sec,
             }

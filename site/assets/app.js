@@ -2249,7 +2249,7 @@ async function paginaEmpresasMundo() {
       <select class="filtro" id="setor-mundo" style="max-width:320px"><option value="">Todos os setores</option>${setores.map((s) => `<option>${esc(s)}</option>`).join("")}</select></div>
     <div class="painel" data-info="empresas_mundo"><div class="rolagem rolagem-y" style="max-height:75vh"><table class="tabela" id="tab-mundo"></table></div>
       <div class="nota">Clique no título da coluna para ordenar e na linha para abrir a empresa. Receita e lucro dos últimos 12 meses (soma dos 4 trimestres dos 10-Q/10-K).
-        Setor: atividade informada à SEC (SIC) agrupada nos 11 setores do mercado — aproximação da classificação GICS, que é paga.</div></div>`;
+        Setor: atividade informada à SEC (SIC) agrupada nos 11 setores do mercado, com ajuste das empresas conhecidas em que o SIC destoa — aproximação da classificação GICS, que é paga.</div></div>`;
   const desenhar = () => {
     const q = document.getElementById("busca-mundo").value.trim().toLowerCase(), setor = document.getElementById("setor-mundo").value;
     const lista = idx.empresas.filter((e) => (!q || e.id.toLowerCase().includes(q) || (e.nome || "").toLowerCase().includes(q)) && (!setor || setorDe(e) === setor))
