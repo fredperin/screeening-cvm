@@ -27,6 +27,10 @@ FUSO_BR = timezone(timedelta(hours=-3))  # o GitHub Actions roda em UTC: horári
 NAO_COMPARAR = {"observacoes.json", "saude.json", "status.json", "validacao.json", "comparacao.json", "atualizacoes.json"}
 # listas que andam com o tempo (agenda: eventos passados saem; notícias e eventos: janela dos últimos dias)
 ROLANTES = ("agenda", "noticias", "eventos_recentes")
+# Campos retirados de propósito (decisão registrada): a falta deles não é problema. data = quando foi retirado
+REMOVIDOS_DE_PROPOSITO = {
+    "demonstracoes_sec": "2026-10-21",  # demonstrações "como divulgadas" da SEC: a página de cada empresa americana ficou só com Negócio e Documentos
+}
 IGNORAR_CHAVES = {"falhas", "avisos", "abertas", "resolvidas_agora", "descartados"}
 EIXOS = ("datas", "periodos", "anos", "trimestres")
 MAX_ADIANTO_INICIO = 60    # dias que o início de uma série pode andar (janelas móveis: últimos 12 meses, 1 ano etc.)
@@ -247,8 +251,10 @@ def gerar(anterior):
         limite = (datetime.now(FUSO_BR) - timedelta(days=DIAS_ALERTA)).isoformat(timespec="minutes")
         historico = [h for h in historico if h["em"] >= limite]
         # alarmes antigos de listas que andam com o tempo (regra posterior a eles) não ficam abertos
+        removido = lambda p: str(p.get("caminho", "")).split(".")[0].split("[")[0] in REMOVIDOS_DE_PROPOSITO  # noqa: E731
         for h in historico:
-            h["problemas"] = [p for p in h["problemas"] if not (p["arquivo"].startswith(ROLANTES) and "encolheu" in p["detalhe"])]
+            h["problemas"] = [p for p in h["problemas"] if not (p["arquivo"].startswith(ROLANTES) and "encolheu" in p["detalhe"]) and not removido(p)]
+        c.problemas = [p for p in c.problemas if not removido(p)]
         historico = [h for h in historico if h["problemas"]]
         if c.problemas:
             historico.append({"em": agora, "problemas": c.problemas[:50]})
