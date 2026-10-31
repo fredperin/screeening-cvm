@@ -909,6 +909,46 @@ window.EXPLICATIVOS = {
       <p>Como é em dólar corrente, a variação do câmbio também mexe no valor.</p>
       <p>Fonte: FMI, World Economic Outlook (API DataMapper).</p>`,
   },
+  oper_energia: {
+    titulo: "Energia elétrica (ONS)",
+    html: `<p>Dados abertos do Operador Nacional do Sistema Elétrico (ONS):</p>
+      <ul><li><b>Carga</b>: consumo de energia mais as perdas, em MW médios por mês, por subsistema; o SIN é a soma dos quatro. O mês corrente só entra depois de fechado.</li>
+      <li><b>Energia armazenada (EAR)</b>: quanto os reservatórios das hidrelétricas guardam, em % da capacidade máxima, por dia. A do SIN é a soma da energia armazenada ÷ a soma das capacidades.</li>
+      <li><b>Custo marginal de operação (CMO)</b>: custo de produzir mais 1 MWh na semana, por subsistema. É a base do preço de curto prazo (PLD), que a CCEE publica mas não permite baixar automaticamente.</li></ul>
+      <p>Ligado a geradoras, transmissoras e distribuidoras: chuva e reservatórios mexem com o risco hidrológico e o preço da energia; a carga, com o volume distribuído.</p>`,
+  },
+  oper_petroleo: {
+    titulo: "Petróleo e gás (ANP)",
+    html: `<p>Produção mensal de petróleo e de gás natural no Brasil, dos dados abertos da Agência Nacional do Petróleo (ANP), separada em mar e terra.</p>
+      <p>Convertida para a unidade usual do setor: petróleo em mil barris por dia (m³ × 6,28981 ÷ dias do mês) e gás em milhões de m³ por dia (mil m³ ÷ dias do mês ÷ 1.000).</p>
+      <p>A ANP publica os meses futuros zerados; eles ficam de fora.</p>`,
+  },
+  oper_combustiveis: {
+    titulo: "Distribuição de combustíveis (ANP)",
+    html: `<p>Vendas mensais das distribuidoras por produto, em mil m³, dos dados abertos da ANP (soma de todos os estados).</p>
+      <p><b>Ciclo Otto</b> = gasolina C + etanol hidratado, o combustível dos carros. Diesel acompanha a atividade de transporte e agro; QAV, a aviação.</p>
+      <p>Ligado a Vibra, Ultrapar (Ipiranga), Raízen e Cosan.</p>`,
+  },
+  oper_veiculos: {
+    titulo: "Emplacamentos de veículos (Fenabrave)",
+    html: `<p>Vendas de veículos novos pelas concessionárias (emplacamentos), por tipo, em unidades por mês. Dado da Fenabrave, republicado pelo Banco Central
+      (séries SGS 7384 a 7389).</p><p>Ligado a locadoras (frota e venda de seminovos), autopeças e fabricantes de carrocerias e implementos.</p>`,
+  },
+  oper_aviacao: {
+    titulo: "Aviação (ANAC)",
+    html: `<p>Dados estatísticos do transporte aéreo da Agência Nacional de Aviação Civil (ANAC), voo a voo, somados por mês. Só voos regulares de empresas brasileiras.</p>
+      <ul><li><b>Passageiros pagos</b>: embarques pagos (sem os gratuitos).</li>
+      <li><b>RPK</b> (demanda): passageiros pagos × quilômetros voados. <b>ASK</b> (oferta): assentos × quilômetros voados.</li>
+      <li><b>Taxa de ocupação</b> = RPK ÷ ASK do mês. <b>Participação</b> = RPK da empresa ÷ RPK de todas as empresas brasileiras.</li></ul>
+      <p>Cada grupo soma suas empresas no arquivo da ANAC: Azul com a Azul Conecta; LATAM com a TAM.</p>`,
+  },
+  oper_commodities: {
+    titulo: "Commodities exportadas (Comex Stat)",
+    html: `<p>Exportações brasileiras por produto (posição de 4 dígitos do Sistema Harmonizado), do Comex Stat, do Ministério do Desenvolvimento:</p>
+      <ul><li><b>Volume</b>: peso líquido exportado no mês, em mil toneladas.</li>
+      <li><b>Preço implícito</b>: valor exportado (FOB, em US$) ÷ peso do mesmo mês, em US$ por tonelada. É o preço médio que o Brasil recebeu, não a cotação
+        internacional (que é paga), e muda também com o mix de qualidade e de destinos.</li></ul>`,
+  },
   historico_ajustes: {
     titulo: "Histórico de ajustes",
     html: `<p>Mostra, para esta empresa, tudo o que foi feito para os números ficarem iguais ao que ela divulgou à CVM:</p>

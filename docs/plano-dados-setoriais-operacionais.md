@@ -112,6 +112,12 @@ Os dados entram na mesma tabela da Fase 1, com `fonte` = agência. O gráfico mo
 
 ## Fase 3 — Central setorial (*drivers* e proxies)
 
+> **Andamento (2026-10-31):** primeira versão no ar como **Empresas > Brasil > Operacional** (`pipeline/operacional.py`, `site/dados/operacional.json`,
+> `site/downloads/operacional.xlsx` em formato longo). Setores e fontes testados: energia elétrica (ONS: carga, EAR, CMO), petróleo e gás (ANP),
+> distribuição de combustíveis (ANP), veículos (Fenabrave via BC, SGS 7384–7389), aviação (ANAC, voo a voo: passageiros, RPK, ASK, ocupação, Azul/Gol/LATAM)
+> e commodities exportadas (Comex Stat: volume e preço implícito, na mesma consulta do setor externo). Fora por enquanto: CCEE/PLD (bloqueia a API),
+> IBGE por segmento (PMC/PIM — o IBGE recusa o GitHub; depende do runner no Brasil), ANS, Anatel, FipeZap, cimento e aço (sem API aberta).
+
 Nova seção do site, **Setores**, com uma página por setor. Cada página mostra os *drivers*, com gráfico, variação e comparação histórica, e as empresas ligadas a cada um. O mapa de *drivers* por empresa fica em `config/drivers.yml`: empresa → 3 a 5 *drivers* → fonte.
 
 **Piloto: petróleo.** Fontes: EIA API v2, com chave gratuita (Brent/WTI, estoques semanais dos EUA, STEO); FRED, já em uso; ANP produção total; Baker Hughes rig count.

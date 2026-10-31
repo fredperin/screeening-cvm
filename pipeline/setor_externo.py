@@ -82,6 +82,8 @@ def _motivo_comex(anterior, hoje):
         return "sem histórico"
     if datas[-1][:7] < _mes_esperado(hoje):
         return "mês novo"
+    if any("peso" not in p for p in ((anterior.get("comex") or {}).get("produtos") or {}).values()):
+        return "peso exportado ausente"  # campo novo (seção Operacional): busca uma vez
     ok_em = anterior.get("comex_ok_em")
     if not ok_em or (hoje - date.fromisoformat(ok_em)).days >= REVISAO_COMEX_DIAS:
         return "revisão semanal"
@@ -106,13 +108,19 @@ def comex():
         s = _serie_mensal(_comex({"flow": fluxo, "monthDetail": True, "period": periodo, "filters": [], "details": [], "metrics": ["metricFOB"]}))
         saida[{"export": "exportacoes", "import": "importacoes"}[fluxo]] = _empacotar(s / 1e6, f"{'Exportações' if fluxo == 'export' else 'Importações'} (FOB)", "US$ milhões", casas=1)
         time.sleep(5)
+    # valor (FOB) e peso líquido (kg) na mesma consulta: o peso dá o volume exportado e o preço implícito (US$/t)
+    # usados na seção Empresas > Operacional
     lista = _comex({"flow": "export", "monthDetail": True, "period": periodo, "filters": [{"filter": "heading", "values": list(PRODUTOS)}],
-                    "details": ["heading"], "metrics": ["metricFOB"]})
+                    "details": ["heading"], "metrics": ["metricFOB", "metricKG"]})
     produtos = {}
     for cod, nome in PRODUTOS.items():
-        s = _serie_mensal([x for x in lista if x.get("headingCode") == cod])
+        do_produto = [x for x in lista if x.get("headingCode") == cod]
+        s = _serie_mensal(do_produto)
         if not s.empty:
             produtos[cod] = {**_empacotar(s / 1e6, nome, "US$ milhões", casas=1), "codigo": cod}
+            kg = _serie_mensal(do_produto, "metricKG") if all("metricKG" in x for x in do_produto) else pd.Series(dtype=float)
+            if not kg.empty:
+                produtos[cod]["peso"] = _empacotar(kg / 1e6, f"{nome} — peso exportado", "mil toneladas", casas=1)
     saida["produtos"] = produtos
     time.sleep(5)
     lista = _comex({"flow": "export", "monthDetail": True, "period": periodo, "filters": [], "details": ["country"], "metrics": ["metricFOB"]})

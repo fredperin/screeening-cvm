@@ -38,7 +38,7 @@ ROTAS = [
     ("#/on/macro/credito", "#sub-credito button"),
     ("#/on/macro/fiscal", "#sub-fiscal button"),
     ("#/on/juros", None),
-    *[(f"#/on/empresas/{a}", None) for a in ("noticias", "manchetes", "fatos", "tabela", "financeiras")],
+    *[(f"#/on/empresas/{a}", None) for a in ("noticias", "manchetes", "fatos", "tabela", "financeiras", "operacional")],
     ("#/on/empresa/VALE3", "#abas-empresa button"), ("#/on/empresa/WEGE3", "#abas-empresa button"),
     ("#/on/banco/c0080099", "#abas-banco button"), ("#/on/downloads", None),
     ("#/off/macro/global", "#ind-global button"), ("#/off/macro/eua", "#sub-pais button"), ("#/off/macro/euro", "#sub-pais button"),

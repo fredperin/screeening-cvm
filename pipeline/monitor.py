@@ -341,6 +341,28 @@ def checar_setor_externo():
     return "balanço de pagamentos e comércio exterior em dia"
 
 
+# Empresas > Operacional: defasagem normal de cada fonte (dias desde a data do último dado)
+DEFASAGEM_OPERACIONAL = {"energia": ("ear_sin", 10), "petroleo": ("petroleo_total", 100), "combustiveis": ("vendas_diesel", 100),
+                         "veiculos": ("veic_total", 75), "aviacao": ("aereo_pax_dom", 75), "commodities": ("exp_vol_2601", 75)}
+
+
+def checar_operacional():
+    """Dados operacionais das indústrias (pipeline.operacional): ONS, ANP, Fenabrave/BC e Comex Stat sem falhas e em dia."""
+    arq = DIR_DADOS_SITE / "operacional.json"
+    assert arq.exists(), "operacional.json não foi gerado"
+    d = json.loads(arq.read_text(encoding="utf-8"))
+    problemas = list(d.get("falhas") or [])
+    setores = {s["id"]: s for s in d.get("setores", [])}
+    for sid, (chave, max_dias) in DEFASAGEM_OPERACIONAL.items():
+        i = (setores.get(sid) or {}).get("indicadores", {}).get(chave)
+        if not i or not i.get("datas"):
+            problemas.append(f"{sid}: indicador {chave} ausente")
+        elif _dias(i["datas"][-1]) > max_dias:
+            problemas.append(f"{sid}: último dado em {i['datas'][-1]}")
+    assert not problemas, " | ".join(problemas)
+    return f"{sum(len(s['indicadores']) for s in setores.values())} indicadores em {len(setores)} setores, em dia"
+
+
 def checar_validacao_empresas():
     """Achados sérios NOVOS do validador (pipeline.validar) nos dados das empresas brasileiras: 4º tri negativo ou muito
     fora do padrão, salto de escala, caixa maior que o ativo. Os já examinados ficam em config/empresas_conferidas.json."""
@@ -473,6 +495,7 @@ CHECAGENS = {
     "Agenda (Banco Central, IBGE, FGV)": checar_agenda,
     "Notícias (Banco Central, IBGE, CVM, Agência Brasil)": checar_noticias,
     "Dados das empresas (Brasil)": checar_validacao_empresas,
+    "Empresas — dados operacionais (ONS, ANP, Fenabrave, ANAC, Comex Stat)": checar_operacional,
 }
 
 

@@ -63,6 +63,7 @@ function eixoValor(tipo, posicao) {
     vezes: (v) => `${num(v, 1)}x`,
     preco: (v) => num(v, 2),
     numero: (v) => num(v, 2),
+    inteiro: (v) => num(v, 0),
   }[tipo];
   return {
     type: "value", position: posicao,
@@ -73,7 +74,7 @@ function eixoValor(tipo, posicao) {
 }
 
 function formatar(tipo, v) {
-  return { reais: reais, pct: pct, pctPronto: pctPronto, vezes: vezes, preco: (x) => num(x, 2), numero: (x) => num(x, 2) }[tipo](v);
+  return { reais: reais, pct: pct, pctPronto: pctPronto, vezes: vezes, preco: (x) => num(x, 2), numero: (x) => num(x, 2), inteiro: (x) => num(x, 0) }[tipo](v);
 }
 
 /**
@@ -441,7 +442,7 @@ const MENU = [
   { titulo: "Empresas", grupos: [
     ["Brasil", [["Informações", "#/on/empresas/noticias", "on|empresas|noticias"], ["Notícias", "#/on/empresas/manchetes", "on|empresas|manchetes"],
       ["Fatos relevantes", "#/on/empresas/fatos", "on|empresas|fatos"], ["Empresas", "#/on/empresas/tabela", "on|empresas|tabela"],
-      ["Bancos", "#/on/empresas/financeiras", "on|empresas|financeiras"]]],
+      ["Bancos", "#/on/empresas/financeiras", "on|empresas|financeiras"], ["Operacional", "#/on/empresas/operacional", "on|empresas|operacional"]]],
     ["Mundo", [["S&P 500", "#/off/empresas/sp500", "off|empresas|sp500"], ["Empresas", "#/off/empresas/empresas", "off|empresas|empresas"]]]] },
   { titulo: "Downloads", grupos: [[null, [["Brasil", "#/on/downloads", "on|downloads"], ["Mundo", "#/off/downloads", "off|downloads"]]]] },
 ];
@@ -584,7 +585,8 @@ async function paginaInicio() {
 /* ============ Empresas (lista) ============ */
 // Abas: informações (calendário, divulgações, proventos), notícias e fatos relevantes, tabela das empresas e instituições financeiras
 // Empresas > Brasil: os mesmos itens do menu lateral (Notícias e Fatos relevantes eram uma aba só)
-const ABAS_EMPRESAS = [["noticias", "Informações"], ["manchetes", "Notícias"], ["fatos", "Fatos relevantes"], ["tabela", "Empresas"], ["financeiras", "Bancos"]];
+const ABAS_EMPRESAS = [["noticias", "Informações"], ["manchetes", "Notícias"], ["fatos", "Fatos relevantes"], ["tabela", "Empresas"], ["financeiras", "Bancos"],
+  ["operacional", "Operacional"]];
 
 async function paginaEmpresas(aba) {
   if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "noticias";
@@ -607,6 +609,7 @@ async function paginaEmpresas(aba) {
   const abas = `<div class="abas">${ABAS_EMPRESAS.map(([k, n]) => `<a href="#/on/empresas/${k}" class="${k === aba ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
   const cab = `<div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas da lista · clique numa empresa para abrir a página dela</div></div></div>`;
   if (aba === "financeiras") return abaFinanceiras(cab, abas);
+  if (aba === "operacional") return paginaOperacional(cab, abas);
   if (aba === "manchetes") {
     app.innerHTML = `${cab}${abas}
     <div class="grade grade-empilhada">
@@ -669,6 +672,164 @@ async function paginaEmpresas(aba) {
   document.getElementById("filtro").addEventListener("input", (ev) => desenhar(ev.target.value));
 }
 
+/* ============ Empresas > Operacional ============ */
+// Dados operacionais das indústrias (pipeline.operacional): ONS, ANP, Fenabrave (pelo BC) e Comex Stat
+let OPER_SETOR = "energia";
+
+function paginaOperacional(cab, abas) {
+  return dados("dados/operacional.json").catch(() => null).then((op) => {
+    if (!op || !op.setores || !op.setores.length) {
+      app.innerHTML = `${cab}${abas}<p class="sub">Os dados operacionais entram na próxima atualização.</p>`;
+      return;
+    }
+    const setores = op.setores;
+    if (!setores.some((s) => s.id === OPER_SETOR)) OPER_SETOR = setores[0].id;
+    const s = setores.find((x) => x.id === OPER_SETOR);
+    const I = s.indicadores;
+    const seletor = `<div class="seletor seletor-editoria" id="oper-setor" style="margin:0 0 12px">${setores.map((x) =>
+      `<button data-k="${x.id}" class="${x.id === OPER_SETOR ? "ativo" : ""}">${esc(x.nome)}</button>`).join("")}</div>`;
+    // empresas ligadas: casa qualquer ticker da empresa (ex.: CMIG4 → página da Cemig)
+    const porTicker = {};
+    INDICE.forEach((e) => [e.id, ...(e.tickers || [])].forEach((t) => (porTicker[t] = e.id)));
+    const empresas = [...new Set((s.empresas || []).map((t) => porTicker[t] || porTicker[t.slice(0, 4) + "3"] || porTicker[t.slice(0, 4) + "4"]).filter(Boolean))];
+    const ligadas = empresas.length ? `<div class="sub" style="margin:-4px 0 12px">Empresas ligadas: ${empresas.map((t) =>
+      `<a class="etiqueta" href="#/on/empresa/${esc(t)}">${esc(t)}</a>`).join(" ")}</div>` : "";
+    const fontes = [...new Set(Object.values(I).map((i) => i.fonte.replace(/ \d+$/, "")))].join(" · ");
+    const coleta = Object.values(I).map((i) => i.coletado_em).sort().pop();
+
+    // último valor, a variação contra um ano antes (mesmo mês; diária e semanal: a data mais próxima até um ano antes)
+    const ultimoI = (i) => ({ data: i.datas[i.datas.length - 1], valor: i.valores[i.valores.length - 1] });
+    const umAnoAntes = (i) => {
+      const u = ultimoI(i), alvo = `${Number(u.data.slice(0, 4)) - 1}${u.data.slice(4)}`;
+      let v = null;
+      for (let k = i.datas.length - 1; k >= 0; k--) if (i.datas[k] <= alvo) { v = i.valores[k]; break; }
+      return v;
+    };
+    const quando = (i) => (i.frequencia === "mensal" ? rotuloMes(ultimoI(i).data) : dataBR(ultimoI(i).data));
+    const fmtI = (i, v) => (v == null ? "—" : `${num(v, Math.abs(v) >= 1000 || i.unidade === "unidades" ? 0 : 1)} ${i.unidade}`);
+    const cartaoI = (k, titulo, pp = false) => {
+      const i = I[k]; if (!i) return "";
+      const u = ultimoI(i), a = umAnoAntes(i);
+      const varTxt = a == null ? "" : pp ? `${num(u.valor - a, 1)} p.p. em 12 meses` : a ? `${pct(u.valor / a - 1)} em 12 meses` : "";
+      return cartao(titulo || i.nome, fmtI(i, u.valor), `${quando(i)}${varTxt ? ` · ${varTxt}` : ""}`);
+    };
+    // soma ou média dos últimos 12 meses, mês a mês (fluxo: soma; taxa diária: média)
+    const movel = (i, media) => {
+      const out = [];
+      for (let k = 11; k < i.valores.length; k++) {
+        const janela = i.valores.slice(k - 11, k + 1);
+        out.push([i.datas[k], janela.reduce((x, y) => x + y, 0) / (media ? 12 : 1)]);
+      }
+      return out;
+    };
+    const L = (k, extra = {}) => (I[k] ? [{ nome: I[k].nome.replace(/^.*— /, ""), valores: Pares(I[k]), tipo: "line", ...extra }] : []);
+    const B = (k, nome, pilha, cor) => (I[k] ? [{ nome, valores: Pares(I[k]), tipo: "bar", pilha, cor }] : []);
+    const tempo = (anos = 10, eixo = "inteiro") => ({ xTempo: true, inicioTempo: desde(anos), deslizante: true, eixoEsq: eixo });
+    const zero = { limitesEsq: [0, null] };  // barras de volume partem do zero
+
+    const MONTAR = {
+      energia: () => ({
+        cartoes: [cartaoI("carga_sin", "Carga do SIN"), cartaoI("ear_sin", "Reservatórios do SIN", true), cartaoI("cmo_se", "CMO Sudeste/C.-Oeste"), cartaoI("cmo_ne", "CMO Nordeste")],
+        graficos: [
+          ["op-carga", "Carga de energia do SIN — mensal e média de 12 meses (MW médios)", "oper_energia", () => grafico(el("op-carga"), { ...tempo(), ...zero,
+            series: [...B("carga_sin", "Mensal", null, COR.azul), ...(I.carga_sin ? [{ nome: "Média de 12 meses", valores: movel(I.carga_sin, true), tipo: "line", cor: COR.ambar }] : [])] })],
+          ["op-carga-sub", "Carga por subsistema (MW médios)", "oper_energia", () => grafico(el("op-carga-sub"), { ...tempo(), ...zero,
+            series: [...B("carga_se", "Sudeste/C.-Oeste", "c", COR.azul), ...B("carga_s", "Sul", "c", COR.verde), ...B("carga_ne", "Nordeste", "c", COR.ambar), ...B("carga_n", "Norte", "c", COR.roxo)] })],
+          ["op-ear", "Energia armazenada nos reservatórios (% da capacidade)", "oper_energia", () => grafico(el("op-ear"), { ...tempo(5, "pctPronto"),
+            series: [...L("ear_sin", { nome: "SIN", cor: COR.texto }), ...L("ear_se", { cor: COR.azul }), ...L("ear_s", { cor: COR.verde }), ...L("ear_ne", { cor: COR.ambar }), ...L("ear_n", { cor: COR.roxo })] }), "largo"],
+          ["op-cmo", "Custo marginal de operação — média semanal (R$/MWh)", "oper_energia", () => grafico(el("op-cmo"), { ...tempo(5, "numero"), degrau: true,
+            series: [...L("cmo_se", { cor: COR.azul }), ...L("cmo_s", { cor: COR.verde }), ...L("cmo_ne", { cor: COR.ambar }), ...L("cmo_n", { cor: COR.roxo })] }), "largo"],
+        ],
+      }),
+      petroleo: () => ({
+        cartoes: [cartaoI("petroleo_total", "Petróleo"), cartaoI("gas_total", "Gás natural"),
+          I.petroleo_mar && I.petroleo_total ? cartao("Petróleo no mar", `${num(ultimoI(I.petroleo_mar).valor / ultimoI(I.petroleo_total).valor * 100, 1)}%`, `do total · ${quando(I.petroleo_total)}`) : ""],
+        graficos: [
+          ["op-pet", "Produção de petróleo — mar e terra (mil barris/dia)", "oper_petroleo", () => grafico(el("op-pet"), { ...tempo(), ...zero,
+            series: [...B("petroleo_mar", "Mar", "p", COR.azul), ...B("petroleo_terra", "Terra", "p", COR.ambar),
+              ...(I.petroleo_total ? [{ nome: "Média de 12 meses", valores: movel(I.petroleo_total, true), tipo: "line", cor: COR.texto }] : [])] })],
+          ["op-gas", "Produção de gás natural — mar e terra (milhões m³/dia)", "oper_petroleo", () => grafico(el("op-gas"), { ...tempo(10, "numero"), ...zero,
+            series: [...B("gas_mar", "Mar", "g", COR.azul), ...B("gas_terra", "Terra", "g", COR.ambar),
+              ...(I.gas_total ? [{ nome: "Média de 12 meses", valores: movel(I.gas_total, true), tipo: "line", cor: COR.texto }] : [])] })],
+        ],
+      }),
+      combustiveis: () => ({
+        cartoes: [cartaoI("vendas_diesel", "Diesel"), cartaoI("vendas_ciclo_otto", "Ciclo Otto"), cartaoI("vendas_etanol", "Etanol hidratado"), cartaoI("vendas_qav", "QAV")],
+        graficos: [
+          ["op-comb", "Vendas das distribuidoras por produto — mensal (mil m³)", "oper_combustiveis", () => grafico(el("op-comb"), { ...tempo(5),
+            series: [...L("vendas_diesel", { cor: COR.azul }), ...L("vendas_gasolina", { cor: COR.ambar }), ...L("vendas_etanol", { cor: COR.verde }),
+              ...L("vendas_glp", { cor: COR.roxo }), ...L("vendas_qav", { cor: COR.ciano })] }), "largo"],
+          ["op-comb12", "Vendas acumuladas em 12 meses (mil m³)", "oper_combustiveis", () => grafico(el("op-comb12"), { ...tempo(),
+            series: ["vendas_diesel", "vendas_ciclo_otto", "vendas_qav"].filter((k) => I[k]).map((k, j) => ({
+              nome: I[k].nome.replace("Vendas de ", "").replace("Vendas do ", ""), valores: movel(I[k], false), tipo: "line", cor: [COR.azul, COR.ambar, COR.ciano][j] })) }), "largo"],
+        ],
+      }),
+      veiculos: () => ({
+        cartoes: [cartaoI("veic_total", "Total"), cartaoI("veic_automoveis", "Automóveis"), cartaoI("veic_comerciais_leves", "Comerciais leves"), cartaoI("veic_caminhoes", "Caminhões")],
+        graficos: [
+          ["op-veic", "Emplacamentos por tipo — mensal (unidades)", "oper_veiculos", () => grafico(el("op-veic"), { ...tempo(5), ...zero,
+            series: [...B("veic_automoveis", "Automóveis", "v", COR.azul), ...B("veic_comerciais_leves", "Comerciais leves", "v", COR.verde),
+              ...B("veic_caminhoes", "Caminhões", "v", COR.ambar), ...B("veic_onibus", "Ônibus", "v", COR.roxo)] }), "largo"],
+          ["op-veic12", "Emplacamentos acumulados em 12 meses (unidades)", "oper_veiculos", () => grafico(el("op-veic12"), { ...tempo(),
+            series: I.veic_total ? [{ nome: "Total", valores: movel(I.veic_total, false), tipo: "line", cor: COR.texto }] : [] })],
+          ["op-veic-pesados", "Caminhões e ônibus acumulados em 12 meses (unidades)", "oper_veiculos", () => grafico(el("op-veic-pesados"), { ...tempo(),
+            series: [["veic_caminhoes", "Caminhões", COR.ambar], ["veic_onibus", "Ônibus", COR.roxo]].filter(([k]) => I[k]).map(([k, nome, cor]) => ({
+              nome, valores: movel(I[k], false), tipo: "line", cor })) })],
+        ],
+      }),
+      aviacao: () => ({
+        cartoes: [cartaoI("aereo_pax_dom", "Passageiros domésticos"), cartaoI("aereo_ocupacao_dom", "Ocupação doméstica", true),
+          cartaoI("aereo_share_latam", "LATAM — participação", true), cartaoI("aereo_share_gol", "Gol — participação", true), cartaoI("aereo_share_azul", "Azul — participação", true)],
+        graficos: [
+          ["op-pax", "Passageiros pagos em voos domésticos — mensal e média de 12 meses (milhões)", "oper_aviacao", () => grafico(el("op-pax"), { ...tempo(10, "numero"), ...zero,
+            series: [...B("aereo_pax_dom", "Mensal", null, COR.azul), ...(I.aereo_pax_dom ? [{ nome: "Média de 12 meses", valores: movel(I.aereo_pax_dom, true), tipo: "line", cor: COR.ambar }] : [])] })],
+          ["op-rpk", "Demanda (RPK) e oferta (ASK) domésticas (bilhões)", "oper_aviacao", () => grafico(el("op-rpk"), { ...tempo(10, "numero"),
+            series: [...L("aereo_rpk_dom", { nome: "Demanda (RPK)", cor: COR.azul }), ...L("aereo_ask_dom", { nome: "Oferta (ASK)", cor: COR.ambar })] })],
+          ["op-share", "Participação na demanda doméstica (% do RPK)", "oper_aviacao", () => grafico(el("op-share"), { ...tempo(10, "pctPronto"),
+            series: [...L("aereo_share_latam", { nome: "LATAM", cor: COR.vermelho }), ...L("aereo_share_gol", { nome: "Gol", cor: COR.ambar }), ...L("aereo_share_azul", { nome: "Azul", cor: COR.azul })] })],
+          ["op-ocup", "Taxa de ocupação doméstica (RPK ÷ ASK, %)", "oper_aviacao", () => grafico(el("op-ocup"), { ...tempo(10, "pctPronto"),
+            series: [...L("aereo_ocupacao_dom", { nome: "Total", cor: COR.texto }), ...L("aereo_ocupacao_latam", { nome: "LATAM", cor: COR.vermelho }),
+              ...L("aereo_ocupacao_gol", { nome: "Gol", cor: COR.ambar }), ...L("aereo_ocupacao_azul", { nome: "Azul", cor: COR.azul })] })],
+        ],
+      }),
+      commodities: () => {
+        const cods = Object.keys(I).filter((k) => k.startsWith("exp_vol_")).map((k) => k.slice(8));
+        return {
+          cartoes: ["2601", "2709", "4703", "0202"].filter((c) => I[`exp_preco_${c}`]).map((c) => {
+            const i = I[`exp_preco_${c}`], u = ultimoI(i), a = umAnoAntes(i);
+            return cartao(i.nome.split(" — ")[0], `US$ ${num(u.valor, 0)}/t`, `preço implícito · ${quando(i)}${a ? ` · ${pct(u.valor / a - 1)} em 12 meses` : ""}`);
+          }),
+          graficos: cods.map((c) => [`op-exp-${c}`, `${I[`exp_vol_${c}`].nome.split(" — ")[0]} — volume exportado (mil t) e preço implícito (US$/t)`, "oper_commodities",
+            () => grafico(el(`op-exp-${c}`), { ...tempo(5), ...zero, eixoDir: "inteiro", series: [
+              { nome: "Volume (mil t)", valores: Pares(I[`exp_vol_${c}`]), tipo: "bar", cor: COR.azul },
+              ...(I[`exp_preco_${c}`] ? [{ nome: "Preço implícito (US$/t)", valores: Pares(I[`exp_preco_${c}`]), tipo: "line", eixo: "dir", cor: COR.ambar }] : [])] })]),
+        };
+      },
+    };
+    const el = (id) => document.getElementById(id);
+    const m = (MONTAR[s.id] || (() => ({ cartoes: [], graficos: [] })))();
+    app.innerHTML = `${cab}${abas}
+      <div class="cabecalho" style="margin-bottom:8px"><div><h2 style="margin:0">Dados operacionais das indústrias</h2>
+        <div class="sub">${esc(fontes)} · coletado em ${dataHoraBR(coleta)}</div></div>
+        <a class="botao" href="downloads/operacional.xlsx" download>Baixar Excel (todos os setores)</a></div>
+      ${seletor}${ligadas}
+      <div class="grade-cartoes">${m.cartoes.join("")}</div>
+      <div class="grade">${m.graficos.map(([id, titulo, info, , classe]) => painelG(id, esc(titulo), info, "", classe || "")).join("")}</div>
+      <div class="nota secao">Números iguais aos das fontes oficiais; só há conversão de unidade, sempre indicada (m³ de petróleo em barris por dia,
+        valor ÷ peso no preço implícito das exportações). Variação em 12 meses contra o mesmo mês do ano anterior (diária e semanal: a data mais próxima até um ano antes).
+        Quando uma fonte falha, fica a última versão boa e o problema aparece nas Observações.${op.falhas && op.falhas.length ? ` Hoje: ${esc(op.falhas.join("; "))}.` : ""}</div>`;
+    m.graficos.forEach(([, , , desenhar]) => desenhar());
+    el("oper-setor").addEventListener("click", (ev) => {
+      const b = ev.target.closest("button"); if (!b) return;
+      OPER_SETOR = b.dataset.k; limparGraficos(); paginaOperacional(cab, abas);
+    });
+  });
+}
+
+function rotuloMes(iso) {
+  return `${MESES[Number(iso.slice(5, 7)) - 1]}/${iso.slice(2, 4)}`;
+}
+
 /* ============ Empresa ============ */
 let VISAO = "trimestral";
 let FC_SEL = "todos";
@@ -711,6 +872,9 @@ async function paginaEmpresa(id) {
     dados(`dados/eventos/${id}.json`).catch(() => null), dados(`dados/negocio/${id}.json`).catch(() => null),
     dados(`dados/resumos/${id}.json`).catch(() => null),
   ]);
+  // atalho para os dados operacionais do setor da empresa (Empresas > Operacional), se ela estiver ligada a algum
+  const op = await dados("dados/operacional.json").catch(() => null);
+  const setorOp = ((op && op.setores) || []).find((s) => (s.empresas || []).some((t) => emp.tickers.includes(t) || t === id));
   const m = mercado.empresas.find((x) => x.id === id) || {};
   const ltm = emp.ltm, n = ltm.periodos.length - 1;
   const L = (k) => (n >= 0 ? ltm.series[k][n] : null);
@@ -722,7 +886,9 @@ async function paginaEmpresa(id) {
     <div class="cabecalho">
       <div><h1>${esc(emp.tickers.join(" / "))} · ${esc(emp.nome)}</h1>
         <div class="sub">${esc(emp.setor || "")} · CNPJ ${esc(emp.cnpj)}${m.segmento ? ` · ${esc(m.segmento)}` : ""} · último período ${dataBR(emp.trimestral.periodos.slice(-1)[0])}
-          ${seloResultado(proxResultado)}</div></div>
+          ${seloResultado(proxResultado)}</div>
+        ${setorOp ? `<div class="sub" style="margin-top:4px">Dados operacionais do setor:
+          <a href="#/on/empresas/operacional" onclick="OPER_SETOR='${esc(setorOp.id)}'">${esc(setorOp.nome)} →</a></div>` : ""}</div>
       <a class="botao" href="downloads/${encodeURIComponent(id)}.xlsx" download>Baixar Excel</a>
     </div>
     <div class="grade-cartoes">
@@ -2021,6 +2187,9 @@ async function paginaDownloads() {
       <div class="painel"><h2>Juros</h2><p class="sub" style="line-height:1.6">Curva DI x Pré e DI x IPCA (B3) nas datas de comparação, curvas do Tesouro,
         títulos à venda e o histórico diário de taxa e preço de cada título do Tesouro Direto.</p>
         <a class="botao" href="downloads/juros.xlsx" download>Baixar juros.xlsx</a></div>
+      <div class="painel"><h2>Dados operacionais</h2><p class="sub" style="line-height:1.6">Energia elétrica (ONS), petróleo, gás e combustíveis (ANP),
+        emplacamentos (Fenabrave) e commodities exportadas (Comex Stat), uma linha por mês e indicador, com unidade, fonte e data da coleta.</p>
+        <a class="botao" href="downloads/operacional.xlsx" download>Baixar operacional.xlsx</a></div>
     </div>
     <div class="nota" style="margin-bottom:14px">Cada gráfico do site também tem o botão ⤓, que baixa a série daquele gráfico em CSV (abre direto no Excel).</div>
     <div class="cabecalho"><div><h2 style="margin:0">Empresas</h2><div class="sub">Excel padrão de cada empresa: Cadastro, Demonstrações, Indicadores (LTM) e Dividendos, com histórico completo desde 2011</div></div>
