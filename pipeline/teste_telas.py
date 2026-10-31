@@ -38,14 +38,13 @@ ROTAS = [
     ("#/on/macro/credito", "#sub-credito button"),
     ("#/on/macro/fiscal", "#sub-fiscal button"),
     ("#/on/juros", None),
-    *[(f"#/on/empresas/{a}", None) for a in ("noticias", "fatos", "tabela", "financeiras")],
+    *[(f"#/on/empresas/{a}", None) for a in ("noticias", "manchetes", "fatos", "tabela", "financeiras")],
     ("#/on/empresa/VALE3", "#abas-empresa button"), ("#/on/empresa/WEGE3", "#abas-empresa button"),
     ("#/on/banco/c0080099", "#abas-banco button"), ("#/on/downloads", None),
-    ("#/off", None), ("#/off/noticias", None),
     ("#/off/macro/global", "#ind-global button"), ("#/off/macro/eua", "#sub-pais button"), ("#/off/macro/euro", "#sub-pais button"),
     ("#/off/macro/china", "#sub-pais button"), ("#/off/macro/mercados", "#sub-mercados button"),
-    ("#/off/juros", "#sub-juros-off button"), ("#/off/empresas", "#sub-sp button"), ("#/off/empresa/AAPL", "#abas-empresa-mundo button"), ("#/off/empresa/MSFT", "#abas-empresa-mundo button"),
-    ("#/cons", None), ("#/cons/graficos", None),
+    ("#/off/juros", "#sub-juros-off button"), ("#/off/empresas/sp500", None), ("#/off/empresas/empresas", None), ("#/off/empresa/AAPL", "#abas-empresa-mundo button"), ("#/off/empresa/MSFT", "#abas-empresa-mundo button"),
+    ("#/cons", None), ("#/off/downloads", None),
     ("#/status", None),
 ]
 

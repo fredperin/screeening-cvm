@@ -23,26 +23,32 @@ button { font-family: var(--mono); }
 
 /* ---- topo ---- */
 .topo {
-  position: sticky; top: 0; z-index: 10; background: var(--fundo);
-  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  padding: 10px 16px; border-bottom: 1px solid var(--borda);
+  position: sticky; top: 0; z-index: 20; background: var(--fundo);
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  min-height: 60px; padding: 12px 20px; border-bottom: 1px solid var(--borda);
 }
-.marca { display: inline-flex; align-items: center; gap: 8px; color: var(--ambar); font-weight: 700; font-size: 15px; letter-spacing: .3px; margin-right: 8px; }
-.marca:hover { text-decoration: none; }
+/* o nome do site é o botão que abre e fecha o menu de seções */
+.marca { display: inline-flex; align-items: center; gap: 10px; color: var(--ambar); font-weight: 700; font-size: 17px; letter-spacing: .3px;
+  background: none; border: 1px solid transparent; border-radius: 4px; padding: 4px 8px 4px 4px; cursor: pointer; font-family: var(--mono); }
+.marca:hover, .marca:focus-visible { border-color: var(--borda); outline: none; }
 .marca img { display: block; }
-.marca-cursor { color: var(--texto-fraco); font-weight: 400; margin-left: -4px; }
-@media (max-width: 480px) { .marca-nome, .marca-cursor { display: none; } }
-.lados { display: inline-flex; border: 1px solid var(--borda); border-radius: 4px; overflow: hidden; }
-.lados a { padding: 4px 10px; color: var(--texto-fraco); font-size: 11px; font-weight: 700; letter-spacing: .6px; text-transform: uppercase; }
-.lados a + a { border-left: 1px solid var(--borda); }
-.lados a.ativo { background: var(--ambar); color: var(--fundo); text-decoration: none; }
-.lados a:hover { text-decoration: none; color: var(--ambar); }
-.lados a.ativo:hover { color: var(--fundo); }
-.nav { display: flex; gap: 6px; flex-wrap: wrap; }
-.nav a {
-  padding: 4px 10px; border: 1px solid var(--borda); border-radius: 4px; color: var(--texto-fraco);
-}
-.nav a.ativo, .nav a:hover { color: var(--ambar); border-color: var(--ambar); text-decoration: none; }
+.marca-cursor { color: var(--texto-fraco); font-weight: 400; margin-left: -4px; transition: transform .15s; }
+body.menu-aberto .marca-cursor { transform: rotate(180deg); }
+@media (max-width: 480px) { .marca-nome { display: none; } }
+
+/* ---- menu lateral ---- */
+.menu { position: fixed; top: 60px; left: 0; bottom: 0; width: 230px; z-index: 15; background: var(--painel); border-right: 1px solid var(--borda);
+  overflow-y: auto; padding: 14px 10px 24px; transform: translateX(-100%); transition: transform .18s ease; }
+body.menu-aberto .menu { transform: none; }
+@media (min-width: 900px) { body.menu-aberto #app, body.menu-aberto .observacoes, body.menu-aberto .rodape { margin-left: 230px; } }
+.menu-grupo { margin-bottom: 14px; }
+.menu-grupo > .menu-titulo { display: block; padding: 6px 10px; color: var(--texto-forte); font-weight: 700; font-size: 12px; letter-spacing: .8px; text-transform: uppercase; border-radius: 4px; }
+.menu-grupo > a.menu-titulo:hover { color: var(--ambar); text-decoration: none; }
+.menu-sub { color: var(--texto-fraco); font-size: 11px; letter-spacing: .6px; text-transform: uppercase; padding: 8px 10px 2px 18px; }
+.menu a.menu-item { display: block; padding: 5px 10px 5px 28px; color: var(--texto); border-left: 2px solid transparent; font-size: 13px; }
+.menu a.menu-item:hover { color: var(--ambar); text-decoration: none; }
+.menu a.ativo { color: var(--ambar); border-left-color: var(--ambar); background: var(--painel-2); }
+@media (max-width: 899px) { body.menu-aberto::after { content: ""; position: fixed; inset: 60px 0 0 0; background: rgba(0,0,0,.45); z-index: 14; } }
 .comando { margin-left: auto; position: relative; min-width: 200px; flex: 1 1 240px; max-width: 360px; }
 .comando input {
   width: 100%; background: var(--painel); color: var(--texto-forte); border: 1px solid var(--borda);

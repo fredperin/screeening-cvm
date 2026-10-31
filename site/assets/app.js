@@ -423,22 +423,64 @@ const ROTAS = {
   on: { banco: (p) => paginaBanco(p), "": () => paginaNoticias("on"), noticias: (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("on")), macro: paginaMacro, juros: paginaJuros, empresas: paginaEmpresas, empresa: paginaEmpresa, downloads: paginaDownloads },
   off: Object.fromEntries(SECOES.map(([k]) => [k, (p) => paginaOffshore(k, p)])),
 };
-// Consolidado abre em Notícias e agenda; "noticias" fica como endereço antigo
-// Consolidado: Notícias e agenda + Gráficos (PIB, inflação, juros e desemprego); endereços antigos abrem os Gráficos
-const SECOES_CONS = [["", "Notícias e agenda"], ["graficos", "Gráficos"]];
-ROTAS.cons = { "": () => paginaNoticias("cons"), noticias: () => paginaNoticias("cons"), graficos: paginaConsolidado,
-  atividade: paginaConsolidado, inflacao: paginaConsolidado, juros: paginaConsolidado };
-ROTAS.off.noticias = () => paginaNoticias("off");
-ROTAS.off[""] = () => paginaNoticias("off");
-ROTAS.off.empresas = () => paginaEmpresasMundo();
+// Agenda e notícias: uma página só, com Brasil e Mundo juntos (endereços antigos de cada lado e dos Gráficos levam a ela)
+ROTAS.cons = { "": () => paginaNoticias("cons"), noticias: () => paginaNoticias("cons") };
+ROTAS.on[""] = ROTAS.off[""] = ROTAS.off.noticias = () => paginaNoticias("cons");
+ROTAS.on.noticias = (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("cons"));
+ROTAS.off.empresas = (p) => paginaEmpresasMundo(p);
 ROTAS.off.empresa = (p) => paginaEmpresaMundo(p);
 const ROTAS_ANTIGAS = { agenda: "noticias" };  // endereços de antes da divisão Onshore/Offshore
 
-function desenharNav(lado, secao) {
-  document.querySelectorAll("#lados a").forEach((a) => a.classList.toggle("ativo", a.dataset.lado === lado));
-  document.getElementById("nav").innerHTML = (lado === "cons" ? SECOES_CONS : SECOES).map(([k, nome]) =>
-    `<a href="#/${lado || "on"}${k ? `/${k}` : ""}" class="${lado && k === (secao === "noticias" ? "" : secao) ? "ativo" : ""}">${nome}</a>`).join("");
+// Menu lateral (abre e fecha no nome do site): Agenda e notícias; Economia (Brasil e Mundo: Macro e Juros);
+// Empresas (Brasil: Informações, Notícias, Fatos relevantes, Empresas, Bancos; Mundo: S&P 500, Empresas); Downloads (Brasil e Mundo)
+const MENU = [
+  { titulo: "Agenda e notícias", href: "#/cons", chave: "cons|" },
+  { titulo: "Economia", grupos: [
+    ["Brasil", [["Macro", "#/on/macro", "on|macro"], ["Juros", "#/on/juros", "on|juros"]]],
+    ["Mundo", [["Macro", "#/off/macro", "off|macro"], ["Juros", "#/off/juros", "off|juros"]]]] },
+  { titulo: "Empresas", grupos: [
+    ["Brasil", [["Informações", "#/on/empresas/noticias", "on|empresas|noticias"], ["Notícias", "#/on/empresas/manchetes", "on|empresas|manchetes"],
+      ["Fatos relevantes", "#/on/empresas/fatos", "on|empresas|fatos"], ["Empresas", "#/on/empresas/tabela", "on|empresas|tabela"],
+      ["Bancos", "#/on/empresas/financeiras", "on|empresas|financeiras"]]],
+    ["Mundo", [["S&P 500", "#/off/empresas/sp500", "off|empresas|sp500"], ["Empresas", "#/off/empresas/empresas", "off|empresas|empresas"]]]] },
+  { titulo: "Downloads", grupos: [[null, [["Brasil", "#/on/downloads", "on|downloads"], ["Mundo", "#/off/downloads", "off|downloads"]]]] },
+];
+
+function desenharNav(lado, secao, parametro) {
+  let atual = `${lado}|${secao}`;
+  if (lado === "cons" || secao === "" || secao === "noticias") atual = "cons|";
+  if (secao === "empresas") {
+    const validas = lado === "on" ? ABAS_EMPRESAS : ABAS_EMPRESAS_MUNDO;
+    atual = `${lado}|empresas|${validas.some(([k]) => k === parametro) ? parametro : validas[0][0]}`;
+  }
+  if (secao === "empresa") atual = `${lado}|empresas|${lado === "on" ? "tabela" : "empresas"}`;
+  if (secao === "banco") atual = "on|empresas|financeiras";
+  const item = ([nome, href, chave]) => `<a class="menu-item${chave === atual ? " ativo" : ""}" href="${href}">${nome}</a>`;
+  document.getElementById("menu").innerHTML = MENU.map((m) => `<div class="menu-grupo">${m.href
+    ? `<a class="menu-titulo${m.chave === atual ? " ativo" : ""}" href="${m.href}">${m.titulo}</a>`
+    : `<span class="menu-titulo">${m.titulo}</span>${m.grupos.map(([sub, itens]) => `${sub ? `<div class="menu-sub">${sub}</div>` : ""}${itens.map(item).join("")}`).join("")}`}</div>`).join("");
   document.body.dataset.lado = lado || "";
+}
+
+// O nome do site abre e fecha o menu; a escolha fica guardada neste navegador. Em tela estreita, fecha ao escolher uma seção.
+function iniciarMenu() {
+  const largo = () => window.matchMedia("(min-width: 900px)").matches;
+  let aberto = largo();
+  try { const g = localStorage.getItem("menu-aberto"); if (g !== null && largo()) aberto = g === "1"; } catch (e) { /* sem armazenamento */ }
+  const aplicar = () => {
+    document.body.classList.toggle("menu-aberto", aberto);
+    document.getElementById("alterna-menu").setAttribute("aria-expanded", String(aberto));
+  };
+  document.getElementById("alterna-menu").addEventListener("click", () => {
+    aberto = !aberto; aplicar();
+    if (largo()) { try { localStorage.setItem("menu-aberto", aberto ? "1" : "0"); } catch (e) { /* sem armazenamento */ } }
+    setTimeout(() => window.dispatchEvent(new Event("resize")), 200);  // gráficos se ajustam à nova largura
+  });
+  document.getElementById("menu").addEventListener("click", (ev) => { if (ev.target.closest("a") && !largo()) { aberto = false; aplicar(); } });
+  document.addEventListener("click", (ev) => {
+    if (!largo() && aberto && !ev.target.closest("#menu") && !ev.target.closest("#alterna-menu")) { aberto = false; aplicar(); }
+  });
+  aplicar();
 }
 
 async function rotear() {
@@ -449,13 +491,14 @@ async function rotear() {
   fecharModal();
   const partes = location.hash.replace(/^#\/?/, "").split("/");
   if (partes[0] === "status") { desenharNav(null, null); return executar(paginaStatus); }
+  if (!partes[0]) { location.replace("#/cons"); return; }  // o site abre em Agenda e notícias
   if (!["on", "off", "cons"].includes(partes[0])) {
     partes[0] = ROTAS_ANTIGAS[partes[0]] || partes[0];
     location.replace(`#/on/${partes.join("/")}`.replace(/\/+$/, ""));
     return;
   }
   const [lado, secao = "", parametro] = partes;
-  desenharNav(lado, secao === "empresa" || secao === "banco" ? "empresas" : secao);
+  desenharNav(lado, secao, parametro);
   await executar(ROTAS[lado][secao] || ROTAS[lado][""], parametro ? decodeURIComponent(parametro) : undefined);
 }
 
@@ -471,6 +514,7 @@ async function executar(pagina, parametro) {
   }
 }
 window.addEventListener("hashchange", rotear);
+iniciarMenu();
 // Painéis redesenhados depois (troca de aba, de visão etc.) também ganham os botões
 new MutationObserver(() => { decorarPaineis(); ajustarGrades(); }).observe(app, { childList: true, subtree: true });
 
@@ -498,7 +542,7 @@ async function paginaInicio() {
   app.innerHTML = `
     <div class="cabecalho"><div><h1>Brasil · painel</h1><div class="sub">Agenda, indicadores e notícias do Brasil</div></div></div>
     <div class="painel secao-topo"><h2>Agenda — próximos 14 dias</h2>${tabelaAgenda(agenda, 14)}
-      <div class="nota"><a href="#/on/noticias">Ver agenda completa</a></div></div>
+      <div class="nota"><a href="#/cons">Ver agenda completa</a></div></div>
     <div class="grade-cartoes">
       ${cartao("Selic meta", pctPronto(selic.valor), dataBR(selic.data))}
       ${cartao("IPCA 12 meses", pctPronto(ipca.valor), ipca.data ? ipca.data.slice(0, 7) : "")}
@@ -512,7 +556,7 @@ async function paginaInicio() {
       <div class="painel" data-info="selic"><h2>Selic meta e IPCA 12m</h2><div class="grafico" id="g-juros"></div></div>
     </div>
     <div class="painel secao"><h2>Notícias de mercado</h2>${listaNoticias(mercado, 40)}
-      <div class="nota">Manchetes de Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney, com link para o jornal. <a href="#/on/noticias">Ver todas</a></div></div>`;
+      <div class="nota">Manchetes de Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney, com link para o jornal. <a href="#/cons">Ver todas</a></div></div>`;
 
   if (di && di.curvas.hoje) {
     const serieCurva = (c) => c.pre.filter((p) => p.anos <= 10).map((p) => [p.anos, p.taxa]);
@@ -539,7 +583,8 @@ async function paginaInicio() {
 
 /* ============ Empresas (lista) ============ */
 // Abas: informações (calendário, divulgações, proventos), notícias e fatos relevantes, tabela das empresas e instituições financeiras
-const ABAS_EMPRESAS = [["noticias", "Informações"], ["fatos", "Notícias e fatos relevantes"], ["tabela", "Empresas não financeiras"], ["financeiras", "Instituições financeiras"]];
+// Empresas > Brasil: os mesmos itens do menu lateral (Notícias e Fatos relevantes eram uma aba só)
+const ABAS_EMPRESAS = [["noticias", "Informações"], ["manchetes", "Notícias"], ["fatos", "Fatos relevantes"], ["tabela", "Empresas"], ["financeiras", "Bancos"]];
 
 async function paginaEmpresas(aba) {
   if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "noticias";
@@ -562,8 +607,16 @@ async function paginaEmpresas(aba) {
   const abas = `<div class="abas">${ABAS_EMPRESAS.map(([k, n]) => `<a href="#/on/empresas/${k}" class="${k === aba ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
   const cab = `<div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas da lista · clique numa empresa para abrir a página dela</div></div></div>`;
   if (aba === "financeiras") return abaFinanceiras(cab, abas);
+  if (aba === "manchetes") {
+    app.innerHTML = `${cab}${abas}
+    <div class="grade grade-empilhada">
+      <div class="painel"><h2>Notícias das empresas</h2>${listaNoticias(citadas, 400)}
+        <div class="nota">Manchetes de jornais e fontes oficiais que citam o ticker ou o nome de pregão de uma empresa da lista (etiqueta = empresa),
+          da mais recente para a mais antiga, guardadas por até ${(noticias && noticias.dias) || 7} dias. Mesmas fontes da seção Agenda e notícias.</div></div>
+    </div>`;
+    return;
+  }
   if (aba === "fatos") {
-    // fatos relevantes na 1ª linha e notícias na 2ª, cada um na largura toda
     app.innerHTML = `${cab}${abas}
     <div class="grade grade-empilhada">
       <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
@@ -573,9 +626,6 @@ async function paginaEmpresas(aba) {
           <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")
           : `<tr><td colspan="3" class="sub">Sem fatos relevantes recentes.</td></tr>`}
       </table></div><div class="nota">Fonte: CVM (documentos IPE), com link para o documento oficial.</div></div>
-      <div class="painel"><h2>Notícias das empresas</h2>${listaNoticias(citadas, 400)}
-        <div class="nota">Manchetes de jornais e fontes oficiais que citam o ticker ou o nome de pregão de uma empresa da lista (etiqueta = empresa),
-          da mais recente para a mais antiga, guardadas por até ${(noticias && noticias.dias) || 7} dias. Mesmas fontes da seção Notícias e agenda.</div></div>
     </div>`;
     return;
   }
@@ -1907,7 +1957,7 @@ async function paginaNoticias(lado = "on") {
   const ORIGENS = [["tudo", "Tudo"], ["Brasil", "Brasil"], ["Mundo", "Mundo"]];
   const EDITORIAS = [["todas", "Todas"], ["politica", "Política"], ["economia", "Economia e finanças"], ["empresas", "Empresas"]];
   const comEditoria = lado !== "off";
-  const titulo = { on: "Notícias e agenda", off: "Mundo · Notícias e agenda", cons: "Consolidado · Notícias e agenda" }[lado];
+  const titulo = { on: "Agenda e notícias", off: "Agenda e notícias", cons: "Agenda e notícias" }[lado];
   const jornais = { on: "Valor Econômico, Folha, Estadão, Brazil Journal e InfoMoney", off: "WSJ, Financial Times, CNBC, MarketWatch, The Guardian e BBC",
     cons: "jornais do Brasil e do exterior" }[lado];
   const oficiais = { on: "Banco Central, IBGE, CVM e Agência Brasil", off: "Federal Reserve e BCE", cons: "Banco Central, IBGE, CVM, Agência Brasil, Fed e BCE" }[lado];
@@ -1935,7 +1985,7 @@ async function paginaNoticias(lado = "on") {
           Horários convertidos para Brasília.</div></div>`;
   app.innerHTML = `
     <div class="cabecalho"><div><h1>${titulo}</h1><div class="sub">Notícias de mercado (${jornais}) e oficiais (${oficiais}) · só a manchete, com link para a fonte</div></div></div>
-    ${lado === "on" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
+    ${lado !== "off" ? abasNoticiasOn("", await eleicoesAtivas()) : ""}
     <div class="grade grade-empilhada">${painelAgenda}${painelNoticias}</div>`;
   const passa = (n) => {
     if (lado === "cons" && origem !== "tudo" && n.origem !== origem) return false;
@@ -2153,8 +2203,7 @@ function desenharPaisOff(pais, off, cab, abas, mundo = null) {
 let IND_GLOBAL = "NGDP_RPCH";
 function desenharGlobal(mundo, cab, abas) {
   const G = mundo.global || {};
-  // o PIB em US$ (NGDPD) e o per capita (NGDPDPC) são usados só no Consolidado
-  const inds = Object.fromEntries(Object.entries(G.indicadores || {}).filter(([k]) => !["NGDPD", "NGDPDPC"].includes(k))), paises = G.paises || {};
+  const inds = G.indicadores || {}, paises = G.paises || {};
   if (!inds[IND_GLOBAL]) IND_GLOBAL = Object.keys(inds)[0];
   const ind = inds[IND_GLOBAL];
   const ano = G.ano_corrente || new Date().getFullYear();
@@ -2166,7 +2215,7 @@ function desenharGlobal(mundo, cab, abas) {
   const anos = [...new Set(Object.values(ind.valores).flatMap((v) => Object.keys(v)))].sort();
   const regioes = ["WEOWORLD", "ADVEC", "OEMDC"];
   const linhaTab = (c, classe = "") => `<tr class="${classe}"><td style="text-align:left">${esc(paises[c])}</td>
-    ${anosTab.map((a) => { const v = ind.valores[c][String(a)]; return `<td class="${a >= ano ? "sub" : ""}">${v == null ? "—" : num(v, 1)}</td>`; }).join("")}</tr>`;
+    ${anosTab.map((a) => { const v = ind.valores[c][String(a)]; return `<td class="${a >= ano ? "sub" : ""}">${v == null ? "—" : num(v, ["NGDPD", "NGDPDPC"].includes(IND_GLOBAL) ? 0 : 1)}</td>`; }).join("")}</tr>`;
   const blocoTab = (titulo, codigos) => { const cs = codigos.filter((c) => paises[c] && ind.valores[c]); return cs.length
     ? `<tr><th colspan="${anosTab.length + 1}" style="text-align:left;color:var(--ambar)">${titulo}</th></tr>${cs.map((c) => linhaTab(c)).join("")}` : ""; };
   const botoes = `<div class="seletor" id="grupos-global">${Object.entries(NOMES_GRUPO).map(([k, n]) =>
@@ -2182,15 +2231,18 @@ function desenharGlobal(mundo, cab, abas) {
         ${blocoTab("Desenvolvidos", GRUPOS_FMI.desenvolvidos)}${blocoTab("Em desenvolvimento", GRUPOS_FMI.emergentes)}
       </table></div><div class="nota">Fonte: FMI, World Economic Outlook (DataMapper). Zona do Euro, Mundo e grupos de países são agregados do próprio FMI.</div></div>
     </div>`;
+  // PIB em US$ (bilhões) e PIB per capita (US$): eixo e caixa de valores em dólares; os demais indicadores são %
+  const emDolar = ["NGDPD", "NGDPDPC"].includes(IND_GLOBAL), escala = IND_GLOBAL === "NGDPD" ? 1e9 : 1;
+  MOEDA = emDolar ? "US$" : "R$";
   const desenharLinhas = () => {
     const el = document.getElementById("gg-linhas"); const antigo = echarts.getInstanceByDom(el);
     if (antigo) { graficos.splice(graficos.indexOf(antigo), 1); antigo.dispose(); }
     const series = ["desenvolvidos", "emergentes"].flatMap((gr) => GRUPOS_FMI[gr].map((c) => [gr, c])).filter(([, c]) => ind.valores[c])
-      .map(([gr, c], j) => [gr, { nome: paises[c], valores: anos.map((a) => ind.valores[c][a] ?? null), tipo: "line",
+      .map(([gr, c], j) => [gr, { nome: paises[c], valores: anos.map((a) => (ind.valores[c][a] == null ? null : ind.valores[c][a] * escala)), tipo: "line",
         cor: PALETA_GRAF[j % PALETA_GRAF.length], tracejado: gr === "emergentes" }])
       .filter(([gr]) => GRUPOS_ATIVOS[gr]).map(([, s]) => s);
-    if (ind.valores.WEOWORLD && GRUPOS_ATIVOS.mundo) series.push({ nome: paises.WEOWORLD, valores: anos.map((a) => ind.valores.WEOWORLD[a] ?? null), tipo: "line", cor: COR.texto });
-    grafico(el, { rotulos: anos, eixoEsq: "pctPronto", janela: 40, series });
+    if (ind.valores.WEOWORLD && GRUPOS_ATIVOS.mundo) series.push({ nome: paises.WEOWORLD, valores: anos.map((a) => (ind.valores.WEOWORLD[a] == null ? null : ind.valores.WEOWORLD[a] * escala)), tipo: "line", cor: COR.texto });
+    grafico(el, { rotulos: anos, eixoEsq: emDolar ? "reais" : "pctPronto", janela: 40, series });
     document.querySelectorAll("#grupos-global button").forEach((b) => b.classList.toggle("ativo", !!GRUPOS_ATIVOS[b.dataset.k]));
   };
   desenharLinhas();
@@ -2304,7 +2356,8 @@ const ABAS_EMPRESAS_MUNDO = [["sp500", "S&P 500"], ["empresas", "Empresas"]];
 let ABA_EMPRESAS_MUNDO = "sp500";
 const PERIODO_SP = {};  // botão Anual / Trimestral de cada gráfico do S&P 500
 
-async function paginaEmpresasMundo() {
+async function paginaEmpresasMundo(aba) {
+  if (ABAS_EMPRESAS_MUNDO.some(([k]) => k === aba)) ABA_EMPRESAS_MUNDO = aba;
   MOEDA = "US$";
   const [idx, sp] = await Promise.all([dados("dados/mundo_empresas.json").catch(() => null), dados("dados/sp500.json").catch(() => null)]);
   if (!idx || !idx.empresas || !idx.empresas.length) {
@@ -2315,7 +2368,7 @@ async function paginaEmpresasMundo() {
     `<button data-k="${k}" class="${k === ABA_EMPRESAS_MUNDO ? "ativo" : ""}">${n}</button>`).join("")}</div>`;
   const ligarAbas = () => document.getElementById("sub-sp").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
-    ABA_EMPRESAS_MUNDO = b.dataset.k; limparGraficos(); paginaEmpresasMundo();
+    location.hash = `#/off/empresas/${b.dataset.k}`;
   });
   if (ABA_EMPRESAS_MUNDO === "sp500") { desenharSP500(sp, idx, abas); ligarAbas(); return; }
 
@@ -2821,68 +2874,6 @@ function juroReal(taxa, inflacao12m) {
   const fimDoMes = inflacao12m.datas.map((d) => { const x = new Date(`${d}T12:00:00`); x.setMonth(x.getMonth() + 1, 0); return x.toISOString().slice(0, 10); });
   const t = vigente(taxa, fimDoMes);
   return inflacao12m.datas.map((d, i) => [d, t[i] == null ? null : ((1 + t[i] / 100) / (1 + inflacao12m.valores[i] / 100) - 1) * 100]).filter((p) => p[1] != null);
-}
-
-let PIB_CONS = "total";  // botão Total | Per capita do PIB no Consolidado
-async function paginaConsolidado() {
-  const [macro, off, mundo] = await Promise.all([dados("dados/macro.json"), dados("dados/offshore.json").catch(() => null), dados("dados/mundo.json").catch(() => null)]);
-  const S = macro.series, F = (off && off.fed) || {}, B = (off && off.bls) || {}, E = (off && off.bce) || {}, Z = (off && off.eurostat) || {};
-  const CH = (mundo && mundo.china) || {}, BC = ((off && off.juros_mundo) || {}).bancos_centrais || {};
-  const G = (mundo && mundo.global) || {}, PIB = ((G.indicadores || {}).NGDPD) || null, PIB_PC = ((G.indicadores || {}).NGDPDPC) || null, paises = G.paises || {};
-  const u = (s) => ultimo(s);
-  const mes = (s) => (u(s).data ? `${MESES[Number(u(s).data.slice(5, 7)) - 1]}/${u(s).data.slice(2, 4)}` : "");
-  const linha = (pais, nome, valores, extra = {}) => ({ nome, valores, tipo: "line", cor: PAISES[pais] ? PAISES[pais][1] : COR.vermelho, ...extra });
-  const tempo = (anos = 10) => ({ xTempo: true, inicioTempo: desde(anos), deslizante: true, eixoEsq: "pctPronto" });
-  const china = (s, nome) => (s && s.datas ? [linha("china", nome, Pares(s), { cor: COR.vermelho, tracejado: true })] : []);
-  app.innerHTML = `<div class="cabecalho"><div><h1>Consolidado · Gráficos</h1>
-      <div class="sub">Brasil e o mundo nos mesmos gráficos · mesmas fontes oficiais das seções Brasil e Mundo</div></div></div>
-    <div class="grade-cartoes">
-      ${cartao("Selic meta", pctPronto(u(S.selic_meta).valor), dataBR(u(S.selic_meta).data))}
-      ${cartao("Fed Funds (teto)", pctPronto(u(F.meta_max).valor), dataBR(u(F.meta_max).data))}
-      ${cartao("BCE (depósito)", pctPronto(u(E.deposito).valor), dataBR(u(E.deposito).data))}
-      ${cartao("IPCA 12m", pctPronto(u(S.ipca_12m).valor, 1), mes(S.ipca_12m))}
-      ${cartao("CPI EUA 12m", pctPronto(u(B.cpi_12m).valor, 1), mes(B.cpi_12m))}
-      ${cartao("HICP 12m", pctPronto(u(Z.hicp_12m).valor, 1), mes(Z.hicp_12m))}
-    </div>
-    <div class="grade">
-      ${PIB ? `<div class="painel largo" data-info="pib_nominal_mundo"><div class="cabecalho" style="margin-bottom:6px">
-        <h2 style="margin:0">PIB nominal em US$ (FMI)</h2>${PIB_PC ? `<div class="seletor" id="pib-modo">${[["total", "Total"], ["pc", "Per capita"]].map(([k, n]) =>
-          `<button data-k="${k}" class="${PIB_CONS === k ? "ativo" : ""}">${n}</button>`).join("")}</div>` : ""}</div>
-        <div class="grafico alto" id="gc-pib"></div>
-        <div class="nota">Anual, em dólares correntes; a partir de ${G.ano_corrente || new Date().getFullYear()} (inclusive), projeções do FMI.</div></div>` : ""}
-      ${painelG("gc-inf", "Inflação em 12 meses", "inflacao_mundo", "", "largo")}
-      ${painelG("gc-juros", "Juros básicos dos bancos centrais", "juros_bancos_centrais", "", "largo")}
-      ${painelG("gc-des", "Desemprego", "desemprego_mundo", "", "largo")}
-    </div>`;
-  // botão Total | Per capita: mesmos países; o total vem em US$ bilhões, o per capita em US$ por habitante
-  const desenharPib = () => {
-    const ind = PIB_CONS === "pc" && PIB_PC ? PIB_PC : PIB, escala = ind === PIB ? 1e9 : 1;
-    const CODIGOS = ["USA", "CHN", "EURO", "JPN", "DEU", "IND", "GBR", "FRA", "BRA", "ITA", "CAN", "MEX", "KOR"].filter((c) => ind.valores[c]);
-    const anos = [...new Set(CODIGOS.flatMap((c) => Object.keys(ind.valores[c])))].sort();
-    MOEDA = "US$";  // eixo e caixa de valores em dólares (a navegação seguinte volta para R$)
-    grafico(document.getElementById("gc-pib"), { rotulos: anos, eixoEsq: "reais", janela: 40, series: CODIGOS.map((c, j) => ({
-      nome: paises[c], valores: anos.map((a) => (ind.valores[c][a] != null ? ind.valores[c][a] * escala : null)), tipo: "line",
-      cor: c === "BRA" ? PAISES.br[1] : PALETA_GRAF[j % PALETA_GRAF.length] })) });
-  };
-  if (PIB) {
-    desenharPib();
-    const sel = document.getElementById("pib-modo");
-    if (sel) sel.addEventListener("click", (ev) => {
-      const b = ev.target.closest("button"); if (!b) return;
-      PIB_CONS = b.dataset.k;
-      sel.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
-      desenharPib();
-    });
-  }
-  grafico(document.getElementById("gc-inf"), { ...tempo(), series: [
-    linha("br", "IPCA (Brasil)", Pares(S.ipca_12m)), linha("eua", "CPI (EUA)", Pares(B.cpi_12m)), linha("euro", "HICP (Zona do Euro)", Pares(Z.hicp_12m)),
-    ...china(CH.cpi_12m, "CPI (China, OCDE)")] });
-  // Turquia fica de fora: o juro dela (dezenas de %) achataria as outras linhas
-  grafico(document.getElementById("gc-juros"), { ...tempo(), degrau: true, series: Object.entries(BC).filter(([k]) => k !== "TR")
-    .map(([k, s], j) => ({ nome: s.nome, valores: ateHoje(s), tipo: "line", cor: k === "BR" ? PAISES.br[1] : PALETA_GRAF[j % PALETA_GRAF.length] })) });
-  grafico(document.getElementById("gc-des"), { ...tempo(), series: [
-    linha("br", "Brasil (PNAD Contínua)", Pares(S.desemprego)), linha("eua", "EUA", Pares(B.desemprego)), linha("euro", "Zona do Euro", Pares(Z.desemprego)),
-    ...china(CH.desemprego, "China (urbano; série descontinuada)")] });
 }
 
 /* ============ Eleições 2026 (Onshore · Notícias e agenda) ============ */
