@@ -1,0 +1,183 @@
+diff --git a/site/assets/app.js b/site/assets/app.js
+index 1378c32..0122fae 100644
+--- a/site/assets/app.js
++++ b/site/assets/app.js
+@@ -427,6 +427,7 @@ const ROTAS = {
+ // Agenda e notícias: uma página só, com Brasil e Mundo juntos (endereços antigos de cada lado e dos Gráficos levam a ela)
+ ROTAS.cons = { "": () => paginaNoticias("cons"), noticias: () => paginaNoticias("cons") };
+ ROTAS.on[""] = ROTAS.off[""] = ROTAS.off.noticias = () => paginaNoticias("cons");
++ROTAS.on.fii = (p) => paginaFii(p || "HGLG11");
+ ROTAS.on.noticias = (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("cons"));
+ ROTAS.off.empresas = (p) => paginaEmpresasMundo(p);
+ ROTAS.off.empresa = (p) => paginaEmpresaMundo(p);
+@@ -444,6 +445,7 @@ const MENU = [
+       ["Fatos relevantes", "#/on/empresas/fatos", "on|empresas|fatos"], ["Empresas", "#/on/empresas/tabela", "on|empresas|tabela"],
+       ["Bancos", "#/on/empresas/financeiras", "on|empresas|financeiras"], ["Operacional", "#/on/empresas/operacional", "on|empresas|operacional"]]],
+     ["Mundo", [["S&P 500", "#/off/empresas/sp500", "off|empresas|sp500"], ["Empresas", "#/off/empresas/empresas", "off|empresas|empresas"]]]] },
++  { titulo: "Fundos imobiliários", grupos: [[null, [["HGLG11 (exemplo)", "#/on/fii/HGLG11", "on|fii"]]]] },
+   { titulo: "Downloads", grupos: [[null, [["Brasil", "#/on/downloads", "on|downloads"], ["Mundo", "#/off/downloads", "off|downloads"]]]] },
+ ];
+ 
+@@ -830,6 +832,162 @@ function rotuloMes(iso) {
+   return `${MESES[Number(iso.slice(5, 7)) - 1]}/${iso.slice(2, 4)}`;
+ }
+ 
++/* ============ Fundos imobiliários (FII de tijolo) ============ */
++const ABAS_FII = [["informacoes", "Informações"], ["documentos", "Documentos"], ["indicadores", "Indicadores"], ["carteira", "Carteira"]];
++let ABA_FII = "informacoes";
++const FILTROS_DOC_FII = [["todos", "Todos", null], ["fatos", "Fatos relevantes", /fato relevante/i], ["relatorios", "Relatórios gerenciais", /relat[óo]rio/i],
++  ["rendimentos", "Rendimentos", /rendimento|amortiza/i], ["comunicados", "Comunicados", /comunicado|aviso aos cotistas(?! - estruturado)/i],
++  ["informes", "Informes", /informe/i], ["ofertas", "Ofertas e emissões", /oferta|emiss[ãa]o|subscri/i], ["assembleias", "Assembleias", /assembl|convoca|ata/i]];
++
++async function paginaFii(id) {
++  const f = await dados(`dados/fiis/${id}.json`);
++  const C = f.cadastro, M = f.mensal, n = M.datas.length - 1;
++  const cot = f.cotacao, preco = cot.fechamento[cot.fechamento.length - 1], dataPreco = cot.datas[cot.datas.length - 1];
++  const vp = M.vp_cota[n];
++  const limite = new Date(dataPreco); limite.setFullYear(limite.getFullYear() - 1);
++  const r12 = f.rendimentos.filter(([d]) => new Date(d) > limite).reduce((s, [, v]) => s + v, 0);
++  const ultRend = f.rendimentos[f.rendimentos.length - 1];
++  const tri = f.trimestral[f.trimestral.length - 1];
++  const mi = (x) => num(x / 1e6, 0);
++  const mesBR = (iso) => `${MESES[Number(iso.slice(5, 7)) - 1]}/${iso.slice(2, 4)}`;
++  const linhaTab = (cab, linhas) => `<table class="tabela"><tr>${cab.map(([c, esq]) => `<th${esq ? ' style="text-align:left"' : ""}>${c}</th>`).join("")}</tr>${linhas.join("")}</table>`;
++
++  app.innerHTML = `
++    <div class="cabecalho"><div><h1>${esc(C.ticker)} · ${esc(C.nome)}</h1>
++      <div class="sub">FII de tijolo · ${esc(C.segmento)} · CNPJ ${esc(C.cnpj)}</div></div></div>
++    <div class="grade-cartoes">
++      ${cartao("Cotação", `R$ ${num(preco, 2)}`, `${dataBR(dataPreco)} · Yahoo (não oficial)`)}
++      ${cartao("P/VP", vezes(preco / vp), `valor patrimonial da cota R$ ${num(vp, 2)}`)}
++      ${cartao("Dividend yield 12m", pct(r12 / preco), `R$ ${num(r12, 2)} por cota em 12 meses`)}
++      ${cartao("Último rendimento", `R$ ${num(ultRend[1], 2)}`, `data-com ${dataBR(ultRend[0])}`)}
++      ${cartao("Patrimônio líquido", reais(M.pl[n]), mesBR(M.datas[n]))}
++      ${cartao("Vacância física", `${num(tri.vacancia_fisica, 1)}%`, dataBR(tri.data))}
++    </div>
++    <div class="abas" id="abas-fii">${ABAS_FII.map(([k, r]) => `<button data-k="${k}" class="${k === ABA_FII ? "ativo" : ""}">${r}</button>`).join("")}</div>
++    <div id="aba-fii"></div>`;
++  const area = () => document.getElementById("aba-fii");
++
++  const ABAS = {
++    informacoes: () => {
++      const comp = f.composicao, totalAtivo = comp.itens.reduce((s, [, v]) => s + v, 0);
++      const cad = [["Nome", C.nome], ["Ticker", C.ticker], ["CNPJ", C.cnpj], ["ISIN", C.isin], ["Administrador", C.administrador], ["Segmento", C.segmento],
++        ["Mandato", C.mandato], ["Gestão", C.gestao], ["Público-alvo", C.publico], ["Início das atividades", dataBR(C.inicio)],
++        ["Cotas emitidas", num(M.cotas[n], 0)], ["Cotistas", num(M.cotistas[n], 0)], ["Taxa de administração no mês", `${num(M.taxa_adm[n], 3)}% do patrimônio`]];
++      area().innerHTML = `<div class="grade">
++        <div class="painel" data-info="fii_exemplo"><h2>Dados do fundo</h2><div class="rolagem">${linhaTab([["", true], ["", true]],
++          cad.map(([k, v]) => `<tr><td style="text-align:left;white-space:normal" class="sub">${k}</td><td style="text-align:left;white-space:normal">${esc(String(v ?? "—"))}</td></tr>`))}</div>
++          ${C.site && C.site !== "—" ? `<div class="nota">Site: <a href="${esc(C.site.startsWith("http") ? C.site : `https://${C.site}`)}" target="_blank" rel="noopener">${esc(C.site)}</a></div>` : ""}</div>
++        <div class="painel" data-info="fii_exemplo"><h2>Composição do ativo · ${mesBR(comp.data)}</h2><div class="rolagem">${linhaTab([["Ativo", true], ["R$ milhões"], ["% do ativo"]], [
++          ...comp.itens.filter(([, v]) => v).map(([k, v]) => `<tr><td style="text-align:left;white-space:normal">${esc(k)}</td><td>${mi(v)}</td><td>${pct(v / totalAtivo)}</td></tr>`),
++          `<tr class="subtotal"><td style="text-align:left">Passivo total</td><td>${mi(comp.total_passivo)}</td><td>${pct(comp.total_passivo / totalAtivo)}</td></tr>`,
++          ...comp.passivo.filter(([, v]) => v).map(([k, v]) => `<tr><td style="text-align:left;padding-left:20px;white-space:normal">${esc(k)}</td><td>${mi(v)}</td><td>${pct(v / totalAtivo)}</td></tr>`)])}</div></div>
++        ${painelG("fii-cot", "Cotação × valor patrimonial da cota (R$)", "fii_exemplo")}
++        ${painelG("fii-pl", "Patrimônio líquido (R$) e número de cotistas", "fii_exemplo")}
++      </div>`;
++      grafico(document.getElementById("fii-cot"), { xTempo: true, inicioTempo: desde(4), deslizante: true, eixoEsq: "preco", series: [
++        { nome: "Cotação", valores: cot.datas.map((d, i) => [d, cot.fechamento[i]]), tipo: "line", cor: COR.azul },
++        { nome: "Valor patrimonial da cota", valores: M.datas.map((d, i) => [d, M.vp_cota[i]]), tipo: "line", cor: COR.ambar }] });
++      grafico(document.getElementById("fii-pl"), { xTempo: true, deslizante: true, eixoEsq: "reais", eixoDir: "inteiro", limitesEsq: [0, null], series: [
++        { nome: "Patrimônio líquido", valores: M.datas.map((d, i) => [d, M.pl[i]]), tipo: "bar", cor: COR.azul },
++        { nome: "Cotistas", valores: M.datas.map((d, i) => [d, M.cotistas[i]]), tipo: "line", eixo: "dir", cor: COR.ambar }] });
++    },
++    documentos: () => {
++      let filtro = "todos";
++      const desenhar = () => {
++        const re = (FILTROS_DOC_FII.find(([k]) => k === filtro) || [])[2];
++        const docs = f.documentos.filter((d) => !re || re.test(`${d.categoria} ${d.tipo}`));
++        document.getElementById("lista-docs-fii").innerHTML = linhaTab([["Entrega"], ["Categoria", true], ["Tipo", true], ["Referência"]],
++          docs.map((d) => `<tr><td>${esc(d.data.slice(0, 10))}</td><td style="text-align:left">${/fato relevante/i.test(d.categoria) ? "<b>" : ""}<a href="${esc(d.link)}" target="_blank" rel="noopener">${esc(d.categoria)}</a>${/fato relevante/i.test(d.categoria) ? "</b>" : ""}</td>
++            <td style="text-align:left;white-space:normal" class="sub">${esc(d.tipo || d.assunto || "")}</td><td class="sub">${esc(d.referencia || "")}</td></tr>`));
++      };
++      area().innerHTML = `<div class="painel"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Documentos e fatos relevantes</h2>
++          <div class="seletor seletor-editoria" id="filtro-docs-fii">${FILTROS_DOC_FII.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
++        <div class="rolagem rolagem-y" id="lista-docs-fii"></div>
++        <div class="nota">Documentos entregues pela administradora no Fundos.NET (B3/CVM), do mais recente para o mais antigo, com link para o documento oficial.</div></div>`;
++      document.getElementById("filtro-docs-fii").addEventListener("click", (ev) => {
++        const b = ev.target.closest("button"); if (!b) return;
++        filtro = b.dataset.k; document.querySelectorAll("#filtro-docs-fii button").forEach((x) => x.classList.toggle("ativo", x === b)); desenhar();
++      });
++      desenhar();
++    },
++    indicadores: () => {
++      const pvp = cot.datas.map((d, i) => {
++        let k = -1; for (let j = 0; j < M.datas.length; j++) if (M.datas[j] <= d) k = j;
++        return [d, k >= 0 ? cot.fechamento[i] / M.vp_cota[k] : null];
++      }).filter(([, v]) => v != null);
++      const porMes = {}; f.rendimentos.forEach(([d, v]) => (porMes[d.slice(0, 7)] = (porMes[d.slice(0, 7)] || 0) + v));
++      const meses = Object.keys(porMes).sort();
++      const precoNoMes = (m) => { let p = null; cot.datas.forEach((d, i) => { if (d.slice(0, 7) <= m) p = cot.fechamento[i]; }); return p; };
++      const umAno = (m) => `${Number(m.slice(0, 4)) - 1}${m.slice(4)}`;
++      const dy12 = meses.filter((m) => umAno(m) >= meses[0]).map((m) => {
++        const jan = meses.filter((x) => x <= m && x > umAno(m));
++        return [`${m}-01`, precoNoMes(m) ? (jan.reduce((s, x) => s + porMes[x], 0) / precoNoMes(m)) * 100 : null];
++      }).filter(([, v]) => v != null);
++      area().innerHTML = `<div class="grade-cartoes">
++          ${cartao("Dividend yield 12m", pct(r12 / preco), "rendimentos 12 meses ÷ cotação")}
++          ${cartao("Dividend yield do mês", `${num(M.dy_mes[n], 2)}%`, `sobre o valor patrimonial · ${mesBR(M.datas[n])} (CVM)`)}
++          ${cartao("P/VP", vezes(preco / vp), "")}
++          ${cartao("Rentabilidade efetiva do mês", `${num(M.rent_efetiva[n], 2)}%`, `${mesBR(M.datas[n])} (CVM)`)}
++          ${cartao("Vacância física", `${num(tri.vacancia_fisica, 1)}%`, dataBR(tri.data))}
++          ${cartao("Inadimplência", `${num(tri.inadimplencia, 1)}%`, dataBR(tri.data))}
++        </div>
++        <div class="grade">
++          ${painelG("fii-rend", "Rendimentos por cota (R$) e dividend yield de 12 meses (%)", "fii_exemplo")}
++          ${painelG("fii-pvp", "P/VP (preço ÷ valor patrimonial da cota)", "fii_exemplo")}
++          ${painelG("fii-vac", "Vacância física e inadimplência (%, trimestral)", "fii_exemplo")}
++          ${painelG("fii-rent", "Rentabilidade mensal informada à CVM (%)", "fii_exemplo")}
++        </div>`;
++      grafico(document.getElementById("fii-rend"), { xTempo: true, inicioTempo: desde(4), deslizante: true, eixoEsq: "preco", eixoDir: "pctPronto", series: [
++        { nome: "Rendimento por cota (R$)", valores: meses.map((m) => [`${m}-01`, porMes[m]]), tipo: "bar", cor: COR.verde },
++        { nome: "DY 12 meses (%)", valores: dy12, tipo: "line", eixo: "dir", cor: COR.ambar }] });
++      grafico(document.getElementById("fii-pvp"), { xTempo: true, inicioTempo: desde(4), deslizante: true, eixoEsq: "vezes", series: [
++        { nome: "P/VP", valores: pvp, tipo: "line", cor: COR.azul }, { nome: "1,0x", valores: pvp.map(([d]) => [d, 1]), tipo: "line", tracejado: true, cor: COR.cinza }] });
++      grafico(document.getElementById("fii-vac"), { xTempo: true, eixoEsq: "pctPronto", series: [
++        { nome: "Vacância física", valores: f.trimestral.map((x) => [x.data, x.vacancia_fisica]), tipo: "line", cor: COR.vermelho },
++        { nome: "Inadimplência", valores: f.trimestral.map((x) => [x.data, x.inadimplencia]), tipo: "line", cor: COR.ambar }] });
++      grafico(document.getElementById("fii-rent"), { xTempo: true, deslizante: true, eixoEsq: "pctPronto", series: [
++        { nome: "Dividend yield do mês (sobre o VP)", valores: M.datas.map((d, i) => [d, M.dy_mes[i]]), tipo: "bar", cor: COR.verde },
++        { nome: "Rentabilidade efetiva", valores: M.datas.map((d, i) => [d, M.rent_efetiva[i]]), tipo: "line", cor: COR.azul },
++        { nome: "Rentabilidade patrimonial", valores: M.datas.map((d, i) => [d, M.rent_patrimonial[i]]), tipo: "line", cor: COR.ambar }] });
++    },
++    carteira: () => {
++      const top5 = f.imoveis.slice(0, 5).reduce((s, i) => s + i.receita, 0);
++      area().innerHTML = `<div class="grade-cartoes">
++          ${cartao("Imóveis", num(tri.imoveis, 0), `prontos para renda · ${dataBR(tri.data)}`)}
++          ${cartao("Área total", `${num(tri.area, 0)} m²`, "")}
++          ${cartao("Vacância física", `${num(tri.vacancia_fisica, 1)}%`, "área vaga ÷ área total")}
++          ${cartao("5 maiores imóveis", `${num(top5, 1)}%`, "da receita do fundo")}
++        </div>
++        <div class="grade">
++          <div class="painel" data-info="fii_exemplo"><h2>Receita por setor dos locatários · ${dataBR(f.imoveis_data)}</h2><div class="rolagem">${linhaTab([["Setor", true], ["% da receita"]],
++            [...f.setores_inquilinos.slice(0, 15), ...(f.setores_inquilinos.length > 15 ? [["Outros", f.setores_inquilinos.slice(15).reduce((s, [, v]) => s + v, 0)]] : [])]
++              .map(([s, v]) => `<tr><td style="text-align:left">${esc(s)}</td><td>${num(v, 1)}%</td></tr>`))}</div></div>
++          ${painelG("fii-setores", "Receita por setor dos locatários (%)", "fii_exemplo")}
++          <div class="painel largo" data-info="fii_exemplo"><h2>Imóveis · ${dataBR(f.imoveis_data)}</h2><div class="rolagem">${linhaTab(
++            [["Imóvel", true], ["Endereço", true], ["Área (m²)"], ["Vacância"], ["Inadimplência"], ["% da receita"]],
++            f.imoveis.map((i) => `<tr><td style="text-align:left">${esc(i.nome)}</td><td style="text-align:left;white-space:normal" class="sub">${esc(i.endereco)}</td>
++              <td>${num(i.area, 0)}</td><td class="${i.vacancia > 0 ? "neg" : ""}">${num(i.vacancia, 1)}%</td><td>${num(i.inadimplencia, 1)}%</td><td>${num(i.receita, 2)}%</td></tr>`))}</div>
++            <div class="nota">Imóveis prontos para renda informados no último informe trimestral, do que mais pesa na receita para o que menos pesa.</div></div>
++        </div>`;
++      const s = f.setores_inquilinos.slice(0, 12);
++      grafico(document.getElementById("fii-setores"), { rotulos: s.map(([k]) => k), eixoEsq: "pctPronto", series: [
++        { nome: "% da receita", valores: s.map(([, v]) => v), tipo: "bar", cor: COR.azul }] });
++    },
++  };
++  const mostrar = (k) => {
++    limparGraficos();
++    ABA_FII = ABAS[k] ? k : "informacoes";
++    document.querySelectorAll("#abas-fii button").forEach((x) => x.classList.toggle("ativo", x.dataset.k === ABA_FII));
++    ABAS[ABA_FII]();
++  };
++  document.getElementById("abas-fii").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b) mostrar(b.dataset.k); });
++  mostrar(ABA_FII);
++  const nota = document.createElement("div");
++  nota.className = "nota secao";
++  nota.textContent = `Exemplo de protótipo. Fontes: ${f.fontes.cvm}; ${f.fontes.fnet}; ${f.fontes.mercado}. Números iguais aos informados pela administradora; P/VP e dividend yield são calculados.`;
++  app.appendChild(nota);
++}
++
+ /* ============ Empresa ============ */
+ let VISAO = "trimestral";
+ let FC_SEL = "todos";
