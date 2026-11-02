@@ -41,6 +41,7 @@ ROTAS = [
     *[(f"#/on/empresas/{a}", None) for a in ("noticias", "manchetes", "fatos", "tabela", "financeiras", "operacional")],
     ("#/on/empresa/VALE3", "#abas-empresa button"), ("#/on/empresa/WEGE3", "#abas-empresa button"),
     ("#/on/banco/c0080099", "#abas-banco button"), ("#/on/downloads", None),
+    ("#/on/fiis/visao", "#seg-fii button"), ("#/on/fiis/planilhao", None), ("#/on/fii/HGLG11", "#abas-fii button"), ("#/on/fii/XPML11", "#abas-fii button"),
     ("#/off/macro/global", "#ind-global button"), ("#/off/macro/eua", "#sub-pais button"), ("#/off/macro/euro", "#sub-pais button"),
     ("#/off/macro/china", "#sub-pais button"), ("#/off/macro/mercados", "#sub-mercados button"),
     ("#/off/juros", "#sub-juros-off button"), ("#/off/empresas/sp500", None), ("#/off/empresas/empresas", None), ("#/off/empresa/AAPL", "#abas-empresa-mundo button"), ("#/off/empresa/MSFT", "#abas-empresa-mundo button"),

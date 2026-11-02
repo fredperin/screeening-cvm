@@ -24,6 +24,7 @@ from urllib.parse import urlsplit
 
 RITMO = {  # segundos entre consultas ao mesmo servidor
     "api.bcb.gov.br": 0.1, "olinda.bcb.gov.br": 0.2, "dadosabertos.bcb.gov.br": 0.5, "www3.bcb.gov.br": 0.2,
+    "fnet.bmfbovespa.com.br": 1, "bvmf.bmfbovespa.com.br": 0.5,  # Fundos.NET e arquivos de cotações da B3
     "cotacao.b3.com.br": 0.2, "sistemaswebb3-listados.b3.com.br": 0.2, "www.b3.com.br": 0.5, "arquivos.b3.com.br": 0.5,
     "api-comexstat.mdic.gov.br": 5, "www.tesourotransparente.gov.br": 2, "www.tesourodireto.com.br": 1,
     "dados.cvm.gov.br": 0.2, "www.rad.cvm.gov.br": 0.3,

@@ -113,6 +113,9 @@ h2 { font-size: 13px; color: var(--ambar); margin: 0 0 8px; font-weight: 600; te
 
 .pos { color: var(--verde); }
 .neg { color: var(--vermelho); }
+/* Fundos imobiliários: acima / abaixo da média do segmento (sem juízo de melhor ou pior) */
+.tabela td.acima { color: var(--ambar); }
+.tabela td.abaixo { color: #39c5cf; }
 .atencao { color: var(--ambar); }
 
 table.tabela { width: 100%; border-collapse: collapse; font-size: 12px; }

@@ -2,6 +2,18 @@
 
 Decidido com o usuário em 2026-11-02. Implementar num chat novo, a partir deste documento e do protótipo em `docs/exemplos/`.
 
+> **Andamento (2026-11-02):** etapas 1, 2 e 3 implantadas em `pipeline/fiis.py` e no site (menu Fundos imobiliários: Visão geral e Planilhão;
+> página `#/on/fii/{ticker}`). Diferenças em relação ao plano original:
+> - **Cotação e liquidez oficiais**: arquivo diário COTAHIST da B3 (um arquivo por pregão, guardado só com os FIIs), no lugar da Yahoo. A Yahoo
+>   ficou só para a cotação semanal dos gráficos e para os rendimentos anteriores ao primeiro aviso lido.
+> - **Ticker de cada fundo**: pelo ISIN do informe mensal da CVM cruzado com o COTAHIST.
+> - **Critério de tijolo**: imóveis físicos (Direitos_Bens_Imoveis) ≥ 50% do ativo + imóvel pronto para renda no trimestral + negócio na B3 no último mês
+>   (125 fundos em 02/11/2026).
+> - **Verificação automática** por fundo (`checar_fundo`): vacância que parece taxa de ocupação, percentuais acima de 100%, receita dos imóveis somando
+>   mais de 100%, salto de patrimônio sem mudança de cotas. O número fica igual ao da fonte, com aviso na página.
+> - Gestora: a CVM só traz o administrador; o filtro do planilhão é por administrador.
+> - Etapa 4 (resumos dos relatórios gerenciais por IA) **adiada para o fim**, depois da publicação do site (pedido do usuário, 2026-11-02). Por ora a página fica só com os dados.
+
 ## Escopo
 
 - **Só FIIs de tijolo**: os que investem em imóveis físicos. Fundos de papel (CRI), fundos de fundos e outros ficam de fora.

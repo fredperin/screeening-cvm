@@ -363,6 +363,29 @@ def checar_operacional():
     return f"{sum(len(s['indicadores']) for s in setores.values())} indicadores em {len(setores)} setores, em dia"
 
 
+def checar_fiis():
+    """Fundos imobiliários de tijolo (pipeline.fiis): CVM (informes), B3 (COTAHIST) e Fundos.NET sem falhas e em dia."""
+    arq = DIR_DADOS_SITE / "fiis.json"
+    assert arq.exists(), "fiis.json não foi gerado"
+    d = json.loads(arq.read_text(encoding="utf-8"))
+    problemas = list(d.get("falhas") or [])[:5]
+    assert _dias(d["gerado_em"]) <= 2, f"FIIs parados desde {d['gerado_em']}"
+    fundos = d.get("fundos") or []
+    if len(fundos) < 80:
+        problemas.append(f"só {len(fundos)} fundos de tijolo (esperado mais de 80)")
+    mes = max((f["mes_ref"] or "") for f in fundos) if fundos else ""
+    if not mes or _dias(mes) > 80:  # informe mensal: até o dia 15 do mês seguinte
+        problemas.append(f"informe mensal mais recente é de {mes or '—'}")
+    if not d.get("pregoes") or _dias(d["pregoes"][1]) > 6:
+        problemas.append(f"cotação da B3 (COTAHIST) parada em {(d.get('pregoes') or [None, '—'])[1]}")
+    sem_dy = sum(1 for f in fundos if f.get("dy12") is None)
+    if fundos and sem_dy > len(fundos) * 0.2:
+        problemas.append(f"{sem_dy} fundos sem dividend yield")
+    assert not problemas, " | ".join(problemas)
+    oficiais = sum(1 for f in fundos if f.get("fonte_dy") == "Fundos.NET")
+    return f"{len(fundos)} fundos; informe de {mes[:7]}; cotação de {d['pregoes'][1]}; DY 100% Fundos.NET em {oficiais}"
+
+
 def checar_validacao_empresas():
     """Achados sérios NOVOS do validador (pipeline.validar) nos dados das empresas brasileiras: 4º tri negativo ou muito
     fora do padrão, salto de escala, caixa maior que o ativo. Os já examinados ficam em config/empresas_conferidas.json."""
@@ -496,6 +519,7 @@ CHECAGENS = {
     "Notícias (Banco Central, IBGE, CVM, Agência Brasil)": checar_noticias,
     "Dados das empresas (Brasil)": checar_validacao_empresas,
     "Empresas — dados operacionais (ONS, ANP, Fenabrave, ANAC, Comex Stat)": checar_operacional,
+    "Fundos imobiliários (CVM, B3, Fundos.NET)": checar_fiis,
 }
 
 

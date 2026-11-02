@@ -96,7 +96,7 @@ def semanal_pendente(arq):
 
 
 def main(tudo=False):
-    from pipeline import (agenda, bancos, calendario_resultados, credito, curva_di, eleicoes, empresas_mundo, eventos, ficha, fiscal, fre_textos, macro, mercado, mundo, noticias, operacional, setor_externo, sp500,
+    from pipeline import (agenda, bancos, calendario_resultados, credito, curva_di, eleicoes, empresas_mundo, eventos, ficha, fiis, fiscal, fre_textos, macro, mercado, mundo, noticias, operacional, setor_externo, sp500,
                           offshore, planilhas, resumos, tesouro)
     from pipeline.cvm_lote import atualizar_base_cvm
     from pipeline.gerar_empresas import DIR_EMPRESAS, gerar_indice
@@ -113,6 +113,7 @@ def main(tudo=False):
     _etapa("tesouro", tesouro.gerar, status)
     _etapa("curva_di", curva_di.gerar, status)
     _etapa("mercado", mercado.gerar, status)
+    _etapa("fiis", fiis.gerar, status)  # usa a curva do Tesouro (NTN-B) e o cache da Yahoo
     _etapa("noticias", noticias.gerar, status)
     _etapa("offshore", offshore.gerar, status)
     _etapa("mundo", mundo.gerar, status)

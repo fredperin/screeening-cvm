@@ -428,12 +428,15 @@ const ROTAS = {
 ROTAS.cons = { "": () => paginaNoticias("cons"), noticias: () => paginaNoticias("cons") };
 ROTAS.on[""] = ROTAS.off[""] = ROTAS.off.noticias = () => paginaNoticias("cons");
 ROTAS.on.noticias = (p) => (p === "eleicoes" ? paginaEleicoes() : paginaNoticias("cons"));
+ROTAS.on.fiis = (p) => paginaFiis(p);
+ROTAS.on.fii = (p) => paginaFii(p);
 ROTAS.off.empresas = (p) => paginaEmpresasMundo(p);
 ROTAS.off.empresa = (p) => paginaEmpresaMundo(p);
 const ROTAS_ANTIGAS = { agenda: "noticias" };  // endereços de antes da divisão Onshore/Offshore
 
 // Menu lateral (abre e fecha no nome do site): Agenda e notícias; Economia (Brasil e Mundo: Macro e Juros);
-// Empresas (Brasil: Informações, Notícias, Fatos relevantes, Empresas, Bancos; Mundo: S&P 500, Empresas); Downloads (Brasil e Mundo)
+// Empresas (Brasil: Informações, Notícias, Fatos relevantes, Empresas, Bancos; Mundo: S&P 500, Empresas);
+// Fundos imobiliários (Visão geral, Planilhão); Downloads (Brasil e Mundo)
 const MENU = [
   { titulo: "Agenda e notícias", href: "#/cons", chave: "cons|" },
   { titulo: "Economia", grupos: [
@@ -444,6 +447,7 @@ const MENU = [
       ["Fatos relevantes", "#/on/empresas/fatos", "on|empresas|fatos"], ["Empresas", "#/on/empresas/tabela", "on|empresas|tabela"],
       ["Bancos", "#/on/empresas/financeiras", "on|empresas|financeiras"], ["Operacional", "#/on/empresas/operacional", "on|empresas|operacional"]]],
     ["Mundo", [["S&P 500", "#/off/empresas/sp500", "off|empresas|sp500"], ["Empresas", "#/off/empresas/empresas", "off|empresas|empresas"]]]] },
+  { titulo: "Fundos imobiliários", grupos: [[null, [["Visão geral", "#/on/fiis/visao", "on|fiis|visao"], ["Planilhão", "#/on/fiis/planilhao", "on|fiis|planilhao"]]]] },
   { titulo: "Downloads", grupos: [[null, [["Brasil", "#/on/downloads", "on|downloads"], ["Mundo", "#/off/downloads", "off|downloads"]]]] },
 ];
 
@@ -456,6 +460,8 @@ function desenharNav(lado, secao, parametro) {
   }
   if (secao === "empresa") atual = `${lado}|empresas|${lado === "on" ? "tabela" : "empresas"}`;
   if (secao === "banco") atual = "on|empresas|financeiras";
+  if (secao === "fiis") atual = `on|fiis|${ABAS_FIIS.some(([k]) => k === parametro) ? parametro : "visao"}`;
+  if (secao === "fii") atual = "on|fiis|planilhao";
   const item = ([nome, href, chave]) => `<a class="menu-item${chave === atual ? " ativo" : ""}" href="${href}">${nome}</a>`;
   document.getElementById("menu").innerHTML = MENU.map((m) => `<div class="menu-grupo">${m.href
     ? `<a class="menu-titulo${m.chave === atual ? " ativo" : ""}" href="${m.href}">${m.titulo}</a>`
@@ -828,6 +834,337 @@ function paginaOperacional(cab, abas) {
 
 function rotuloMes(iso) {
   return `${MESES[Number(iso.slice(5, 7)) - 1]}/${iso.slice(2, 4)}`;
+}
+
+/* ============ Fundos imobiliários (FII de tijolo) ============ */
+// pipeline/fiis.py: informes mensal e trimestral da CVM, COTAHIST da B3, avisos e documentos do Fundos.NET, Yahoo (cotação semanal)
+const ABAS_FIIS = [["visao", "Visão geral"], ["planilhao", "Planilhão"]];
+let FII_SEGMENTO = null;
+let ORDEM_FII = { campo: "pl", desc: true };
+const COLUNAS_FII = [
+  ["preco", "Preço (R$)", (v) => num(v, 2)], ["pvp", "P/VP", vezes], ["dy12", "DY 12m", (v) => pctPronto(v, 2)],
+  ["ult_rend", "Últ. rend. (R$)", (v) => num(v, 2)], ["pl", "Patrimônio", reais], ["liquidez", "Liquidez/dia", reais],
+  ["cotistas", "Cotistas", (v) => num(v, 0)], ["vacancia", "Vacância", (v) => pctPronto(v, 1)], ["inadimplencia", "Inadimpl.", (v) => pctPronto(v, 1)],
+];
+const vacFii = (f) => (f.aviso_vacancia ? `<span title="Valor como informado; parece ser a taxa de ocupação (veja a página do fundo)">⚠ ${pctPronto(f.vacancia, 1)}</span>` : pctPronto(f.vacancia, 1));
+const mediaFii = (v) => { v = v.filter((x) => x != null && isFinite(x)); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; };
+const medianaFii = (v) => {
+  v = v.filter((x) => x != null && isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+};
+
+async function paginaFiis(aba) {
+  if (!ABAS_FIIS.some(([k]) => k === aba)) aba = "visao";
+  const d = await dados("dados/fiis.json").catch(() => null);
+  const abas = `<div class="abas">${ABAS_FIIS.map(([k, n]) => `<a href="#/on/fiis/${k}" class="${k === aba ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
+  if (!d || !d.fundos || !d.fundos.length) {
+    app.innerHTML = `<div class="cabecalho"><div><h1>Fundos imobiliários</h1></div></div>${abas}<p class="sub">Os fundos imobiliários entram na próxima atualização.</p>`;
+    return;
+  }
+  const cab = `<div class="cabecalho"><div><h1>Fundos imobiliários</h1><div class="sub">FIIs de tijolo · ${d.fundos.length} fundos negociados na B3 com imóveis físicos
+    em pelo menos metade do ativo · clique num fundo para abrir a página dele</div></div>
+    <a class="botao" href="downloads/fiis.xlsx" download>Baixar planilha dos FIIs</a></div>`;
+  if (aba === "planilhao") return planilhaoFiis(d, cab, abas);
+  return visaoFiis(d, cab, abas);
+}
+
+function visaoFiis(d, cab, abas) {
+  const M = d.mercado, segs = d.segmentos;
+  if (!FII_SEGMENTO || !segs.some((s) => s.segmento === FII_SEGMENTO)) FII_SEGMENTO = segs[0].segmento;
+  const ntnb = d.ntnb;
+  app.innerHTML = `${cab}${abas}
+    <div class="grade-cartoes">
+      ${cartao("Fundos", num(M.fundos, 0), "FIIs de tijolo negociados")}
+      ${cartao("Patrimônio líquido", reais(M.pl), "soma dos fundos (informe mensal)")}
+      ${cartao("Valor de mercado", reais(M.valor_mercado), "preço × cotas emitidas")}
+      ${cartao("P/VP do mercado", vezes(M.media_ponderada_pvp), `valor de mercado ÷ patrimônio · mediana ${vezes(M.mediana_pvp)}`)}
+      ${cartao("Dividend yield 12m", pctPronto(M.mediana_dy12, 2), "mediana dos fundos")}
+      ${cartao("NTN-B ~5 anos", ntnb ? `${num(ntnb.taxa, 2)}%` : "—", ntnb ? `IPCA+ ${ntnb.vencimento.slice(0, 4)} · taxa real · ${dataBR(ntnb.data)}` : "")}
+      ${cartao("Spread DY − NTN-B", d.spread_dy_ntnb != null ? `${num(d.spread_dy_ntnb, 2)} p.p.` : "—", "mediana do DY 12m − taxa real")}
+      ${cartao("Liquidez diária", reais(M.liquidez), `soma · média por pregão de ${d.pregoes ? `${dataBR(d.pregoes[0])} a ${dataBR(d.pregoes[1])}` : "—"}`)}
+      ${cartao("Vacância física", pctPronto(M.mediana_vacancia, 1), "mediana dos fundos (informe trimestral)")}
+    </div>
+    <div class="grade">
+      <div class="painel largo" data-info="fii_segmentos"><h2>Segmentos · medianas</h2><div class="rolagem"><table class="tabela" id="tab-seg-fii">
+        <tr><th style="text-align:left">Segmento (CVM)</th><th>Fundos</th><th>Patrimônio</th><th>% do total</th><th>P/VP</th><th>DY 12m</th><th>Spread NTN-B</th><th>Vacância</th><th>Inadimpl.</th></tr>
+        ${segs.map((s) => `<tr class="clicavel" data-seg="${esc(s.segmento)}"><td style="text-align:left">${esc(s.segmento)}</td><td>${s.fundos}</td><td>${reais(s.pl)}</td>
+          <td>${pct(s.pl / M.pl)}</td><td>${vezes(s.mediana_pvp)}</td><td>${pctPronto(s.mediana_dy12, 2)}</td>
+          <td>${s.mediana_dy12 != null && ntnb ? `${num(s.mediana_dy12 - ntnb.taxa, 2)} p.p.` : "—"}</td>
+          <td>${pctPronto(s.mediana_vacancia, 1)}</td><td>${pctPronto(s.mediana_inadimplencia, 1)}</td></tr>`).join("")}
+      </table></div><div class="nota">Segmento como a administradora informa à CVM (informe mensal). "Multicategoria" reúne fundos com imóveis de mais de um tipo.
+        Clique num segmento para compará-lo abaixo.</div></div>
+      ${painelG("fii-dy-seg", "Dividend yield 12m por segmento (mediana) × NTN-B ~5 anos (%)", "fii_spread")}
+      ${painelG("fii-pvp-seg", "P/VP por segmento (mediana)", "fii_pvp")}
+      <div class="painel largo" data-info="fii_comparativo" id="comparativo-fii"></div>
+      <div class="painel" data-info="fii_universo"><h2>Quais fundos entram</h2><div class="rolagem"><table class="tabela">
+        <tr><th style="text-align:left">Fundos imobiliários com informe na CVM</th><th>Fundos</th></tr>
+        <tr class="subtotal"><td style="text-align:left">FIIs de tijolo nesta seção</td><td>${d.fundos.length}</td></tr>
+        ${[["sem_bolsa", "Sem cota negociada na bolsa"], ["informe_antigo", "Sem informe mensal nos últimos 5 meses"],
+          ["pouco_imovel", "Imóveis físicos abaixo de metade do ativo (papel, fundos de fundos, SPEs)"], ["sem_imovel_pronto", "Sem imóvel pronto para renda no informe trimestral"],
+          ["sem_negocio", "Sem negócio na B3 no último mês"]].map(([k, r]) => `<tr><td style="text-align:left;white-space:normal" class="sub">${r}</td><td>${num((d.fora_do_universo || {})[k], 0)}</td></tr>`).join("")}
+      </table></div></div>
+    </div>
+    <div class="nota secao">Fontes: ${esc(d.fontes.cvm)}; ${esc(d.fontes.b3)}; ${esc(d.fontes.fnet)}. P/VP, dividend yield, vacância física, inadimplência e
+      liquidez são calculados a partir dos números da fonte (veja o ⓘ de cada painel). Atualizado em ${esc(d.gerado_em.replace("T", " "))}.</div>`;
+  const rot = segs.map((s) => s.segmento);
+  grafico(document.getElementById("fii-dy-seg"), { rotulos: rot, eixoEsq: "pctPronto", series: [
+    { nome: "DY 12m (mediana)", valores: segs.map((s) => s.mediana_dy12), tipo: "bar", cor: COR.verde },
+    ...(ntnb ? [{ nome: `NTN-B ${ntnb.vencimento.slice(0, 4)} (taxa real)`, valores: segs.map(() => ntnb.taxa), tipo: "line", tracejado: true, cor: COR.ambar }] : [])] });
+  grafico(document.getElementById("fii-pvp-seg"), { rotulos: rot, eixoEsq: "vezes", series: [
+    { nome: "P/VP (mediana)", valores: segs.map((s) => s.mediana_pvp), tipo: "bar", cor: COR.azul },
+    { nome: "1,0x", valores: segs.map(() => 1), tipo: "line", tracejado: true, cor: COR.cinza }] });
+  document.getElementById("tab-seg-fii").addEventListener("click", (ev) => {
+    const tr = ev.target.closest("[data-seg]"); if (!tr) return;
+    FII_SEGMENTO = tr.dataset.seg; comparativoFii(d);
+    document.getElementById("comparativo-fii").scrollIntoView({ behavior: "smooth", block: "start" });
+  });
+  comparativoFii(d);
+}
+
+// Comparativo por segmento: cada fundo contra a média e a mediana do segmento (▲ acima da média, ▼ abaixo)
+function comparativoFii(d) {
+  const el = document.getElementById("comparativo-fii");
+  const fs = d.fundos.filter((f) => (f.segmento || "Não informado") === FII_SEGMENTO);
+  const cols = [["pvp", "P/VP", vezes], ["dy12", "DY 12m", (v) => pctPronto(v, 2)], ["vacancia", "Vacância", (v) => pctPronto(v, 1)],
+    ["inadimplencia", "Inadimpl.", (v) => pctPronto(v, 1)], ["pl", "Patrimônio", reais], ["liquidez", "Liquidez/dia", reais]];
+  const valido = (f, k) => !(k === "vacancia" && f.aviso_vacancia);
+  const media = Object.fromEntries(cols.map(([k]) => [k, mediaFii(fs.filter((f) => valido(f, k)).map((f) => f[k]))]));
+  const mediana = Object.fromEntries(cols.map(([k]) => [k, medianaFii(fs.filter((f) => valido(f, k)).map((f) => f[k]))]));
+  const celula = (f, k, fmt) => {
+    const v = f[k], m = media[k];
+    if (v == null || m == null || !valido(f, k)) return `<td>${k === "vacancia" ? vacFii(f) : fmt(v)}</td>`;
+    const lado = v > m * 1.0001 ? "acima" : v < m * 0.9999 ? "abaixo" : "";
+    return `<td class="${lado}">${fmt(v)}${lado ? (lado === "acima" ? " ▲" : " ▼") : ""}</td>`;
+  };
+  el.innerHTML = `<h2>Comparativo por segmento</h2>
+    <div class="seletor seletor-editoria" id="seg-fii" style="margin-bottom:8px">${d.segmentos.map((s) =>
+      `<button data-seg="${esc(s.segmento)}" class="${s.segmento === FII_SEGMENTO ? "ativo" : ""}">${esc(s.segmento)} (${s.fundos})</button>`).join("")}</div>
+    <div class="rolagem rolagem-y" style="max-height:70vh"><table class="tabela">
+      <tr><th style="text-align:left">Fundo</th>${cols.map(([, r]) => `<th>${r}</th>`).join("")}</tr>
+      <tr class="subtotal"><td style="text-align:left">Média do segmento</td>${cols.map(([k, , fmt]) => `<td>${fmt(media[k])}</td>`).join("")}</tr>
+      <tr class="subtotal"><td style="text-align:left">Mediana do segmento</td>${cols.map(([k, , fmt]) => `<td>${fmt(mediana[k])}</td>`).join("")}</tr>
+      ${fs.map((f) => `<tr class="clicavel" onclick="location.hash='#/on/fii/${esc(f.ticker)}'"><td style="text-align:left"><b>${esc(f.ticker)}</b>
+        <span class="sub">${esc((f.nome || "").slice(0, 34))}</span></td>${cols.map(([k, , fmt]) => celula(f, k, fmt)).join("")}</tr>`).join("")}
+    </table></div>
+    <div class="nota">▲ acima e ▼ abaixo da média simples dos fundos do segmento em cada indicador (sem juízo de melhor ou pior: P/VP baixo, por exemplo,
+      pode ser desconto ou reflexo de problema). Vacância marcada com ⚠ fica fora da média (veja a página do fundo). Clique num fundo para abrir a página dele.</div>`;
+  document.getElementById("seg-fii").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-seg]"); if (!b) return;
+    FII_SEGMENTO = b.dataset.seg; comparativoFii(d);
+  });
+}
+
+function planilhaoFiis(d, cab, abas) {
+  const segmentos = [...new Set(d.fundos.map((f) => f.segmento).filter(Boolean))].sort();
+  const adms = [...new Set(d.fundos.map((f) => f.administrador).filter(Boolean))].sort();
+  const TAMANHOS = { "": () => true, grande: (f) => f.pl >= 1e9, medio: (f) => f.pl >= 3e8 && f.pl < 1e9, pequeno: (f) => f.pl < 3e8 };
+  app.innerHTML = `${cab}${abas}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+      <input class="filtro" id="busca-fii" placeholder="Buscar por ticker ou nome (ex.: HGLG, Pátria)">
+      <select class="filtro" id="seg-fii-f" style="max-width:220px"><option value="">Todos os segmentos</option>${segmentos.map((s) => `<option>${esc(s)}</option>`).join("")}</select>
+      <select class="filtro" id="adm-fii-f" style="max-width:320px"><option value="">Todos os administradores</option>${adms.map((s) => `<option>${esc(s)}</option>`).join("")}</select>
+      <select class="filtro" id="tam-fii-f" style="max-width:220px"><option value="">Qualquer patrimônio</option><option value="grande">Acima de R$ 1 bi</option>
+        <option value="medio">R$ 300 mi a R$ 1 bi</option><option value="pequeno">Até R$ 300 mi</option></select></div>
+    <div class="painel" data-info="fii_planilhao"><div class="rolagem rolagem-y" style="max-height:75vh"><table class="tabela" id="tab-fii"></table></div>
+      <div class="nota" id="nota-fii"></div></div>`;
+  const desenhar = () => {
+    const q = document.getElementById("busca-fii").value.trim().toLowerCase(), seg = document.getElementById("seg-fii-f").value;
+    const adm = document.getElementById("adm-fii-f").value, tam = TAMANHOS[document.getElementById("tam-fii-f").value];
+    const lista = d.fundos.filter((f) => (!q || f.ticker.toLowerCase().includes(q) || (f.nome || "").toLowerCase().includes(q))
+      && (!seg || f.segmento === seg) && (!adm || f.administrador === adm) && tam(f))
+      .sort((a, b) => { const x = a[ORDEM_FII.campo], y = b[ORDEM_FII.campo]; if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * (ORDEM_FII.desc ? -1 : 1); });
+    document.getElementById("tab-fii").innerHTML = `<tr><th style="text-align:left">Fundo</th><th style="text-align:left">Segmento</th><th style="text-align:left">Administrador</th>
+      ${COLUNAS_FII.map(([k, r]) => `<th data-ordem="${k}" style="cursor:pointer">${r}${ORDEM_FII.campo === k ? (ORDEM_FII.desc ? " ▾" : " ▴") : ""}</th>`).join("")}</tr>
+      ${lista.map((f) => `<tr class="clicavel" data-id="${esc(f.ticker)}"><td style="text-align:left"><b>${esc(f.ticker)}</b> <span class="sub">${esc((f.nome || "").slice(0, 30))}</span></td>
+        <td style="text-align:left" class="sub">${esc(f.segmento || "")}</td><td style="text-align:left" class="sub">${esc((f.administrador || "").slice(0, 28))}</td>
+        ${COLUNAS_FII.map(([k, , fmt]) => `<td>${k === "vacancia" ? vacFii(f) : fmt(f[k])}</td>`).join("")}</tr>`).join("")}`;
+    document.getElementById("nota-fii").innerHTML = `${lista.length} de ${d.fundos.length} fundos. Clique no título da coluna para ordenar e na linha para abrir o fundo.
+      Preço: último fechamento no arquivo oficial da B3 (COTAHIST). Patrimônio, cotistas e valor patrimonial: último informe mensal à CVM; vacância e inadimplência:
+      último informe trimestral. DY 12m: rendimentos com data-com nos últimos 12 meses (avisos do Fundos.NET) ÷ preço. Liquidez: volume médio por pregão no último mês.`;
+  };
+  ["busca-fii", "seg-fii-f", "adm-fii-f", "tam-fii-f"].forEach((id) => document.getElementById(id).addEventListener(id === "busca-fii" ? "input" : "change", desenhar));
+  document.getElementById("tab-fii").addEventListener("click", (ev) => {
+    const th = ev.target.closest("[data-ordem]");
+    if (th) { const k = th.dataset.ordem; ORDEM_FII = { campo: k, desc: ORDEM_FII.campo === k ? !ORDEM_FII.desc : true }; desenhar(); return; }
+    const tr = ev.target.closest("[data-id]"); if (tr) location.hash = `#/on/fii/${encodeURIComponent(tr.dataset.id)}`;
+  });
+  desenhar();
+}
+
+// Página do fundo: cartões e abas Informações, Documentos, Indicadores, Carteira
+const ABAS_FII = [["informacoes", "Informações"], ["documentos", "Documentos"], ["indicadores", "Indicadores"], ["carteira", "Carteira"]];
+let ABA_FII = "informacoes";
+const FILTROS_DOC_FII = [["todos", "Todos", null], ["fatos", "Fatos relevantes", /fato relevante/i], ["relatorios", "Relatórios gerenciais", /relat[óo]rio/i],
+  ["rendimentos", "Rendimentos", /rendimento|amortiza/i], ["comunicados", "Comunicados", /comunicado|aviso aos cotistas(?! - estruturado)/i],
+  ["informes", "Informes", /informe/i], ["ofertas", "Ofertas e emissões", /oferta|emiss[ãa]o|subscri/i], ["assembleias", "Assembleias", /assembl|convoca|ata\b/i]];
+
+async function paginaFii(id) {
+  const f = await dados(`dados/fiis/${id}.json`);
+  const C = f.cadastro, M = f.mensal, R = f.resumo, n = M.datas.length - 1;
+  const cot = f.cotacao, preco = f.preco.valor, vp = M.vp_cota[n];
+  const tri = f.trimestral[f.trimestral.length - 1] || {};
+  const vacAviso = f.avisos.some((a) => a.tipo === "vacancia_invertida");
+  const vacTxt = (v) => `${vacAviso ? "⚠ " : ""}${pctPronto(v, 1)}`;
+  const mi = (x) => num(x / 1e6, 1);
+  const mesBR = (iso) => (iso ? `${MESES[Number(iso.slice(5, 7)) - 1]}/${iso.slice(2, 4)}` : "—");
+  const fonteRend = { fnet: "Fundos.NET", yahoo: "Yahoo" };
+  const tabela = (cab, linhas) => `<table class="tabela"><tr>${cab.map(([c, esq]) => `<th${esq ? ' style="text-align:left"' : ""}>${c}</th>`).join("")}</tr>${linhas.join("")}</table>`;
+
+  app.innerHTML = `
+    <div class="cabecalho"><div><h1>${esc(C.ticker)} · ${esc(C.nome)}</h1>
+      <div class="sub">FII de tijolo · ${esc(C.segmento || "segmento não informado")} · administrador ${esc(C.administrador || "—")} · CNPJ ${esc(C.cnpj)}
+        · <a href="#/on/fiis/planilhao">voltar ao planilhão</a></div></div>
+      <a class="botao" href="downloads/fiis/${esc(C.ticker)}.xlsx" download>Baixar planilha do fundo</a></div>
+    ${f.avisos.length ? `<div class="painel" style="border-color:var(--ambar)"><h2>⚠ Pontos de atenção no que a administradora informou</h2>
+      <ul style="margin:4px 0 0 18px">${f.avisos.map((a) => `<li>${esc(a.texto)}</li>`).join("")}</ul>
+      <div class="nota">Os números aparecem como estão na fonte (CVM); o aviso é da verificação automática do site.</div></div>` : ""}
+    <div class="grade-cartoes">
+      ${cartao("Cotação", preco != null ? `R$ ${num(preco, 2)}` : "—", `${dataBR(f.preco.data)} · ${esc(f.preco.fonte || "")}`)}
+      ${cartao("P/VP", vezes(R.pvp), `valor patrimonial da cota R$ ${num(vp, 2)} (${mesBR(M.datas[n])})`)}
+      ${cartao("Dividend yield 12m", pctPronto(R.dy12, 2), `rendimentos de 12 meses ÷ cotação · ${esc(R.fonte_dy || "—")}`)}
+      ${cartao("Último rendimento", R.ult_rend != null ? `R$ ${num(R.ult_rend, 2)}` : "—",
+        R.ult_rend_data ? `data-com ${dataBR(R.ult_rend_data)}${R.ult_rend_pagamento ? ` · pagamento ${dataBR(R.ult_rend_pagamento)}` : ""}` : "")}
+      ${cartao("Patrimônio líquido", reais(M.pl[n]), `${num(M.cotistas[n], 0)} cotistas · ${mesBR(M.datas[n])}`)}
+      ${cartao("Vacância física", vacTxt(tri.vacancia_fisica), `${num(tri.imoveis, 0)} imóveis prontos · ${dataBR(tri.data)}`)}
+    </div>
+    <div class="abas" id="abas-fii">${ABAS_FII.map(([k, r]) => `<button data-k="${k}" class="${k === ABA_FII ? "ativo" : ""}">${r}</button>`).join("")}</div>
+    <div id="aba-fii"></div>
+    <div class="nota secao">Fontes: CVM (informes mensal e trimestral), B3 (cotação oficial e liquidez, COTAHIST), Fundos.NET (documentos e avisos de rendimentos)
+      e Yahoo (cotação semanal dos gráficos e rendimentos anteriores ao primeiro aviso lido, não oficial). Números iguais aos informados pela administradora;
+      P/VP, dividend yield, vacância física e inadimplência do fundo são calculados (veja o ⓘ).</div>`;
+  const area = () => document.getElementById("aba-fii");
+
+  const ABAS = {
+    informacoes: () => {
+      const comp = f.composicao, totalAtivo = comp.ativo.reduce((s, [, v]) => s + v, 0);
+      const cad = [["Nome", C.nome], ["Ticker", C.ticker], ["CNPJ", C.cnpj], ["ISIN", C.isin], ["Administrador", C.administrador], ["Segmento", C.segmento],
+        ["Mandato", C.mandato], ["Gestão", C.gestao], ["Público-alvo", C.publico], ["Início das atividades", dataBR(C.inicio)], ["Prazo", C.prazo],
+        ["Cotas emitidas", num(M.cotas[n], 0)], ["Cotistas", num(M.cotistas[n], 0)],
+        ["Taxa de administração no mês", M.taxa_adm[n] != null ? `${num(M.taxa_adm[n], 3)}% do patrimônio` : "—"],
+        ["Liquidez diária", `${reais(f.preco.liquidez)} (média por pregão no último mês, B3)`]];
+      area().innerHTML = `<div class="grade">
+        <div class="painel" data-info="fii_cadastro"><h2>Dados do fundo</h2><div class="rolagem">${tabela([["", true], ["", true]],
+          cad.map(([k, v]) => `<tr><td style="text-align:left;white-space:normal" class="sub">${k}</td><td style="text-align:left;white-space:normal">${esc(v ?? "—")}</td></tr>`))}</div>
+          ${C.site ? `<div class="nota">Site: <a href="${esc(/^https?:/.test(C.site) ? C.site : `https://${C.site}`)}" target="_blank" rel="noopener">${esc(C.site)}</a></div>` : ""}</div>
+        <div class="painel" data-info="fii_composicao"><h2>Composição do ativo e do passivo · ${mesBR(comp.data)}</h2><div class="rolagem">${tabela([["Ativo", true], ["R$ milhões"], ["% do ativo"]], [
+          ...comp.ativo.filter(([, v]) => v).map(([k, v]) => `<tr><td style="text-align:left;white-space:normal">${esc(k)}</td><td>${mi(v)}</td><td>${pct(v / totalAtivo)}</td></tr>`),
+          `<tr class="subtotal"><td style="text-align:left">Passivo total</td><td>${mi(comp.total_passivo)}</td><td>${pct(comp.total_passivo / totalAtivo)}</td></tr>`,
+          ...comp.passivo.filter(([, v]) => v).map(([k, v]) => `<tr><td style="text-align:left;padding-left:20px;white-space:normal">${esc(k)}</td><td>${mi(v)}</td><td>${pct(v / totalAtivo)}</td></tr>`)])}</div>
+          <div class="nota">Percentuais sobre a soma dos itens do ativo listados (informe mensal à CVM).</div></div>
+        ${painelG("fii-cot", "Cotação × valor patrimonial da cota (R$)", "fii_cotacao")}
+        ${painelG("fii-pl", "Patrimônio líquido (R$) e número de cotistas", "fii_cadastro")}
+      </div>`;
+      grafico(document.getElementById("fii-cot"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "preco", series: [
+        { nome: "Cotação (semanal, Yahoo)", valores: cot.datas.map((d, i) => [d, cot.fechamento[i]]), tipo: "line", cor: COR.azul },
+        { nome: "Valor patrimonial da cota (CVM)", valores: M.datas.map((d, i) => [d, M.vp_cota[i]]), tipo: "line", cor: COR.ambar }] });
+      grafico(document.getElementById("fii-pl"), { xTempo: true, deslizante: true, inicioTempo: desde(5), eixoEsq: "reais", eixoDir: "inteiro", limitesEsq: [0, null], series: [
+        { nome: "Patrimônio líquido", valores: M.datas.map((d, i) => [d, M.pl[i]]), tipo: "bar", cor: COR.azul },
+        { nome: "Cotistas", valores: M.datas.map((d, i) => [d, M.cotistas[i]]), tipo: "line", eixo: "dir", cor: COR.ambar }] });
+    },
+    documentos: () => {
+      let filtro = "todos";
+      const desenhar = () => {
+        const re = (FILTROS_DOC_FII.find(([k]) => k === filtro) || [])[2];
+        const docs = f.documentos.filter((d) => !re || re.test(`${d.categoria} ${d.tipo}`));
+        document.getElementById("lista-docs-fii").innerHTML = docs.length ? tabela([["Entrega"], ["Documento", true], ["Tipo", true], ["Referência"]],
+          docs.map((d) => {
+            const fato = /fato relevante/i.test(d.categoria);
+            const situacao = d.status && !/^ativo/i.test(d.status) ? ` <span class="sub">(${esc(d.status.split(" ")[0].toLowerCase())})</span>` : "";
+            return `<tr><td>${dataBR((d.data || "").slice(0, 10))}</td><td style="text-align:left;white-space:normal">${fato ? "<b>" : ""}<a href="https://fnet.bmfbovespa.com.br/fnet/publico/exibirDocumento?id=${d.id}"
+              target="_blank" rel="noopener">${esc(d.categoria)}</a>${fato ? "</b>" : ""}${situacao}</td>
+              <td style="text-align:left;white-space:normal" class="sub">${esc(d.tipo || d.especie || "")}</td><td class="sub">${esc(d.referencia ? d.referencia.split("-").reverse().join("/") : "")}</td></tr>`;
+          })) : `<p class="sub">Nenhum documento nesta categoria entre os ${f.documentos.length} guardados.</p>`;
+      };
+      area().innerHTML = `<div class="painel" data-info="fii_documentos"><h2>Documentos e fatos relevantes</h2>
+          <div class="seletor seletor-editoria" id="filtro-docs-fii" style="margin-bottom:8px">${FILTROS_DOC_FII.map(([k, r]) => `<button data-k="${k}" class="${k === filtro ? "ativo" : ""}">${r}</button>`).join("")}</div>
+        <div class="rolagem rolagem-y" id="lista-docs-fii" style="max-height:70vh"></div>
+        <div class="nota">Documentos entregues pela administradora no Fundos.NET (B3), do mais recente para o mais antigo, com link para o documento oficial.
+          Fatos relevantes em negrito. "(inativo)" = substituído por uma versão mais nova; "(cancelado)" = cancelado pela administradora.</div></div>`;
+      document.getElementById("filtro-docs-fii").addEventListener("click", (ev) => {
+        const b = ev.target.closest("button"); if (!b) return;
+        filtro = b.dataset.k; document.querySelectorAll("#filtro-docs-fii button").forEach((x) => x.classList.toggle("ativo", x === b)); desenhar();
+      });
+      desenhar();
+    },
+    indicadores: () => {
+      const pvp = cot.datas.map((d, i) => {
+        let k = -1; for (let j = 0; j < M.datas.length; j++) if (M.datas[j] <= d) k = j;
+        return [d, k >= 0 && M.vp_cota[k] ? cot.fechamento[i] / M.vp_cota[k] : null];
+      }).filter(([, v]) => v != null);
+      const porMes = {}; f.rendimentos.forEach(([d, v]) => (porMes[d.slice(0, 7)] = (porMes[d.slice(0, 7)] || 0) + v));
+      const meses = Object.keys(porMes).sort();
+      const precoNoMes = (m) => { let p = null; cot.datas.forEach((d, i) => { if (d.slice(0, 7) <= m) p = cot.fechamento[i]; }); return p; };
+      const umAno = (m) => `${Number(m.slice(0, 4)) - 1}${m.slice(4)}`;
+      const dy12 = meses.filter((m) => umAno(m) >= meses[0]).map((m) => {
+        const jan = meses.filter((x) => x <= m && x > umAno(m));
+        return [`${m}-01`, precoNoMes(m) ? (jan.reduce((s, x) => s + porMes[x], 0) / precoNoMes(m)) * 100 : null];
+      }).filter(([, v]) => v != null);
+      const ultimos = [...f.rendimentos].reverse().slice(0, 13);
+      area().innerHTML = `<div class="grade-cartoes">
+          ${cartao("Dividend yield 12m", pctPronto(R.dy12, 2), `rendimentos de 12 meses ÷ cotação · ${esc(R.fonte_dy || "—")}`)}
+          ${cartao("Dividend yield do mês", M.dy_mes[n] != null ? `${num(M.dy_mes[n], 2)}%` : "—", `informado à CVM · ${mesBR(M.datas[n])}`)}
+          ${cartao("P/VP", vezes(R.pvp), "cotação ÷ valor patrimonial da cota")}
+          ${cartao("Rentabilidade efetiva do mês", M.rent_efetiva[n] != null ? `${num(M.rent_efetiva[n], 2)}%` : "—", `informada à CVM · ${mesBR(M.datas[n])}`)}
+          ${cartao("Vacância física", vacTxt(tri.vacancia_fisica), dataBR(tri.data))}
+          ${cartao("Inadimplência", pctPronto(tri.inadimplencia, 1), `ponderada pela receita · ${dataBR(tri.data)}`)}
+        </div>
+        <div class="grade">
+          ${painelG("fii-rend", "Rendimentos por cota (R$) e dividend yield de 12 meses (%)", "fii_dy")}
+          ${painelG("fii-pvp", "P/VP (cotação ÷ valor patrimonial da cota)", "fii_pvp")}
+          ${painelG("fii-vac", "Vacância física e inadimplência (%, trimestral)", "fii_vacancia")}
+          ${painelG("fii-rent", "Rentabilidade mensal informada à CVM (%)", "fii_rentabilidade")}
+          <div class="painel" data-info="fii_dy"><h2>Últimos rendimentos</h2><div class="rolagem">${tabela([["Data-com"], ["R$/cota"], ["Pagamento"], ["Fonte", true]],
+            ultimos.map(([d, v, fonte, pg]) => `<tr><td>${dataBR(d)}</td><td>${num(v, 4)}</td><td>${dataBR(pg)}</td><td style="text-align:left" class="sub">${fonteRend[fonte] || fonte}</td></tr>`))}</div>
+            <div class="nota">Fundos.NET: aviso estruturado de rendimentos (data-com oficial). Yahoo: data ex, usada só antes do primeiro aviso lido.
+              ${f.amortizacoes.length ? `Amortizações no período: ${f.amortizacoes.map(([d, v]) => `R$ ${num(v, 4)} (${dataBR(d)})`).join(", ")} — não entram no DY.` : ""}</div></div>
+        </div>`;
+      grafico(document.getElementById("fii-rend"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "preco", eixoDir: "pctPronto", series: [
+        { nome: "Rendimento por cota (R$)", valores: meses.map((m) => [`${m}-01`, porMes[m]]), tipo: "bar", cor: COR.verde },
+        { nome: "DY 12 meses (%)", valores: dy12, tipo: "line", eixo: "dir", cor: COR.ambar }] });
+      grafico(document.getElementById("fii-pvp"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "vezes", series: [
+        { nome: "P/VP", valores: pvp, tipo: "line", cor: COR.azul }, { nome: "1,0x", valores: pvp.map(([d]) => [d, 1]), tipo: "line", tracejado: true, cor: COR.cinza }] });
+      grafico(document.getElementById("fii-vac"), { xTempo: true, eixoEsq: "pctPronto", series: [
+        { nome: "Vacância física", valores: f.trimestral.map((x) => [x.data, x.vacancia_fisica]), tipo: "line", cor: COR.vermelho },
+        { nome: "Inadimplência", valores: f.trimestral.map((x) => [x.data, x.inadimplencia]), tipo: "line", cor: COR.ambar }] });
+      grafico(document.getElementById("fii-rent"), { xTempo: true, deslizante: true, inicioTempo: desde(3), eixoEsq: "pctPronto", series: [
+        { nome: "Dividend yield do mês", valores: M.datas.map((d, i) => [d, M.dy_mes[i]]), tipo: "bar", cor: COR.verde },
+        { nome: "Rentabilidade efetiva", valores: M.datas.map((d, i) => [d, M.rent_efetiva[i]]), tipo: "line", cor: COR.azul },
+        { nome: "Rentabilidade patrimonial", valores: M.datas.map((d, i) => [d, M.rent_patrimonial[i]]), tipo: "line", cor: COR.ambar }] });
+    },
+    carteira: () => {
+      const top5 = f.imoveis.slice(0, 5).reduce((s, i) => s + (i.receita || 0), 0);
+      const setores = [...f.setores_inquilinos.slice(0, 15), ...(f.setores_inquilinos.length > 15 ? [["Outros", f.setores_inquilinos.slice(15).reduce((s, [, v]) => s + v, 0)]] : [])];
+      area().innerHTML = `<div class="grade-cartoes">
+          ${cartao("Imóveis", num(tri.imoveis, 0), `prontos para renda · ${dataBR(tri.data)}`)}
+          ${cartao("Área total", `${num(tri.area, 0)} m²`, "imóveis prontos para renda")}
+          ${cartao("Vacância física", vacTxt(tri.vacancia_fisica), "área vaga ÷ área total")}
+          ${cartao("5 maiores imóveis", `${num(top5, 1)}%`, "da receita do fundo")}
+        </div>
+        <div class="grade">
+          <div class="painel" data-info="fii_carteira"><h2>Receita por setor dos locatários · ${dataBR(f.setores_data)}</h2><div class="rolagem">${setores.length ? tabela([["Setor", true], ["% da receita"]],
+            setores.map(([s, v]) => `<tr><td style="text-align:left;white-space:normal">${esc(s)}</td><td>${num(v, 1)}%</td></tr>`)) : '<p class="sub">O fundo não informou os locatários por setor.</p>'}</div></div>
+          ${painelG("fii-setores", "Receita por setor dos locatários (%)", "fii_carteira")}
+          <div class="painel largo" data-info="fii_carteira"><h2>Imóveis prontos para renda · ${dataBR(f.imoveis_data)}</h2><div class="rolagem">${tabela(
+            [["Imóvel", true], ["Endereço", true], ["Área (m²)"], ["Vacância"], ["Inadimplência"], ["% da receita"]],
+            f.imoveis.map((i) => `<tr><td style="text-align:left;white-space:normal">${esc(i.nome || "—")}</td><td style="text-align:left;white-space:normal" class="sub">${esc(i.endereco || "")}</td>
+              <td>${num(i.area, 0)}</td><td class="${i.vacancia > 0 ? "neg" : ""}">${pctPronto(i.vacancia, 1)}</td><td>${pctPronto(i.inadimplencia, 1)}</td><td>${pctPronto(i.receita, 2)}</td></tr>`))}</div>
+            <div class="nota">Último informe trimestral à CVM, do imóvel que mais pesa na receita para o que menos pesa. Valores como informados pela administradora.</div></div>
+        </div>`;
+      const s = f.setores_inquilinos.slice(0, 12);
+      if (s.length) grafico(document.getElementById("fii-setores"), { rotulos: s.map(([k]) => k), eixoEsq: "pctPronto", series: [
+        { nome: "% da receita", valores: s.map(([, v]) => v), tipo: "bar", cor: COR.azul }] });
+    },
+  };
+  const mostrar = (k) => {
+    limparGraficos();
+    ABA_FII = ABAS[k] ? k : "informacoes";
+    document.querySelectorAll("#abas-fii button").forEach((x) => x.classList.toggle("ativo", x.dataset.k === ABA_FII));
+    ABAS[ABA_FII]();
+  };
+  document.getElementById("abas-fii").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b) mostrar(b.dataset.k); });
+  mostrar(ABA_FII);
 }
 
 /* ============ Empresa ============ */
@@ -2190,6 +2527,9 @@ async function paginaDownloads() {
       <div class="painel"><h2>Dados operacionais</h2><p class="sub" style="line-height:1.6">Energia elétrica (ONS), petróleo, gás e combustíveis (ANP),
         emplacamentos (Fenabrave) e commodities exportadas (Comex Stat), uma linha por mês e indicador, com unidade, fonte e data da coleta.</p>
         <a class="botao" href="downloads/operacional.xlsx" download>Baixar operacional.xlsx</a></div>
+      <div class="painel"><h2>Fundos imobiliários</h2><p class="sub" style="line-height:1.6">Planilhão dos FIIs de tijolo (preço, P/VP, DY 12m, patrimônio,
+        liquidez, vacância e inadimplência) e medianas por segmento. A planilha de cada fundo está na página dele.</p>
+        <a class="botao" href="downloads/fiis.xlsx" download>Baixar fiis.xlsx</a></div>
     </div>
     <div class="nota" style="margin-bottom:14px">Cada gráfico do site também tem o botão ⤓, que baixa a série daquele gráfico em CSV (abre direto no Excel).</div>
     <div class="cabecalho"><div><h2 style="margin:0">Empresas</h2><div class="sub">Excel padrão de cada empresa: Cadastro, Demonstrações, Indicadores (LTM) e Dividendos, com histórico completo desde 2011</div></div>

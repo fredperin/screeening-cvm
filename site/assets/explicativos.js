@@ -949,6 +949,113 @@ window.EXPLICATIVOS = {
       <li><b>Preço implícito</b>: valor exportado (FOB, em US$) ÷ peso do mesmo mês, em US$ por tonelada. É o preço médio que o Brasil recebeu, não a cotação
         internacional (que é paga), e muda também com o mix de qualidade e de destinos.</li></ul>`,
   },
+  fii_universo: {
+    titulo: "Quais fundos entram (FIIs de tijolo)",
+    html: `<p>Entram os fundos imobiliários que, ao mesmo tempo:</p>
+      <ul><li>têm cota negociada na bolsa e tiveram negócio na B3 no último mês (arquivo oficial de cotações, COTAHIST);</li>
+      <li>entregaram o informe mensal à CVM nos últimos 5 meses;</li>
+      <li>têm imóveis físicos (terrenos e imóveis prontos, em construção ou para venda) somando pelo menos <b>metade do ativo</b>;</li>
+      <li>informaram ao menos um imóvel pronto para renda no informe trimestral.</li></ul>
+      <p>Ficam de fora os fundos de papel (CRI), os fundos de fundos e os que só têm participação em sociedades (SPEs), que não informam imóvel por imóvel.</p>
+      <p class="sub">Fonte: CVM (informes mensal e trimestral de FII, dados abertos) e B3 (COTAHIST).</p>`,
+  },
+  fii_segmentos: {
+    titulo: "Segmentos dos FIIs de tijolo",
+    html: `<p>Segmento como a administradora informa à CVM no informe mensal (Logística, Escritórios, Shoppings, Varejo, Hospital, Hotel, Residencial,
+      Multicategoria e Outros). "Multicategoria" reúne fundos com imóveis de mais de um tipo.</p>
+      <p>Cada coluna é a <b>mediana</b> dos fundos do segmento (o fundo do meio da fila), que não se deixa levar por um fundo fora da curva.
+      Spread = mediana do DY 12m − taxa real da NTN-B de ~5 anos. Vacância marcada com ⚠ (valor que parece ser taxa de ocupação) fica fora da mediana.</p>
+      <p class="sub">Fonte: CVM, B3 e Fundos.NET; cálculos do site.</p>`,
+  },
+  fii_spread: {
+    titulo: "Dividend yield × NTN-B",
+    html: `<p>Compara o rendimento dos FIIs com o juro real pago pelo Tesouro IPCA+ (NTN-B), a referência mais usada para o setor: os aluguéis costumam ser
+      corrigidos pela inflação, como o principal da NTN-B.</p>
+      <ul><li><b>DY 12m</b>: soma dos rendimentos por cota com data-com nos últimos 12 meses ÷ cotação atual (mediana dos fundos do segmento).</li>
+      <li><b>NTN-B</b>: taxa real do título IPCA+ com vencimento mais perto de 5 anos, na curva oficial do Tesouro (a mesma da seção Juros), na data indicada.</li></ul>
+      <p>O DY dos FIIs é isento de IR para a pessoa física (nas regras atuais); a NTN-B paga IR. A comparação é bruta.</p>
+      <p class="sub">Fonte: Fundos.NET (avisos de rendimentos), B3 (cotação) e Tesouro Transparente (NTN-B).</p>`,
+  },
+  fii_pvp: {
+    titulo: "P/VP",
+    html: `<p><b>Cotação ÷ valor patrimonial da cota.</b> O valor patrimonial (patrimônio líquido ÷ cotas) é o informado pela administradora à CVM no informe mensal;
+      os imóveis entram nele pelo valor justo dos laudos de avaliação.</p>
+      <p>P/VP abaixo de 1,0x: o mercado paga menos que o valor contábil dos imóveis (desconto); acima de 1,0x: paga mais (prêmio).
+      No gráfico do fundo, cada semana usa o valor patrimonial do último informe mensal já existente naquela data.</p>
+      <p class="sub">Fonte: CVM (valor patrimonial), B3 (cotação atual) e Yahoo (cotação semanal do gráfico, não oficial).</p>`,
+  },
+  fii_comparativo: {
+    titulo: "Comparativo por segmento",
+    html: `<p>Escolha um segmento: aparecem todos os fundos dele, com a <b>média</b> e a <b>mediana</b> do segmento no topo.</p>
+      <p>Em cada indicador, ▲ marca o fundo acima da média simples do segmento e ▼ abaixo. As cores só indicam o lado, sem dizer se é melhor ou pior.</p>
+      <p>P/VP e DY 12m: cotação oficial da B3 e rendimentos dos avisos do Fundos.NET. Vacância e inadimplência: último informe trimestral à CVM.
+      Patrimônio: último informe mensal. Liquidez: volume financeiro médio por pregão no último mês (COTAHIST da B3).</p>`,
+  },
+  fii_planilhao: {
+    titulo: "Planilhão de FIIs de tijolo",
+    html: `<ul><li><b>Preço</b>: último fechamento no arquivo oficial de cotações da B3 (COTAHIST, mercado à vista).</li>
+      <li><b>P/VP</b>: preço ÷ valor patrimonial da cota do último informe mensal à CVM.</li>
+      <li><b>DY 12m</b>: rendimentos por cota com data-com nos últimos 12 meses ÷ preço. Os rendimentos vêm dos avisos estruturados do Fundos.NET;
+        enquanto os avisos de 12 meses não foram todos lidos, os mais antigos vêm da Yahoo (a página do fundo diz a fonte).</li>
+      <li><b>Último rendimento</b>: valor por cota do aviso mais recente.</li>
+      <li><b>Patrimônio e cotistas</b>: último informe mensal à CVM.</li>
+      <li><b>Liquidez/dia</b>: volume financeiro negociado nos últimos 21 pregões ÷ 21.</li>
+      <li><b>Vacância física</b>: área vaga ÷ área total dos imóveis prontos para renda. <b>Inadimplência</b>: média dos imóveis ponderada pela participação de
+        cada um na receita. Ambas do último informe trimestral à CVM.</li></ul>
+      <p>⚠ = valor como informado, mas com inconsistência apontada pela verificação automática (veja a página do fundo).</p>`,
+  },
+  fii_cadastro: {
+    titulo: "Dados do fundo",
+    html: `<p>Cadastro do fundo como a administradora informa à CVM no informe mensal (quando o campo vem vazio no mês mais recente, vale o último preenchido).
+      Mandato vem do informe trimestral. Patrimônio líquido e número de cotistas: série mensal do informe mensal.</p>
+      <p class="sub">Fonte: CVM — informe mensal de FII (dados abertos); liquidez: B3 (COTAHIST).</p>`,
+  },
+  fii_composicao: {
+    titulo: "Composição do ativo e do passivo",
+    html: `<p>Itens do ativo e do passivo do último informe mensal à CVM, agrupados: imóveis prontos, em construção e para venda, terrenos, participação em
+      sociedades (SPEs), cotas de outros FIIs, CRI/CRA, LCI/LCA, caixa e renda fixa (necessidades de liquidez) e valores a receber.</p>
+      <p>No passivo, as obrigações por aquisição de imóveis e de securitização de recebíveis são as "dívidas" do fundo (imóvel comprado a prazo ou aluguel
+      antecipado com CRI).</p><p class="sub">Fonte: CVM — informe mensal de FII, arquivo de ativo e passivo.</p>`,
+  },
+  fii_cotacao: {
+    titulo: "Cotação × valor patrimonial da cota",
+    html: `<p>Linha azul: cotação de fechamento semanal (Yahoo, não oficial, sem ajuste por rendimentos). Linha âmbar: valor patrimonial da cota informado à CVM
+      a cada mês. A distância entre as duas é o P/VP.</p><p>A cotação dos cartões e do P/VP atual é a oficial da B3 (COTAHIST).</p>`,
+  },
+  fii_dy: {
+    titulo: "Rendimentos e dividend yield",
+    html: `<ul><li><b>Rendimentos</b>: valor por cota do aviso estruturado "Rendimentos e Amortizações" que a administradora entrega no Fundos.NET
+        (data-com, valor e data de pagamento). Antes do primeiro aviso lido pelo site, a Yahoo (data ex, não oficial).</li>
+      <li><b>DY 12m</b>: rendimentos com data-com nos 12 meses até a data da cotação ÷ cotação. No gráfico, o DY de cada mês usa a cotação do fim daquele mês.</li>
+      <li>Amortizações (devolução de capital) não entram no DY.</li></ul>`,
+  },
+  fii_vacancia: {
+    titulo: "Vacância física e inadimplência",
+    html: `<p>Calculadas a partir dos imóveis prontos para renda do informe trimestral à CVM:</p>
+      <ul><li><b>Vacância física</b> = soma de (área × vacância de cada imóvel) ÷ área total.</li>
+      <li><b>Inadimplência</b> = média da inadimplência dos imóveis, ponderada pela participação de cada um na receita do fundo.</li></ul>
+      <p>Vacância financeira (aluguel que deixa de entrar) não é informada à CVM imóvel por imóvel; aparece nos relatórios gerenciais (aba Documentos).</p>`,
+  },
+  fii_rentabilidade: {
+    titulo: "Rentabilidade informada à CVM",
+    html: `<ul><li><b>Dividend yield do mês</b>: rendimento do mês como percentual, como a administradora informa à CVM.</li>
+      <li><b>Rentabilidade efetiva</b>: rendimento do mês somado à variação do valor patrimonial da cota, como informado.</li>
+      <li><b>Rentabilidade patrimonial</b>: variação do valor patrimonial da cota no mês.</li></ul>
+      <p>As bases de cálculo podem variar entre administradoras; por isso o DY dos cartões e do planilhão é o calculado pelo site com a cotação.</p>
+      <p class="sub">Fonte: CVM — informe mensal de FII.</p>`,
+  },
+  fii_carteira: {
+    titulo: "Carteira de imóveis",
+    html: `<p>Imóveis prontos para renda do último informe trimestral à CVM: área, vacância, inadimplência e participação na receita, como informados.</p>
+      <p>Receita por setor dos locatários: soma da participação na receita do fundo por setor de atuação do locatário, como a administradora classifica
+      (os 15 maiores e "Outros").</p><p class="sub">Fonte: CVM — informe trimestral de FII (imóveis e locatários).</p>`,
+  },
+  fii_documentos: {
+    titulo: "Documentos (Fundos.NET)",
+    html: `<p>Lista dos documentos entregues pela administradora no Fundos.NET (sistema da B3 usado pela CVM): fatos relevantes, relatórios gerenciais,
+      avisos de rendimentos, comunicados, informes, ofertas e assembleias. O link abre o documento oficial.</p>
+      <p>Na primeira carga o site guarda os 300 mais recentes; depois junta os novos a cada atualização.</p>`,
+  },
   historico_ajustes: {
     titulo: "Histórico de ajustes",
     html: `<p>Mostra, para esta empresa, tudo o que foi feito para os números ficarem iguais ao que ela divulgou à CVM:</p>
