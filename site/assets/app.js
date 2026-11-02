@@ -1117,7 +1117,7 @@ async function paginaFii(id) {
           ${painelG("fii-rent", "Rentabilidade mensal informada à CVM (%)", "fii_rentabilidade")}
           <div class="painel" data-info="fii_dy"><h2>Últimos rendimentos</h2><div class="rolagem">${tabela([["Data-com"], ["R$/cota"], ["Pagamento"], ["Fonte", true]],
             ultimos.map(([d, v, fonte, pg]) => `<tr><td>${dataBR(d)}</td><td>${num(v, 4)}</td><td>${dataBR(pg)}</td><td style="text-align:left" class="sub">${fonteRend[fonte] || fonte}</td></tr>`))}</div>
-            <div class="nota">Fundos.NET: aviso estruturado de rendimentos (data-com oficial). Yahoo: data ex, usada só antes do primeiro aviso lido.
+            <div class="nota">Fundos.NET: aviso estruturado de rendimentos (data-com oficial). Yahoo (não oficial): só antes do primeiro aviso lido, com a data-com estimada como o dia útil anterior à data ex (sem descontar feriados).
               ${f.amortizacoes.length ? `Amortizações no período: ${f.amortizacoes.map(([d, v]) => `R$ ${num(v, 4)} (${dataBR(d)})`).join(", ")} — não entram no DY.` : ""}</div></div>
         </div>`;
       grafico(document.getElementById("fii-rend"), { xTempo: true, inicioTempo: desde(5), deslizante: true, eixoEsq: "preco", eixoDir: "pctPronto", series: [
