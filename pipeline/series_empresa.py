@@ -20,14 +20,19 @@ PADRAO_DIV = re.compile(r"dividend|juros sobre (?:o )?capital|\bjcp\b", re.I)
 EXCLUI_DIV = re.compile(r"receb", re.I)
 
 FLUXOS = {
-    "receita": "3.01", "lucro_bruto": "3.03", "ebit": "3.05", "res_fin": "3.06",
+    "receita": "3.01", "custo": "3.02", "lucro_bruto": "3.03", "ebit": "3.05", "res_fin": "3.06",
     "rec_fin": "3.06.01", "desp_fin": "3.06.02", "lair": "3.07", "ir": "3.08",
     "lucro_liquido": "3.11", "fco": "6.01", "fci": "6.02", "fcfin": "6.03", "var_caixa": "6.05",
 }
 SALDOS = {
     "ativo_total": "1", "ativo_circ": "1.01", "caixa": "1.01.01", "aplicacoes": "1.01.02",
     "passivo_total": "2", "passivo_circ": "2.01", "emprest_cp": "2.01.04", "emprest_lp": "2.02.01", "pl": "2.03",
+    # capital de giro, prazos e liquidez (contas padronizadas da CVM)
+    "contas_receber": "1.01.03", "estoques": "1.01.04", "ativo_nc": "1.02", "rlp": "1.02.01",
+    "fornecedores": "2.01.02", "passivo_nc": "2.02",
 }
+# Dias de cada visão para os prazos médios (saldo ÷ fluxo do período × dias); o ano e os 12 meses usam 360
+DIAS_VISAO = {"trimestral": 90, "semestral": 180, "anual": 360, "ltm": 360}
 
 
 def _por_codigo(df, fator):
@@ -151,9 +156,14 @@ def _agregar(q, grupos):
     linhas = {}
     for fim, datas in grupos:
         bloco = q.loc[datas]
-        valores = bloco[FLUXOS_TODOS].sum(min_count=len(datas))
-        linhas[fim] = pd.concat([valores, q.loc[fim, SALDOS_TODOS]])
-    return pd.DataFrame(linhas).T if linhas else pd.DataFrame(columns=FLUXOS_TODOS + SALDOS_TODOS)
+        valores = bloco[_presentes(q, FLUXOS_TODOS)].sum(min_count=len(datas))
+        linhas[fim] = pd.concat([valores, q.loc[fim, _presentes(q, SALDOS_TODOS)]])
+    return pd.DataFrame(linhas).T if linhas else pd.DataFrame(columns=_presentes(q, FLUXOS_TODOS + SALDOS_TODOS))
+
+
+def _presentes(q, colunas):
+    """Só as colunas que a fonte tem (as empresas dos EUA não trazem todas as contas da CVM)."""
+    return [c for c in colunas if c in q.columns]
 
 
 def _mes_anterior(ano, mes, n):
@@ -186,7 +196,7 @@ def montar_visoes(q, mes_fim_exercicio=12):
     ltm = [(datas[j], datas[j - 3: j + 1]) for j in range(3, len(datas)) if _consecutivos(datas[j - 3: j + 1])]
 
     return {
-        "trimestral": q[FLUXOS_TODOS + SALDOS_TODOS].copy(),
+        "trimestral": q[_presentes(q, FLUXOS_TODOS + SALDOS_TODOS)].copy(),
         "semestral": _agregar(q, semestres),
         "anual": _agregar(q, anos),
         "ltm": _agregar(q, ltm),
@@ -284,7 +294,38 @@ def adicionar_indicadores(visoes, aliquota=0.34):
         v["cobertura_juros"] = _div_pos(base["ebit"], -base["desp_fin"])
         v["conv_caixa"] = _div_pos(base["fco"], base["ebitda"])
         v["conv_lucro"] = _div_pos(base["fcf"], base["lucro_liquido"])
+        v["dl_ebit"] = _div_pos(v["divida_liquida"], base["ebit"])
+        v["dl_ebit_ifrs16"] = _div_pos(v["divida_liquida_ifrs16"], base["ebit"])
+        v["dl_capital"] = _div_pos(v["divida_liquida"], v["divida_liquida"] + v["pl"])
+        v["dl_capital_ifrs16"] = _div_pos(v["divida_liquida_ifrs16"], v["divida_liquida_ifrs16"] + v["pl"])
+        # cobertura de juros do próprio período (EBIT ÷ despesa financeira), além da de 12 meses acima
+        v["cobertura_juros_periodo"] = _div_pos(v["ebit"], -v["desp_fin"])
+        if "contas_receber" in v:
+            adicionar_capital_de_giro(v, DIAS_VISAO.get(nome, 90))
     return visoes
+
+
+def adicionar_capital_de_giro(v, dias):
+    """Liquidez, prazos médios, ciclos e modelo Fleuriet (capital de giro, necessidade de capital de giro e saldo de tesouraria).
+    Prazos = saldo do fim do período ÷ receita (ou custo) do período × dias do período."""
+    nada = lambda k: v[k].fillna(0)  # noqa: E731 — conta que a empresa não tem (estoque em serviços) conta como zero
+    caixa = nada("caixa") + nada("aplicacoes")
+    custo = -v["custo"]  # o custo vem negativo na DRE
+    v["div_cp"] = v["emprest_cp"]
+    v["div_lp"] = v["emprest_lp"]
+    v["div_cp_pct"] = _div_pos(nada("emprest_cp"), nada("emprest_cp") + nada("emprest_lp"))
+    v["liq_seca"] = _div_pos(v["ativo_circ"] - nada("estoques"), v["passivo_circ"])
+    v["liq_imediata"] = _div_pos(caixa, v["passivo_circ"])
+    v["liq_geral"] = _div_pos(v["ativo_circ"] + nada("rlp"), v["passivo_circ"] + nada("passivo_nc"))
+    v["pmr"] = _div_pos(nada("contas_receber"), v["receita"]) * dias
+    v["pme"] = _div_pos(nada("estoques"), custo) * dias
+    v["pmp"] = _div_pos(nada("fornecedores"), custo) * dias
+    v["ciclo_operacional"] = v["pme"] + v["pmr"]
+    v["ciclo_caixa"] = v["ciclo_operacional"] - v["pmp"]
+    # Fleuriet: ativo e passivo circulantes separados em financeiros (caixa e aplicações; empréstimos de curto prazo) e operacionais
+    v["cdg"] = v["ativo_circ"] - v["passivo_circ"]                      # = PL + passivo não circulante − ativo não circulante
+    v["ncg"] = (v["ativo_circ"] - caixa) - (v["passivo_circ"] - nada("emprest_cp"))
+    v["saldo_tesouraria"] = caixa - nada("emprest_cp")                   # = CDG − NCG
 
 
 def demonstracoes(blocos, fator, base, visoes, anos=4, dre_completa=None):

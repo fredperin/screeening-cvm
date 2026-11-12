@@ -82,7 +82,7 @@ function formatar(tipo, v) {
  * eixoEsq/eixoDir: "reais" | "pct" | "pctPronto" | "vezes" | "preco"
  */
 function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTempo = false, xNome = null, degrau = false,
-  janela = 24, inicioTempo = null, deslizante = false, limitesEsq = null }) {
+  janela = 24, inicioTempo = null, deslizante = false, limitesEsq = null, detalhe = null }) {
   const g = echarts.init(el, null, { renderer: "canvas" });
   graficos.push(g);
   const eixosY = [{ ...eixoValor(eixoEsq, "left"), ...(limitesEsq ? { min: limitesEsq[0], max: limitesEsq[1], scale: false } : {}) }];
@@ -103,7 +103,7 @@ function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTemp
         return [cab, ...itens.map((i) => {
           const s = series[i.seriesIndex];
           const v = Array.isArray(i.value) ? i.value[1] : i.value;
-          return `${i.marker} ${s.nome}: <b>${formatar(s.eixo === "dir" ? eixoDir : eixoEsq, v)}</b>`;
+          return `${i.marker} ${s.nome}: <b>${formatar(s.eixo === "dir" ? eixoDir : eixoEsq, v)}</b>${detalhe ? detalhe(i.seriesIndex, i.dataIndex) : ""}`;
         })].join("<br>");
       },
     },
@@ -443,7 +443,7 @@ const MENU = [
     ["Brasil", [["Macro", "#/on/macro", "on|macro"], ["Juros", "#/on/juros", "on|juros"]]],
     ["Mundo", [["Macro", "#/off/macro", "off|macro"], ["Juros", "#/off/juros", "off|juros"]]]] },
   { titulo: "Empresas", grupos: [
-    ["Brasil", [["Informações", "#/on/empresas/noticias", "on|empresas|noticias"], ["Notícias", "#/on/empresas/manchetes", "on|empresas|manchetes"],
+    ["Brasil", [["Notícias", "#/on/empresas/manchetes", "on|empresas|manchetes"],
       ["Fatos relevantes", "#/on/empresas/fatos", "on|empresas|fatos"], ["Empresas", "#/on/empresas/tabela", "on|empresas|tabela"],
       ["Bancos", "#/on/empresas/financeiras", "on|empresas|financeiras"], ["Operacional", "#/on/empresas/operacional", "on|empresas|operacional"]]],
     ["Mundo", [["S&P 500", "#/off/empresas/sp500", "off|empresas|sp500"], ["Empresas", "#/off/empresas/empresas", "off|empresas|empresas"]]]] },
@@ -454,6 +454,7 @@ const MENU = [
 function desenharNav(lado, secao, parametro) {
   let atual = `${lado}|${secao}`;
   if (lado === "cons" || secao === "" || secao === "noticias") atual = "cons|";
+  if (secao === "empresas" && lado === "on" && parametro === "noticias") parametro = "fatos";
   if (secao === "empresas") {
     const validas = lado === "on" ? ABAS_EMPRESAS : ABAS_EMPRESAS_MUNDO;
     atual = `${lado}|empresas|${validas.some(([k]) => k === parametro) ? parametro : validas[0][0]}`;
@@ -591,11 +592,12 @@ async function paginaInicio() {
 /* ============ Empresas (lista) ============ */
 // Abas: informações (calendário, divulgações, proventos), notícias e fatos relevantes, tabela das empresas e instituições financeiras
 // Empresas > Brasil: os mesmos itens do menu lateral (Notícias e Fatos relevantes eram uma aba só)
-const ABAS_EMPRESAS = [["noticias", "Informações"], ["manchetes", "Notícias"], ["fatos", "Fatos relevantes"], ["tabela", "Empresas"], ["financeiras", "Bancos"],
+const ABAS_EMPRESAS = [["manchetes", "Notícias"], ["fatos", "Fatos relevantes"], ["tabela", "Empresas"], ["financeiras", "Bancos"],
   ["operacional", "Operacional"]];
 
 async function paginaEmpresas(aba) {
-  if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "noticias";
+  if (aba === "noticias") aba = "fatos";  // a antiga aba Informações virou parte de Fatos relevantes
+  if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "manchetes";
   const [mercado, fatos, noticias, cal] = await Promise.all([dados("dados/mercado.json").catch(() => ({ empresas: [] })),
     dados("dados/eventos_recentes.json").catch(() => null),
     dados("dados/noticias_empresas.json").catch(() => dados("dados/noticias.json").catch(() => null)),
@@ -627,20 +629,15 @@ async function paginaEmpresas(aba) {
   }
   if (aba === "fatos") {
     app.innerHTML = `${cab}${abas}
-    <div class="grade grade-empilhada">
-      <div class="painel"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
+    <div class="grade">
+      <div class="painel largo" data-info="fatos_relevantes"><h2>Fatos relevantes recentes</h2><div class="rolagem rolagem-y"><table class="tabela">
         <tr><th>Data</th><th>Papel</th><th style="text-align:left">Assunto</th></tr>
-        ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 200).map((e) => `<tr><td>${dataBR(e.data)}</td>
+        ${fatos && fatos.eventos.length ? fatos.eventos.slice(0, 200).map((e) => `<tr><td>${dataBR(e.data)}${e.hora ? ` <span class="sub">${esc(e.hora)}</span>` : ""}</td>
           <td><a href="#/on/empresa/${esc(e.id)}">${esc(e.id)}</a></td>
           <td style="white-space:normal;text-align:left">${e.link ? `<a href="${esc(e.link)}" target="_blank" rel="noopener">${esc(e.assunto)}</a>` : esc(e.assunto)}</td></tr>`).join("")
           : `<tr><td colspan="3" class="sub">Sem fatos relevantes recentes.</td></tr>`}
-      </table></div><div class="nota">Fonte: CVM (documentos IPE), com link para o documento oficial.</div></div>
-    </div>`;
-    return;
-  }
-  if (aba === "noticias") {
-    app.innerHTML = `${cab}${abas}
-    <div class="grade">
+      </table></div><div class="nota">Fonte: CVM, com link para o documento oficial: consulta de documentos (RAD) ao longo do dia, nos dias úteis,
+        e o arquivo de dados abertos (IPE) para o histórico. ${fatos && fatos.atualizado_em ? `Última busca: ${esc(fatos.atualizado_em.replace("T", " "))}.` : ""}</div></div>
       <div class="painel largo" data-info="calendario_resultados"><h2>Calendário de resultados — próximo ITR/DFP de cada empresa</h2>${tabelaCalendario(cal)}
         <div class="nota">"est." = estimativa pelo histórico: a data em que a empresa entregou o mesmo trimestre no ano anterior, limitada ao prazo legal.
           Não é a data oficial anunciada pela empresa. Fonte: CVM (datas de entrega de ITR/DFP).</div></div>
@@ -1173,7 +1170,7 @@ let FC_SEL = "todos";
 let DIV_IFRS16 = false;
 let ABA_EMPRESA = "negocio";
 let NOTICIAS_CACHE = null;
-const ABAS_EMPRESA = [["negocio", "Negócio"], ["eventos", "Eventos e notícias"], ["cotacao", "Cotação"], ["resultados", "Resultados"], ["graficos", "Gráficos"], ["dividendos", "Dividendos"], ["ajustes", "Histórico de ajustes"]];
+const ABAS_EMPRESA = [["negocio", "Negócio"], ["eventos", "Eventos e notícias"], ["cotacao", "Cotação"], ["resultados", "Resultados"], ["graficos", "Indicadores"], ["dividendos", "Dividendos"], ["ajustes", "Histórico de ajustes"]];
 let JANELA_COTACAO = 5;
 const INFO_EMPRESA = {
   "Receita líquida": "receita", "Lucro bruto e margem bruta": "lucro_bruto", "EBITDA e margem EBITDA": "ebitda",
@@ -1246,8 +1243,7 @@ async function paginaEmpresa(id) {
   const ABAS = {
     graficos: () => {
       document.getElementById("aba-empresa").innerHTML = `
-        <div class="cabecalho"><h2 style="margin:0">Gráficos</h2>
-          <div class="seletor" id="visao">${["trimestral", "semestral", "anual"].map((v) => `<button data-v="${v}" class="${v === VISAO ? "ativo" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</div></div>
+        <div class="seletor seletor-editoria" id="sub-ind" style="margin:0 0 12px">${SUBSECOES_IND.map(([k, r]) => `<button data-k="${k}" class="${k === SUB_IND ? "ativo" : ""}">${r}</button>`).join("")}</div>
         <div class="grade" id="graficos-empresa"></div>
         <div class="secao painel nota" id="notas">
           <b>Notas.</b> Valores em reais, da CVM (consolidado; individual quando não há consolidado). Semestres e anos só aparecem fechados.
@@ -1257,10 +1253,11 @@ async function paginaEmpresa(id) {
           Capex: ${esc((nt.capex || []).join("; ") || "nenhuma linha encontrada")}<br>
           Dividendos pagos: ${esc((nt.dividendos || []).join("; ") || "nenhuma linha encontrada")}<br>
           Dívida bruta sem IFRS 16 = empréstimos, financiamentos e debêntures (CP + LP); com IFRS 16 = soma também os passivos de arrendamento, identificados pela descrição no balanço.</div>`;
-      document.getElementById("visao").addEventListener("click", (ev) => {
+      document.getElementById("sub-ind").addEventListener("click", (ev) => {
         const b = ev.target.closest("button"); if (!b) return;
-        VISAO = b.dataset.v;
-        document.querySelectorAll("#visao button").forEach((x) => x.classList.toggle("ativo", x === b));
+        SUB_IND = b.dataset.k;
+        document.querySelectorAll("#sub-ind button").forEach((x) => x.classList.toggle("ativo", x === b));
+        limparGraficos();
         desenharGraficosEmpresa(emp);
       });
       desenharGraficosEmpresa(emp);
@@ -1390,73 +1387,182 @@ function desenharFicha(f) {
     <div class="nota" style="margin-top:6px">Fonte: Formulário de Referência e Formulário Cadastral (CVM).</div>`;
 }
 
+// Aba Indicadores da empresa: três subseções (Resultado, Endividamento, Indicadores), um gráfico por linha,
+// cada um com o próprio seletor trimestral / semestral / anual (no anual, o ano ainda não fechado entra como últimos 12 meses)
+const SUBSECOES_IND = [["resultado", "Resultado"], ["endividamento", "Endividamento"], ["indicadores", "Indicadores"]];
+let SUB_IND = "resultado";
+const VISAO_GRAF = {};  // visão escolhida em cada gráfico (se não escolhida, a última usada)
+const VISOES_IND = [["trimestral", "Trimestral"], ["semestral", "Semestral"], ["anual", "Anual"]];
+
+function fimMesAntes(iso, n) {
+  let a = Number(iso.slice(0, 4)), m = Number(iso.slice(5, 7)) - n;
+  while (m <= 0) { m += 12; a -= 1; }
+  const d = new Date(Date.UTC(a, m, 0)).getUTCDate();
+  return `${a}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+// Períodos e séries de uma visão; no anual, acrescenta os últimos 12 meses quando o ano em curso ainda não fechou
+function serieVisao(emp, visao) {
+  const v = emp[visao] || { periodos: [], series: {} }, mesFim = emp.mes_fim_exercicio || 12;
+  const per = [...v.periodos], rot = per.map((p) => rotuloPeriodo(p, visao, mesFim)), fonte = per.map(() => visao);
+  const S = {};
+  Object.keys(v.series).forEach((k) => (S[k] = [...v.series[k]]));
+  const L = emp.ltm;
+  if (visao === "anual" && L && L.periodos.length) {
+    const nl = L.periodos.length - 1, d = L.periodos[nl];
+    if (!per.length || d > per[per.length - 1]) {
+      per.push(d); rot.push(`LTM ${rotuloPeriodo(d, "trimestral")}`); fonte.push("ltm");
+      Object.keys(S).forEach((k) => S[k].push((L.series[k] || [])[nl] ?? null));
+    }
+  }
+  return { per, rot, S, fonte };
+}
+
+// Variação contra n meses antes, na mesma visão (o ponto LTM compara com o LTM de n meses antes)
+function variacaoEmp(emp, fonte, k, data, n) {
+  const v = emp[fonte]; if (!v) return null;
+  const i = v.periodos.indexOf(data), j = v.periodos.indexOf(fimMesAntes(data, n));
+  const a = (v.series[k] || [])[i], b = (v.series[k] || [])[j];
+  return a == null || b == null || i < 0 || j < 0 || b === 0 ? null : (a - b) / Math.abs(b);
+}
+
 function desenharGraficosEmpresa(emp) {
   const area = document.getElementById("graficos-empresa");
+  if (!area) return;
   graficos.splice(0).forEach((g) => g.dispose());
-  const v = emp[VISAO], S = v.series;
-  const rot = v.periodos.map((p) => rotuloPeriodo(p, VISAO, emp.mes_fim_exercicio || 12));
-  const neg = (arr) => arr.map((x) => (x == null ? null : -x));
   const soma = (a, b) => a.map((x, i) => (x == null && b[i] == null ? null : (x || 0) + (b[i] || 0)));
-  const defs = [
-    ["Receita líquida", { series: [{ nome: "Receita", valores: S.receita, cor: COR.azul }, { nome: "Crescimento a/a", valores: S.cresc_receita, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
-    ["Lucro bruto e margem bruta", { series: [{ nome: "Lucro bruto", valores: S.lucro_bruto, cor: COR.azul }, { nome: "Margem bruta", valores: S.m_bruta, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
-    ["EBITDA e margem EBITDA", { series: [{ nome: "EBITDA", valores: S.ebitda, cor: COR.azul }, { nome: "Margem EBITDA", valores: S.m_ebitda, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
-    ["EBIT e margem EBIT", { series: [{ nome: "EBIT", valores: S.ebit, cor: COR.azul }, { nome: "Margem EBIT", valores: S.m_ebit, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
-    ["Lucro líquido e margem líquida", { series: [{ nome: "Lucro líquido", valores: S.lucro_liquido, cor: COR.verde }, { nome: "Margem líquida", valores: S.m_liquida, tipo: "line", eixo: "dir", cor: COR.ambar }], eixoDir: "pct" }],
-    ["Resultado financeiro", { series: [{ nome: "Receitas financeiras", valores: S.rec_fin, cor: COR.verde, pilha: "fin" }, { nome: "Despesas financeiras", valores: S.desp_fin, cor: COR.vermelho, pilha: "fin" }, { nome: "Resultado financeiro", valores: S.res_fin, tipo: "line", cor: COR.ambar }] }],
-    ["Retorno (LTM)", { series: [{ nome: "ROE", valores: S.roe, tipo: "line", cor: COR.ambar }, { nome: "ROIC", valores: S.roic, tipo: "line", cor: COR.ciano }], eixoEsq: "pct" }],
-  ];
-  area.innerHTML = defs.map((d, i) => `<div class="painel" data-info="${INFO_EMPRESA[d[0]] || ""}"><h2>${d[0]}</h2><div class="grafico" id="ge-${i}"></div></div>`).join("")
-    + `<div class="painel" data-info="fluxo_caixa"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Fluxo de caixa (DFC)</h2>
-        <div class="seletor" id="sel-fc">${OPCOES_FC.map(([k, r]) => `<button data-k="${k}" class="${k === FC_SEL ? "ativo" : ""}">${r}</button>`).join("")}</div></div>
-        <div class="grafico" id="ge-fc"></div>
-        <div class="nota">FCO = operacional · FCI = investimento · FCFi = financiamento · Soma = FCO + FCI + FCFi (variação do caixa, antes da variação cambial).</div></div>
-      <div class="painel" data-info="endividamento"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">Endividamento</h2>
-        <div class="seletor" id="sel-div"><button data-k="sem" class="${DIV_IFRS16 ? "" : "ativo"}">Sem IFRS 16</button><button data-k="com" class="${DIV_IFRS16 ? "ativo" : ""}">+ Arrendamentos (IFRS 16)</button></div></div>
-        <div class="grafico" id="ge-div"></div>
-        <div class="nota">Sem IFRS 16: empréstimos, financiamentos e debêntures. Com IFRS 16: soma os passivos de arrendamento (aluguéis, frota, aeronaves) identificados no balanço. Dív. líq./EBITDA usa o EBITDA dos últimos 12 meses.</div></div>`;
-  defs.forEach((d, i) => grafico(document.getElementById(`ge-${i}`), { rotulos: rot, ...d[1] }));
-  const vazio = S.receita.map(() => null);
-  const fco = S.fco || vazio, fci = S.fci || vazio, fcfin = S.fcfin || vazio;
-  const somaFc = fco.map((x, i) => (x == null && fci[i] == null && fcfin[i] == null ? null : (x || 0) + (fci[i] || 0) + (fcfin[i] || 0)));
-  const seriesFc = {
-    fco: { nome: "FCO", valores: fco, cor: COR.azul }, fci: { nome: "FCI", valores: fci, cor: COR.vermelho },
-    fcfin: { nome: "FCFi", valores: fcfin, cor: COR.roxo }, soma: { nome: "Soma (FCO+FCI+FCFi)", valores: somaFc, cor: COR.verde },
-  };
-  let gFc = null;
-  const desenharFc = () => {
-    if (gFc) { gFc.dispose(); graficos.splice(graficos.indexOf(gFc), 1); }
-    const escolhidas = FC_SEL === "todos" ? [seriesFc.fco, seriesFc.fci, seriesFc.fcfin] : [seriesFc[FC_SEL]];
-    gFc = grafico(document.getElementById("ge-fc"), { rotulos: rot, series: escolhidas, janela: 12 });
-  };
-  document.getElementById("sel-fc").addEventListener("click", (ev) => {
-    const b = ev.target.closest("button"); if (!b) return;
-    FC_SEL = b.dataset.k;
-    document.querySelectorAll("#sel-fc button").forEach((x) => x.classList.toggle("ativo", x === b));
-    desenharFc();
-  });
-  desenharFc();
+  const z = (S, k) => S[k] || S.receita.map(() => null);
+  const com16 = () => DIV_IFRS16 && emp.trimestral.series.divida_bruta_ifrs16;
+  const varTxt = (x) => (x == null ? "—" : `<span class="${x >= 0 ? "pos" : "neg"}">${x >= 0 ? "+" : ""}${num(x * 100, 1)}%</span>`);
+  const ttMeses = { trimestral: 3, semestral: 6 };
 
-  let gDiv = null;
-  const caixaTotal = soma(S.caixa, S.aplicacoes);
-  const desenharDiv = () => {
-    if (gDiv) { gDiv.dispose(); graficos.splice(graficos.indexOf(gDiv), 1); }
-    const com = DIV_IFRS16 && S.divida_bruta_ifrs16;
-    gDiv = grafico(document.getElementById("ge-div"), { rotulos: rot, eixoDir: "vezes", janela: 16, series: [
-      { nome: "Dívida bruta (empréstimos)", valores: S.divida_bruta, cor: COR.vermelho, pilha: "divida" },
-      ...(com ? [{ nome: "Arrendamentos (IFRS 16)", valores: S.arrendamentos, cor: COR.roxo, pilha: "divida" }] : []),
-      { nome: "Caixa + aplicações", valores: caixaTotal, cor: COR.verde },
-      { nome: com ? "Dívida líquida c/ arrend." : "Dívida líquida", valores: com ? S.divida_liquida_ifrs16 : S.divida_liquida, cor: COR.azul },
-      { nome: com ? "Dív. líq./EBITDA c/ arrend." : "Dív. líq./EBITDA", valores: com ? S.dl_ebitda_ifrs16 : S.dl_ebitda, tipo: "line", eixo: "dir", cor: COR.ambar }] });
+  const RESULTADO = [
+    { k: "res-principais", t: "Receita, EBITDA, EBIT e lucro líquido", info: "receita",
+      nota: "Passe o mouse sobre a barra: valor, crescimento contra o mesmo período do ano anterior (a/a) e contra o período imediatamente anterior (t/t). No anual, o último ponto pode ser os últimos 12 meses (LTM).",
+      g: (d, visao) => {
+        const ks = [["receita", "Receita líquida", COR.azul], ["ebitda", "EBITDA", COR.ciano], ["ebit", "EBIT", COR.roxo], ["lucro_liquido", "Lucro líquido", COR.verde]];
+        return { series: ks.map(([k, nome, cor]) => ({ nome, valores: z(d.S, k), cor })),
+          detalhe: (si, di) => {
+            const k = ks[si][0], f = d.fonte[di], data = d.per[di];
+            const aa = variacaoEmp(emp, f, k, data, 12), tt = f === "ltm" ? variacaoEmp(emp, "ltm", k, data, 3) : ttMeses[visao] ? variacaoEmp(emp, f, k, data, ttMeses[visao]) : null;
+            return ` · a/a ${varTxt(aa)}${visao === "anual" && f !== "ltm" ? "" : ` · t/t ${varTxt(tt)}`}`;
+          } };
+      } },
+    { k: "res-margens", t: "Margens (bruta, EBITDA, EBIT e líquida)", info: "lucro_bruto", g: (d) => ({ eixoEsq: "pct", series: [
+      { nome: "Margem bruta", valores: z(d.S, "m_bruta"), tipo: "line", cor: COR.azul }, { nome: "Margem EBITDA", valores: z(d.S, "m_ebitda"), tipo: "line", cor: COR.ciano },
+      { nome: "Margem EBIT", valores: z(d.S, "m_ebit"), tipo: "line", cor: COR.roxo }, { nome: "Margem líquida", valores: z(d.S, "m_liquida"), tipo: "line", cor: COR.verde }] }) },
+    { k: "res-financeiro", t: "Resultado financeiro", info: "resultado_financeiro", g: (d) => ({ series: [
+      { nome: "Receitas financeiras", valores: z(d.S, "rec_fin"), cor: COR.verde, pilha: "fin" }, { nome: "Despesas financeiras", valores: z(d.S, "desp_fin"), cor: COR.vermelho, pilha: "fin" },
+      { nome: "Resultado financeiro", valores: z(d.S, "res_fin"), tipo: "line", cor: COR.ambar }] }) },
+    { k: "res-fc", t: "Fluxo de caixa (DFC)", info: "fluxo_caixa",
+      nota: "FCO = operacional · FCI = investimento · FCFi = financiamento. Barras empilhadas; a linha é a soma (variação do caixa, antes da variação cambial).",
+      g: (d) => {
+        const fco = z(d.S, "fco"), fci = z(d.S, "fci"), fcfin = z(d.S, "fcfin");
+        return { series: [{ nome: "FCO", valores: fco, cor: COR.azul, pilha: "fc" }, { nome: "FCI", valores: fci, cor: COR.vermelho, pilha: "fc" },
+          { nome: "FCFi", valores: fcfin, cor: COR.roxo, pilha: "fc" }, { nome: "Soma", valores: soma(soma(fco, fci), fcfin), tipo: "line", cor: COR.ambar }] };
+      } },
+  ];
+  const ENDIVIDAMENTO = [
+    { k: "div-alav", t: "Alavancagem: dívida líquida / EBITDA e dívida líquida / EBIT", info: "endividamento",
+      nota: "Dívida líquida do fim do período ÷ EBITDA (ou EBIT) dos últimos 12 meses da mesma data. Negativo = caixa maior que a dívida.",
+      g: (d) => ({ eixoEsq: "vezes", series: [
+        { nome: "Dív. líq./EBITDA", valores: z(d.S, com16() ? "dl_ebitda_ifrs16" : "dl_ebitda"), tipo: "line", cor: COR.ambar },
+        { nome: "Dív. líq./EBIT", valores: z(d.S, com16() ? "dl_ebit_ifrs16" : "dl_ebit"), tipo: "line", cor: COR.azul }] }) },
+    { k: "div-valores", t: "Dívida bruta, caixa e dívida líquida", info: "endividamento", g: (d) => ({ series: [
+      { nome: "Dívida bruta (empréstimos)", valores: z(d.S, "divida_bruta"), cor: COR.vermelho, pilha: "divida" },
+      ...(com16() ? [{ nome: "Arrendamentos (IFRS 16)", valores: z(d.S, "arrendamentos"), cor: COR.roxo, pilha: "divida" }] : []),
+      { nome: "Caixa + aplicações", valores: soma(z(d.S, "caixa"), z(d.S, "aplicacoes")), cor: COR.verde },
+      { nome: com16() ? "Dívida líquida c/ arrend." : "Dívida líquida", valores: z(d.S, com16() ? "divida_liquida_ifrs16" : "divida_liquida"), tipo: "line", cor: COR.ambar }] }) },
+    { k: "div-prazo", t: "Dívida de curto e de longo prazo (R$ e % no curto prazo)", info: "divida_prazo",
+      nota: "Empréstimos, financiamentos e debêntures do passivo circulante (curto prazo, vence em até 12 meses) e não circulante, como nas contas 2.01.04 e 2.02.01 da CVM.",
+      g: (d) => ({ eixoDir: "pct", series: [
+        { nome: "Curto prazo", valores: z(d.S, "div_cp"), cor: COR.vermelho, pilha: "prazo" }, { nome: "Longo prazo", valores: z(d.S, "div_lp"), cor: COR.azul, pilha: "prazo" },
+        { nome: "% no curto prazo", valores: z(d.S, "div_cp_pct"), tipo: "line", eixo: "dir", cor: COR.ambar }] }) },
+    { k: "div-capital", t: "Dívida líquida / capital e dívida líquida / patrimônio líquido", info: "divida_capital",
+      nota: "Capital = dívida líquida + patrimônio líquido. Negativo = caixa maior que a dívida.",
+      g: (d) => ({ eixoEsq: "pct", series: [
+        { nome: "Dív. líq./capital", valores: z(d.S, com16() ? "dl_capital_ifrs16" : "dl_capital"), tipo: "line", cor: COR.ambar },
+        { nome: "Dív. líq./PL", valores: z(d.S, com16() ? "dl_pl_ifrs16" : "dl_pl"), tipo: "line", cor: COR.azul }] }) },
+    { k: "div-juros", t: "Índice de cobertura de juros (EBIT ÷ despesa financeira)", info: "cobertura_juros",
+      nota: "Período: EBIT ÷ despesas financeiras do próprio período. 12 meses: o mesmo com os últimos 12 meses. As despesas financeiras da CVM incluem juros, variação cambial e outros encargos.",
+      g: (d) => ({ eixoEsq: "vezes", series: [
+        { nome: "Cobertura no período", valores: z(d.S, "cobertura_juros_periodo"), cor: COR.azul },
+        { nome: "Cobertura 12 meses", valores: z(d.S, "cobertura_juros"), tipo: "line", cor: COR.ambar }] }) },
+  ];
+  const INDICADORES = [
+    { k: "ind-liquidez", t: "Liquidez (corrente, seca, imediata e geral)", info: "liquidez",
+      nota: "Corrente = ativo circulante ÷ passivo circulante · Seca = (ativo circulante − estoques) ÷ passivo circulante · Imediata = caixa e aplicações ÷ passivo circulante · Geral = (ativo circulante + realizável a longo prazo) ÷ (passivo circulante + não circulante).",
+      g: (d) => ({ eixoEsq: "vezes", series: [
+        { nome: "Corrente", valores: z(d.S, "liquidez_corrente"), tipo: "line", cor: COR.azul }, { nome: "Seca", valores: z(d.S, "liq_seca"), tipo: "line", cor: COR.ciano },
+        { nome: "Imediata", valores: z(d.S, "liq_imediata"), tipo: "line", cor: COR.verde }, { nome: "Geral", valores: z(d.S, "liq_geral"), tipo: "line", cor: COR.ambar }] }) },
+    { k: "ind-ciclo", t: "Prazos médios e ciclo de caixa (dias)", info: "ciclo_caixa",
+      nota: "Prazo = saldo do fim do período ÷ fluxo do período × dias (trimestre 90, semestre 180, ano e últimos 12 meses 360). Recebimento: contas a receber ÷ receita. Estocagem: estoques ÷ custo. Pagamento: fornecedores ÷ custo. Ciclo operacional = estocagem + recebimento; ciclo de caixa = operacional − pagamento.",
+      g: (d) => ({ eixoEsq: "inteiro", series: [
+        { nome: "Prazo de recebimento", valores: z(d.S, "pmr"), cor: COR.azul }, { nome: "Prazo de estocagem", valores: z(d.S, "pme"), cor: COR.ciano },
+        { nome: "Prazo de pagamento", valores: z(d.S, "pmp"), cor: COR.vermelho },
+        { nome: "Ciclo operacional", valores: z(d.S, "ciclo_operacional"), tipo: "line", cor: COR.roxo }, { nome: "Ciclo de caixa", valores: z(d.S, "ciclo_caixa"), tipo: "line", cor: COR.ambar }] }) },
+    { k: "ind-giro", t: "Capital de giro, necessidade de capital de giro e saldo de tesouraria (efeito tesoura)", info: "capital_giro",
+      nota: "Capital de giro (CDG) = ativo circulante − passivo circulante. Necessidade de capital de giro (NCG) = ativo circulante operacional (sem caixa e aplicações) − passivo circulante operacional (sem empréstimos de curto prazo). Saldo de tesouraria (T) = CDG − NCG. Efeito tesoura: a NCG cresce mais que o CDG e o saldo de tesouraria fica cada vez mais negativo.",
+      g: (d) => ({ series: [
+        { nome: "Capital de giro (CDG)", valores: z(d.S, "cdg"), cor: COR.azul }, { nome: "Necessidade de capital de giro (NCG)", valores: z(d.S, "ncg"), cor: COR.ciano },
+        { nome: "Saldo de tesouraria (T)", valores: z(d.S, "saldo_tesouraria"), tipo: "line", cor: COR.ambar }] }) },
+    { k: "ind-estrutura", t: "Estrutura financeira (modelo Fleuriet)", info: "estrutura_financeira", tabela: true },
+    { k: "ind-retorno", t: "Retorno (ROE e ROIC, últimos 12 meses)", info: "retorno", g: (d) => ({ eixoEsq: "pct", series: [
+      { nome: "ROE", valores: z(d.S, "roe"), tipo: "line", cor: COR.ambar }, { nome: "ROIC", valores: z(d.S, "roic"), tipo: "line", cor: COR.ciano }] }) },
+  ];
+  const defs = { resultado: RESULTADO, endividamento: ENDIVIDAMENTO, indicadores: INDICADORES }[SUB_IND];
+  const seletor = (k) => `<div class="seletor" data-graf="${k}">${VISOES_IND.map(([v, r]) => `<button data-v="${v}" class="${v === (VISAO_GRAF[k] || VISAO) ? "ativo" : ""}">${r}</button>`).join("")}</div>`;
+  area.innerHTML = `${SUB_IND === "endividamento" ? `<div class="seletor" id="sel-div" style="margin:0 0 10px"><button data-k="sem" class="${DIV_IFRS16 ? "" : "ativo"}">Sem IFRS 16</button>
+      <button data-k="com" class="${DIV_IFRS16 ? "ativo" : ""}">+ Arrendamentos (IFRS 16)</button></div>` : ""}
+    ${defs.map((d) => `<div class="painel largo" data-info="${d.info}"><div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">${d.t}</h2>${seletor(d.k)}</div>
+      ${d.tabela ? `<div class="rolagem" id="gi-${d.k}"></div>` : `<div class="grafico alto" id="gi-${d.k}"></div>`}${d.nota ? `<div class="nota">${d.nota}</div>` : ""}</div>`).join("")}`;
+  const feitos = {};
+  const desenhar = (d) => {
+    const visao = VISAO_GRAF[d.k] || VISAO, el = document.getElementById(`gi-${d.k}`);
+    const dd = serieVisao(emp, visao);
+    if (feitos[d.k]) { feitos[d.k].dispose(); graficos.splice(graficos.indexOf(feitos[d.k]), 1); feitos[d.k] = null; }
+    if (d.tabela) { el.innerHTML = tabelaFleuriet(dd); return; }
+    if (!dd.per.length) { el.innerHTML = `<p class="sub">Sem períodos nesta visão.</p>`; return; }
+    feitos[d.k] = grafico(el, { rotulos: dd.rot, janela: visao === "trimestral" ? 20 : 30, ...d.g(dd, visao) });
   };
-  document.getElementById("sel-div").addEventListener("click", (ev) => {
+  defs.forEach(desenhar);
+  area.querySelectorAll("[data-graf]").forEach((s) => s.addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    VISAO_GRAF[s.dataset.graf] = b.dataset.v; VISAO = b.dataset.v;
+    s.querySelectorAll("button").forEach((x) => x.classList.toggle("ativo", x === b));
+    desenhar(defs.find((d) => d.k === s.dataset.graf));
+  }));
+  const sd = document.getElementById("sel-div");
+  if (sd) sd.addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
     DIV_IFRS16 = b.dataset.k === "com";
-    document.querySelectorAll("#sel-div button").forEach((x) => x.classList.toggle("ativo", x === b));
-    desenharDiv();
+    desenharGraficosEmpresa(emp);
   });
-  desenharDiv();
   redesenharDividendos();
+}
+
+// Tipos de estrutura financeira de Fleuriet pelo sinal do capital de giro (CDG), da necessidade de capital de giro (NCG) e do saldo de tesouraria (T)
+const TIPOS_FLEURIET = { "+-+": [1, "Excelente"], "+++": [2, "Sólida"], "++-": [3, "Insatisfatória"], "-+-": [4, "Péssima"], "---": [5, "Muito ruim"], "--+": [6, "Alto risco"] };
+function tabelaFleuriet(d) {
+  const n = d.per.length, ini = Math.max(0, n - 12), idx = [...Array(n - ini).keys()].map((i) => i + ini);
+  if (!idx.length || !d.S.cdg) return `<p class="sub">Sem dados de capital de giro nesta visão.</p>`;
+  const s = (x) => (x == null ? null : x >= 0 ? "+" : "-");
+  const mi = (x) => (x == null ? "—" : num(x / 1e6, 0));
+  const tipo = (i) => { const k = [s(d.S.cdg[i]), s(d.S.ncg[i]), s(d.S.saldo_tesouraria[i])]; return k.includes(null) ? null : TIPOS_FLEURIET[k.join("")]; };
+  const tesoura = (i) => {
+    const j = i - 1, T = d.S.saldo_tesouraria, N = d.S.ncg, C = d.S.cdg;
+    if (j < 0 || [T[i], T[j], N[i], N[j], C[i], C[j]].some((x) => x == null)) return "—";
+    return T[i] < 0 && T[i] < T[j] && N[i] - N[j] > C[i] - C[j] ? `<span class="neg">sim</span>` : "não";
+  };
+  const linha = (rot, f, cls = "") => `<tr class="${cls}"><td style="text-align:left">${rot}</td>${idx.map((i) => `<td>${f(i)}</td>`).join("")}</tr>`;
+  return `<table class="tabela"><tr><th style="text-align:left">R$ milhões</th>${idx.map((i) => `<th>${d.rot[i]}</th>`).join("")}</tr>
+    ${linha("Capital de giro (CDG)", (i) => mi(d.S.cdg[i]))}
+    ${linha("Necessidade de capital de giro (NCG)", (i) => mi(d.S.ncg[i]))}
+    ${linha("Saldo de tesouraria (T)", (i) => mi(d.S.saldo_tesouraria[i]))}
+    ${linha("Tipo de estrutura", (i) => { const t = tipo(i); return t ? `<b>${t[0]}</b> · ${t[1]}` : "—"; }, "subtotal")}
+    ${linha("Efeito tesoura", tesoura)}</table>
+    <div class="nota">Tipos (sinais de CDG, NCG, T): 1 Excelente (+ − +) · 2 Sólida (+ + +) · 3 Insatisfatória (+ + −) · 4 Péssima (− + −) · 5 Muito ruim (− − −) · 6 Alto risco (− − +).
+      Efeito tesoura = saldo de tesouraria negativo e caindo, com a NCG crescendo mais que o CDG no período. Classificação do modelo Fleuriet, calculada com as contas da CVM.</div>`;
 }
 
 function desenharIndicadores(emp) {
@@ -1573,6 +1679,9 @@ function desenharCotacao(prov, m) {
 // Aba Resultados: DRE e balanço com as contas do Excel (CVM), últimos 4 anos fechados + LTM, análise vertical ao lado.
 // Enquanto a empresa não foi reprocessada com essas contas, mostra a versão resumida (desenharDreBalancoResumido).
 const DRE_ABERTAS = new Set();  // aba Resultados: contas da DRE abertas ("*" = todas)
+// Linhas principais em destaque (âmbar) na DRE e no balanço
+const DESTAQUE_CONTAS = new Set(["3.01", "3.03", "3.05", "3.06", "3.07", "3.11", "1", "1.01", "1.02", "2", "2.01", "2.02", "2.03"]);
+
 function desenharDreBalanco(emp) {
   const dm = emp.demonstracoes;
   if (!dm || !dm.dre || !dm.dre.length) return desenharDreBalancoResumido(emp);
@@ -1584,7 +1693,7 @@ function desenharDreBalanco(emp) {
   const estilo = (c, tot) => (c === tot || nivel(c) === 0 ? "total" : nivel(c) === 1 ? "subtotal" : "");
   const tabela = (linhas, base, extra = []) => `<table class="tabela tabela-av">
     <tr><th style="text-align:left">R$ milhões</th>${cols.map((t) => `<th>${t}</th><th class="sub">AV</th>`).join("")}</tr>
-    ${[...linhas, ...extra].map((l) => `<tr class="${l.estilo != null ? l.estilo : estilo(l.c, "")}"><td style="text-align:left;padding-left:${6 + Math.max(0, nivel(l.c || "x") - 1) * 14}px">${esc(l.r)}</td>
+    ${[...linhas, ...extra].map((l) => `<tr class="${l.estilo != null ? l.estilo : estilo(l.c, "")}${DESTAQUE_CONTAS.has(l.c) ? " destaque" : ""}"><td style="text-align:left;padding-left:${6 + Math.max(0, nivel(l.c || "x") - 1) * 14}px">${esc(l.r)}</td>
       ${l.v.map((x, i) => `<td>${mi(x)}</td><td class="sub">${av(x, base[i])}</td>`).join("")}</tr>`).join("")}</table>`;
   const linha = (ls, c) => (ls.find((l) => l.c === c) || { v: [] }).v;
   // DRE simples: só as linhas principais (sem abrir despesas, sem D&A/EBITDA — a D&A está embutida em custos e despesas)
@@ -1604,14 +1713,18 @@ function desenharDreBalanco(emp) {
       for (let p = pai(l.c); p; p = pai(p)) if (!DRE_ABERTAS.has(p) && !DRE_ABERTAS.has("*")) return false;
       return true;
     };
+    // EBITDA (EBIT + D&A) logo abaixo do EBIT: cálculo do site, a CVM não tem essa linha
+    const ebitdaCol = dm.colunas.map((c) => { const v = c.ltm ? emp.ltm : emp.anual; const i = v.periodos.indexOf(c.data); return i < 0 ? null : (v.series.ebitda || [])[i]; });
+    const linhaEbitda = `<tr class="subtotal destaque"><td style="text-align:left;padding-left:6px" title="EBIT + depreciação e amortização (DFC)">EBITDA (EBIT + D&amp;A, cálculo)</td>
+      ${ebitdaCol.map((x, i) => `<td>${mi(x)}</td><td class="sub">${av(x, rec[i])}</td>`).join("")}</tr>`;
     const desenharDre = () => {
       const aberto = (c) => DRE_ABERTAS.has(c) || DRE_ABERTAS.has("*");
       document.getElementById("tab-dre-tabela").innerHTML = `<table class="tabela tabela-av">
         <tr><th style="text-align:left">R$ milhões</th>${cols.map((c) => `<th>${c}</th><th class="sub">AV</th>`).join("")}</tr>
-        ${ls.filter(visivel).map((l) => `<tr class="${TOTAIS.includes(l.c) ? "total" : SUBTOTAIS.includes(l.c) ? "subtotal" : ""}${l.f ? "" : " detalhe"}">
+        ${ls.filter(visivel).map((l) => `<tr class="${TOTAIS.includes(l.c) ? "total" : SUBTOTAIS.includes(l.c) ? "subtotal" : ""}${l.f ? "" : " detalhe"}${DESTAQUE_CONTAS.has(l.c) ? " destaque" : ""}">
           <td style="text-align:left;padding-left:${6 + Math.max(0, nivel(l.c) - 1) * 14}px">${temFilhos.has(l.c)
             ? `<span class="abre-conta" data-c="${l.c}" title="${aberto(l.c) ? "Fechar" : "Abrir"} as contas de baixo">${aberto(l.c) ? "▾" : "▸"} ${esc(l.r)}</span>` : esc(l.r)}</td>
-          ${l.v.map((x, i) => (l.u === "acao" ? `<td>${x == null ? "—" : num(x, 2)}</td><td class="sub">—</td>` : `<td>${mi(x)}</td><td class="sub">${av(x, rec[i])}</td>`)).join("")}</tr>`).join("")}</table>`;
+          ${l.v.map((x, i) => (l.u === "acao" ? `<td>${x == null ? "—" : num(x, 2)}</td><td class="sub">—</td>` : `<td>${mi(x)}</td><td class="sub">${av(x, rec[i])}</td>`)).join("")}</tr>${l.c === "3.05" ? linhaEbitda : ""}`).join("")}</table>`;
       document.getElementById("dre-tudo").textContent = DRE_ABERTAS.has("*") ? "Recolher" : "Expandir";
     };
     document.getElementById("tab-dre").innerHTML = `<div class="seletor" style="margin:0 0 8px"><button id="dre-tudo">Expandir</button></div>

@@ -137,6 +137,8 @@ table.tabela tr.clicavel { cursor: pointer; }
 .selo-resultado.atraso { color: var(--vermelho, #f85149); border-color: var(--vermelho, #f85149); }
 table.tabela-av tr.subtotal td { font-weight: 600; border-top: 1px solid var(--borda); }
 table.tabela-av tr.total td { font-weight: 700; color: var(--texto-forte); border-top: 1px solid var(--texto-fraco); }
+/* Linhas principais da DRE e do balanço (ativo e passivo circulante e não circulante, PL, lucro bruto, EBITDA, EBIT, lucro líquido) */
+table.tabela-av tr.destaque td { color: var(--ambar); font-weight: 600; }
 table.tabela-av tr.memoria td { color: var(--texto-fraco); font-style: italic; }
 .filtro { background: var(--painel); color: var(--texto-forte); border: 1px solid var(--borda); border-radius: 4px; padding: 6px 10px; font-family: var(--mono); width: 100%; max-width: 360px; }
 .nota { color: var(--texto-fraco); font-size: 11px; line-height: 1.6; }

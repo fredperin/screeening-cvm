@@ -1056,6 +1056,65 @@ window.EXPLICATIVOS = {
       avisos de rendimentos, comunicados, informes, ofertas e assembleias. O link abre o documento oficial.</p>
       <p>Na primeira carga o site guarda os 300 mais recentes; depois junta os novos a cada atualização.</p>`,
   },
+  fatos_relevantes: {
+    titulo: "Fatos relevantes recentes",
+    html: `<p>Fatos relevantes entregues à CVM pelas empresas acompanhadas, do mais recente para o mais antigo, com link para o documento oficial.</p>
+      <ul><li><b>Ao longo do dia</b> (5 vezes nos dias úteis: 08h15, 10h15, 13h15, 17h15 e 20h15, além da atualização diária): consulta de documentos da CVM (RAD),
+        a mesma usada no site da CVM, com a hora da entrega.</li>
+      <li><b>Histórico</b>: arquivo de dados abertos da CVM (IPE), que chega com alguns dias de atraso.</li></ul>
+      <p>O agendador gratuito do GitHub pode atrasar uma rodada; o horário da última busca aparece na nota.</p>`,
+  },
+  divida_prazo: {
+    titulo: "Dívida de curto e de longo prazo",
+    html: `<p>Empréstimos, financiamentos e debêntures como a empresa informa à CVM: <b>curto prazo</b> = passivo circulante (conta 2.01.04, vence em até
+      12 meses); <b>longo prazo</b> = passivo não circulante (conta 2.02.01). A linha mostra quanto da dívida vence em até 12 meses.</p>
+      <p>Muita dívida no curto prazo com pouco caixa indica risco de refinanciamento.</p>`,
+  },
+  divida_capital: {
+    titulo: "Dívida líquida sobre capital e sobre patrimônio",
+    html: `<ul><li><b>Dívida líquida / capital</b> = dívida líquida ÷ (dívida líquida + patrimônio líquido): quanto do capital empregado vem de terceiros.</li>
+      <li><b>Dívida líquida / PL</b> = dívida líquida ÷ patrimônio líquido.</li></ul>
+      <p>Saldos do fim de cada período. Valores negativos = a empresa tem mais caixa que dívida. Com o seletor "+ Arrendamentos", a dívida inclui o IFRS 16.</p>`,
+  },
+  cobertura_juros: {
+    titulo: "Índice de cobertura de juros",
+    html: `<p><b>EBIT ÷ despesas financeiras</b>: quantas vezes o lucro operacional paga o custo da dívida. Abaixo de 1x, o resultado operacional não cobre as despesas financeiras.</p>
+      <p>Barras: o próprio período (trimestre, semestre ou ano). Linha: últimos 12 meses. As despesas financeiras da CVM (conta 3.06.02) incluem juros,
+      variação cambial e monetária e outros encargos, não só juros.</p>`,
+  },
+  liquidez: {
+    titulo: "Índices de liquidez",
+    html: `<ul><li><b>Corrente</b> = ativo circulante ÷ passivo circulante.</li>
+      <li><b>Seca</b> = (ativo circulante − estoques) ÷ passivo circulante.</li>
+      <li><b>Imediata</b> = (caixa + aplicações financeiras) ÷ passivo circulante.</li>
+      <li><b>Geral</b> = (ativo circulante + realizável a longo prazo) ÷ (passivo circulante + passivo não circulante).</li></ul>
+      <p>Saldos do balanço no fim de cada período (contas padronizadas da CVM). Acima de 1x: os ativos considerados cobrem as obrigações.</p>`,
+  },
+  ciclo_caixa: {
+    titulo: "Prazos médios e ciclo de caixa",
+    html: `<ul><li><b>Prazo de recebimento</b> = contas a receber ÷ receita líquida × dias.</li>
+      <li><b>Prazo de estocagem</b> = estoques ÷ custo dos produtos vendidos × dias.</li>
+      <li><b>Prazo de pagamento</b> = fornecedores ÷ custo × dias.</li>
+      <li><b>Ciclo operacional</b> = estocagem + recebimento; <b>ciclo de caixa</b> = ciclo operacional − pagamento (dias entre pagar o fornecedor e receber do cliente).</li></ul>
+      <p>O seletor muda a base: trimestral = saldo ÷ fluxo do trimestre × 90 dias; semestral = × 180; anual = fluxo do ano × 360, e o ano ainda não fechado usa os
+      últimos 12 meses × 360. Saldos do fim do período (não médios). Empresa sem estoque (serviços) fica com prazo de estocagem zero.</p>`,
+  },
+  capital_giro: {
+    titulo: "Capital de giro, necessidade de capital de giro e saldo de tesouraria",
+    html: `<p>Modelo Fleuriet, com as contas da CVM:</p>
+      <ul><li><b>Capital de giro (CDG)</b> = ativo circulante − passivo circulante (igual a patrimônio líquido + passivo não circulante − ativo não circulante).</li>
+      <li><b>Necessidade de capital de giro (NCG)</b> = ativo circulante operacional (sem caixa e aplicações) − passivo circulante operacional (sem empréstimos de curto prazo).</li>
+      <li><b>Saldo de tesouraria (T)</b> = caixa e aplicações − empréstimos de curto prazo = CDG − NCG.</li></ul>
+      <p><b>Efeito tesoura</b>: quando a NCG cresce mais rápido que o CDG, a empresa financia o giro com dívida de curto prazo e o saldo de tesouraria fica
+      cada vez mais negativo.</p>`,
+  },
+  estrutura_financeira: {
+    titulo: "Estrutura financeira (Fleuriet)",
+    html: `<p>Classificação pelo sinal do capital de giro (CDG), da necessidade de capital de giro (NCG) e do saldo de tesouraria (T):</p>
+      <ul><li><b>1 Excelente</b> (CDG +, NCG −, T +) · <b>2 Sólida</b> (+, +, +) · <b>3 Insatisfatória</b> (+, +, −)</li>
+      <li><b>4 Péssima</b> (−, +, −) · <b>5 Muito ruim</b> (−, −, −) · <b>6 Alto risco</b> (−, −, +)</li></ul>
+      <p>É uma leitura simplificada: setores como varejo e serviços têm NCG negativa por natureza (recebem antes de pagar).</p>`,
+  },
   historico_ajustes: {
     titulo: "Histórico de ajustes",
     html: `<p>Mostra, para esta empresa, tudo o que foi feito para os números ficarem iguais ao que ela divulgou à CVM:</p>

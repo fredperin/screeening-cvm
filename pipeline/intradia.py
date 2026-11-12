@@ -1,5 +1,5 @@
 """
-Atualização leve ao longo do dia (3x, dias úteis): Tesouro Direto, planilha de Juros e manchetes
+Atualização leve ao longo do dia (5x, dias úteis): Tesouro Direto, planilha de Juros, manchetes e fatos relevantes do dia (CVM RAD)
 (os feeds dos jornais só trazem as últimas matérias; coletar mais vezes evita perder as do dia).
 Reaproveita o CSV oficial do Tesouro Transparente já baixado na atualização diária e busca os
 preços do momento no site do Tesouro Direto (bloco "tempo real", não oficial e separado).
@@ -46,6 +46,16 @@ def main():
     except Exception as e:
         print("⚠️ notícias:", repr(e)[:300])
         status["etapas"]["noticias_intradia"] = {"ok": False, "em": datetime.now(timezone.utc).isoformat(timespec="minutes"), "erro": repr(e)[:300]}
+    # fatos relevantes do dia na consulta de documentos da CVM (o arquivo de dados abertos chega com dias de atraso)
+    ini_fr = datetime.now(timezone.utc)
+    try:
+        from pipeline import eventos
+        eventos.atualizar_fatos_do_dia()
+        status["etapas"]["fatos_intradia"] = {"ok": True, "segundos": round((datetime.now(timezone.utc) - ini_fr).total_seconds()),
+                                              "em": datetime.now(timezone.utc).isoformat(timespec="minutes")}
+    except Exception as e:  # noqa: BLE001
+        print("⚠️ fatos relevantes:", repr(e)[:300])
+        status["etapas"]["fatos_intradia"] = {"ok": False, "em": datetime.now(timezone.utc).isoformat(timespec="minutes"), "erro": repr(e)[:300]}
     # Dívida Pública Federal e Tesouro Direto: nova tentativa (o Tesouro Transparente às vezes recusa; só baixa se houver versão nova)
     try:
         from pipeline import fiscal
