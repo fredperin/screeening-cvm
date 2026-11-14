@@ -1115,6 +1115,80 @@ window.EXPLICATIVOS = {
       <li><b>4 Péssima</b> (−, +, −) · <b>5 Muito ruim</b> (−, −, −) · <b>6 Alto risco</b> (−, −, +)</li></ul>
       <p>É uma leitura simplificada: setores como varejo e serviços têm NCG negativa por natureza (recebem antes de pagar).</p>`,
   },
+  conjuntura: {
+    titulo: "Painel de conjuntura",
+    html: `<p>Uma linha por indicador: último valor, valor de 3 e de 12 meses antes (com a direção), média dos últimos 5 anos e a posição do valor atual
+      frente a essa média, em desvios-padrão (marcador à esquerda = abaixo da média; à direita = acima). O mini-gráfico mostra os últimos 24 meses.</p>
+      <p>"Acima da média" não é bom nem ruim por si: desemprego acima da média é ruim; crescimento acima da média é bom. Fontes: as mesmas de cada aba.</p>`,
+  },
+  pim_pmc_pms: {
+    titulo: "Indústria, varejo e serviços (IBGE)",
+    html: `<p>Pesquisas mensais do IBGE com índice de volume com ajuste sazonal (2022=100): <b>PIM-PF</b> (produção industrial, indústria geral),
+      <b>PMC</b> (volume de vendas do varejo restrito) e <b>PMS</b> (volume de serviços). "Contra 12 meses antes" compara o índice dessazonalizado do mês
+      com o de um ano antes.</p><p class="sub">Fonte: IBGE (SIDRA, tabelas 8888, 8880 e 5906).</p>`,
+  },
+  ibcbr_setores: {
+    titulo: "IBC-Br por setor",
+    html: `<p>Abertura do IBC-Br (prévia mensal do PIB calculada pelo Banco Central) em agropecuária, indústria e serviços. Acumulado em 12 meses
+      contra os 12 meses anteriores (índices observados).</p><p class="sub">Fonte: Banco Central (SGS 29601, 29603, 29605).</p>`,
+  },
+  caged: {
+    titulo: "Emprego formal (Novo Caged)",
+    html: `<p>Saldo de empregos com carteira assinada: admissões menos desligamentos. Calculado pela variação do estoque de vínculos formais publicado
+      pelo Banco Central a partir do Novo Caged (Ministério do Trabalho).</p><p class="sub">Fonte: Banco Central (SGS 28763).</p>`,
+  },
+  renda_familias: {
+    titulo: "Renda disponível das famílias",
+    html: `<p>Renda nacional disponível bruta das famílias, deflacionada pelo IPCA e dessazonalizada (média móvel trimestral), calculada pelo Banco Central.
+      Variação contra 12 meses antes.</p><p class="sub">Fonte: Banco Central (SGS 29027).</p>`,
+  },
+  ipca_abertura: {
+    titulo: "Abertura do IPCA",
+    html: `<ul><li><b>Serviços</b>: mais ligados ao mercado de trabalho e à inércia; o Copom acompanha de perto.</li>
+      <li><b>Livres</b>: preços definidos pelo mercado. <b>Administrados</b> (monitorados): energia, combustíveis, planos de saúde, tarifas.</li>
+      <li><b>Bens industriais</b>: sensíveis ao câmbio. <b>Alimentação no domicílio</b>: sensível a clima e commodities agrícolas.</li></ul>
+      <p>A faixa verde é o intervalo da meta (1,5% a 4,5%, centro 3%). Protótipo: os códigos de administrados, bens industriais e alimentação no domicílio
+      precisam ter o nome conferido no SGS antes de ir ao ar.</p><p class="sub">Fonte: IBGE, séries do Banco Central.</p>`,
+  },
+  ipca_difusao: {
+    titulo: "Índice de difusão",
+    html: `<p>Percentual dos itens do IPCA que subiram de preço no mês. Difusão alta (acima de 60%) indica alta espalhada, mais difícil de reverter;
+      difusão baixa indica alta concentrada em poucos itens.</p><p class="sub">Fonte: Banco Central (SGS 21379).</p>`,
+  },
+  focus12: {
+    titulo: "Inflação esperada para 12 meses",
+    html: `<p>Mediana do Focus para o IPCA dos próximos 12 meses (série suavizada), contra o IPCA realizado nos últimos 12 meses. A distância mostra se o
+      mercado espera que a inflação suba ou caia; a faixa verde é a meta.</p><p class="sub">Fonte: Banco Central (Focus, API Olinda).</p>`,
+  },
+  cambio_real: {
+    titulo: "Câmbio real efetivo",
+    html: `<p>Índice do Banco Central que compara o real com as moedas dos principais parceiros comerciais, descontada a inflação de cada país.
+      <b>Alta = real mais desvalorizado</b> (exportação mais competitiva); queda = real mais valorizado. A linha tracejada é a média de 10 anos e a faixa,
+      ±1 desvio-padrão.</p><p class="sub">Fonte: Banco Central (SGS 11752).</p>`,
+  },
+  icbr: {
+    titulo: "Índice de Commodities Brasil (IC-Br)",
+    html: `<p>Preços em reais das commodities relevantes para a inflação brasileira, ponderados pelo Banco Central, em três grupos: agropecuária, metal
+      e energia. Antecipa pressões na inflação de alimentos e de bens industriais.</p><p class="sub">Fonte: Banco Central (SGS 27574 a 27577).</p>`,
+  },
+  tabela_empresas: {
+    titulo: "Tabela de empresas",
+    html: `<p>Clique no título da coluna para ordenar. Filtros de setor e numéricos (P/L máximo, ROE mínimo, dívida líquida/EBITDA máxima) se combinam.</p>
+      <ul><li><b>P/L</b> = market cap ÷ lucro dos últimos 12 meses. <b>EV/EBITDA</b> = (market cap + dívida líquida) ÷ EBITDA de 12 meses.</li>
+      <li><b>P/VP</b> = market cap ÷ patrimônio líquido. <b>FCF yield</b> = fluxo de caixa livre de 12 meses ÷ market cap.</li></ul>
+      <p>Market cap: cotação de hoje × ações (B3). Resultados: CVM (consolidado).</p>`,
+  },
+  valuation_setores: {
+    titulo: "Valuation da bolsa e por setor",
+    html: `<p>Cartões: múltiplos da soma das empresas não financeiras acompanhadas (Σ market cap ÷ Σ lucro etc.), que pesam cada empresa pelo seu tamanho.
+      Prêmio de risco = lucro/preço da bolsa (inverso do P/L) menos o juro real da NTN-B de cerca de 10 anos.</p>
+      <p>Tabela: medianas por setor, para comparar setores sem que um caso extremo distorça.</p>`,
+  },
+  valuation_dispersao: {
+    titulo: "ROE × P/VP",
+    html: `<p>Cada ponto é uma empresa (tamanho = market cap). Em geral, quem tem ROE maior negocia a P/VP maior. Empresas muito acima da nuvem estão caras
+      para o retorno que entregam hoje (ou o mercado espera melhora); muito abaixo, baratas (ou com riscos que o ROE não mostra).</p>`,
+  },
   historico_ajustes: {
     titulo: "Histórico de ajustes",
     html: `<p>Mostra, para esta empresa, tudo o que foi feito para os números ficarem iguais ao que ela divulgou à CVM:</p>

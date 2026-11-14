@@ -81,8 +81,14 @@ function formatar(tipo, v) {
  * series: [{nome, valores, tipo:"bar"|"line", eixo:"esq"|"dir", cor}]
  * eixoEsq/eixoDir: "reais" | "pct" | "pctPronto" | "vezes" | "preco"
  */
-function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTempo = false, xNome = null, degrau = false,
-  janela = 24, inicioTempo = null, deslizante = false, limitesEsq = null, detalhe = null }) {
+function grafico(el, opcoes) {
+  if (!opcoes.__transformado) { ORIGEM_GRAFICO.set(el, opcoes); el.__estado = null; }
+  return _graficoBase(el, opcoes);
+}
+
+function _graficoBase(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTempo = false, xNome = null, degrau = false,
+  janela = 24, inicioTempo = null, deslizante = false, limitesEsq = null, detalhe = null, faixa = null }) {
+  const rotuloFim = xTempo && series.length <= 4 && series.some((s) => s.tipo === "line" && !s.area);
   const g = echarts.init(el, null, { renderer: "canvas" });
   graficos.push(g);
   const eixosY = [{ ...eixoValor(eixoEsq, "left"), ...(limitesEsq ? { min: limitesEsq[0], max: limitesEsq[1], scale: false } : {}) }];
@@ -90,7 +96,7 @@ function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTemp
   g.setOption({
     backgroundColor: "transparent",
     textStyle: { fontFamily: "JetBrains Mono" },
-    grid: { left: 64, right: eixoDir ? 64 : 24, top: 36, bottom: deslizante ? 70 : 48 },
+    grid: { left: 64, right: (eixoDir ? 64 : 24) + (rotuloFim ? 58 : 0), top: 36, bottom: deslizante ? 70 : 48 },
     legend: { top: 0, type: "scroll", textStyle: { color: COR.texto, fontSize: 11 }, itemHeight: 8, itemGap: 14, pageTextStyle: { color: COR.cinza } },
     tooltip: {
       trigger: "axis", backgroundColor: "#151c25", borderColor: COR.borda, textStyle: { color: COR.texto, fontSize: 12 },
@@ -118,12 +124,18 @@ function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTemp
         ...(deslizante ? [{ type: "slider", startValue: inicioTempo, height: 16, bottom: 30, borderColor: COR.borda, textStyle: { color: COR.cinza },
           fillerColor: "rgba(240,180,41,.15)", dataBackground: { lineStyle: { color: COR.cinza }, areaStyle: { color: "#1b2430" } } }] : [])] : [])
       : rotulos && rotulos.length > janela && !xNome ? [{ type: "inside", start: Math.max(0, 100 - (janela / rotulos.length) * 100), end: 100 }] : [],
-    series: series.map((s) => ({
+    series: series.map((s, j) => ({
       name: s.nome, type: s.tipo || "bar", data: s.valores, yAxisIndex: s.eixo === "dir" ? 1 : 0,
       itemStyle: { color: s.cor }, lineStyle: { color: s.cor, width: 2, type: s.tracejado ? "dashed" : "solid" },
       symbol: s.tipo === "line" && !xTempo && s.valores.length < 40 ? "circle" : "none", symbolSize: 4,
       connectNulls: true, barMaxWidth: 28, step: degrau && s.tipo === "line" ? "end" : false, smooth: false, stack: s.pilha,
       ...(s.area ? { areaStyle: { color: s.cor, opacity: 0.85 }, lineStyle: { width: 0 } } : {}),
+      ...(rotuloFim && s.tipo === "line" && !s.area ? { endLabel: { show: true, color: s.cor, fontSize: 11, fontFamily: "JetBrains Mono",
+        formatter: (p) => formatar(s.eixo === "dir" ? eixoDir : eixoEsq, Array.isArray(p.value) ? p.value[1] : p.value) } } : {}),
+      ...(faixa && j === 0 ? { markArea: { silent: true, itemStyle: { color: "rgba(63,185,80,.08)" }, data: [[{ yAxis: faixa.de }, { yAxis: faixa.ate }]] },
+        markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: COR.verde, opacity: 0.6 },
+          label: { color: COR.verde, formatter: faixa.rotulo || "" }, data: [{ yAxis: faixa.ref }] } } : {}),
+      ...(s.extra || {}),
     })),
   });
   if (series.length >= MUITAS_SERIES) botaoTodasSeries(el);
@@ -161,7 +173,8 @@ function decorarPaineis(raiz = app) {
     const botoes = [];
     if (temInfo) botoes.push(`<button data-acao="info" title="O que é e como é calculado">ⓘ</button>`);
     if (temGrafico) botoes.push(`<button data-acao="csv" title="Baixar a série histórica completa (CSV, abre no Excel)">⤓</button>`,
-      `<button data-acao="tela" title="Tela cheia (Esc para sair)">⛶</button>`);
+      `<button data-acao="tela" title="Tela cheia (Esc para sair)">⛶</button>`,
+      `<button data-acao="transf" title="Transformar a série (variação, médias móveis, base 100) e média histórica com banda">∿</button>`);
     const caixa = titulo.querySelector(".ferramentas");
     if (caixa) caixa.insertAdjacentHTML("beforeend", botoes.join(""));
     else titulo.insertAdjacentHTML("beforeend", `<span class="ferramentas">${botoes.join("")}</span>`);
@@ -376,6 +389,7 @@ app.addEventListener("click", (ev) => {
   if (b.dataset.acao === "info") abrirExplicativo(painel.dataset.info, painel);
   else if (b.dataset.acao === "csv") baixarCsv(painel);
   else if (b.dataset.acao === "tela") alternarTelaCheia(painel);
+  else if (b.dataset.acao === "transf") abrirFerramentas(painel, b);
   else if (b.dataset.acao === "todas") alternarTodasSeries(painel);
 });
 document.getElementById("modal").addEventListener("click", (ev) => {
@@ -443,7 +457,7 @@ const MENU = [
     ["Brasil", [["Macro", "#/on/macro", "on|macro"], ["Juros", "#/on/juros", "on|juros"]]],
     ["Mundo", [["Macro", "#/off/macro", "off|macro"], ["Juros", "#/off/juros", "off|juros"]]]] },
   { titulo: "Empresas", grupos: [
-    ["Brasil", [["Notícias", "#/on/empresas/manchetes", "on|empresas|manchetes"],
+    ["Brasil", [["Visão do mercado", "#/on/empresas/mercado", "on|empresas|mercado"], ["Notícias", "#/on/empresas/manchetes", "on|empresas|manchetes"],
       ["Fatos relevantes", "#/on/empresas/fatos", "on|empresas|fatos"], ["Empresas", "#/on/empresas/tabela", "on|empresas|tabela"],
       ["Bancos", "#/on/empresas/financeiras", "on|empresas|financeiras"], ["Operacional", "#/on/empresas/operacional", "on|empresas|operacional"]]],
     ["Mundo", [["S&P 500", "#/off/empresas/sp500", "off|empresas|sp500"], ["Empresas", "#/off/empresas/empresas", "off|empresas|empresas"]]]] },
@@ -592,12 +606,12 @@ async function paginaInicio() {
 /* ============ Empresas (lista) ============ */
 // Abas: informações (calendário, divulgações, proventos), notícias e fatos relevantes, tabela das empresas e instituições financeiras
 // Empresas > Brasil: os mesmos itens do menu lateral (Notícias e Fatos relevantes eram uma aba só)
-const ABAS_EMPRESAS = [["manchetes", "Notícias"], ["fatos", "Fatos relevantes"], ["tabela", "Empresas"], ["financeiras", "Bancos"],
+const ABAS_EMPRESAS = [["mercado", "Visão do mercado"], ["manchetes", "Notícias"], ["fatos", "Fatos relevantes"], ["tabela", "Empresas"], ["financeiras", "Bancos"],
   ["operacional", "Operacional"]];
 
 async function paginaEmpresas(aba) {
   if (aba === "noticias") aba = "fatos";  // a antiga aba Informações virou parte de Fatos relevantes
-  if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "manchetes";
+  if (!ABAS_EMPRESAS.some(([k]) => k === aba)) aba = "mercado";
   const [mercado, fatos, noticias, cal] = await Promise.all([dados("dados/mercado.json").catch(() => ({ empresas: [] })),
     dados("dados/eventos_recentes.json").catch(() => null),
     dados("dados/noticias_empresas.json").catch(() => dados("dados/noticias.json").catch(() => null)),
@@ -617,6 +631,7 @@ async function paginaEmpresas(aba) {
   const abas = `<div class="abas">${ABAS_EMPRESAS.map(([k, n]) => `<a href="#/on/empresas/${k}" class="${k === aba ? "ativo" : ""}">${n}</a>`).join("")}</div>`;
   const cab = `<div class="cabecalho"><div><h1>Empresas</h1><div class="sub">${INDICE.length} empresas da lista · clique numa empresa para abrir a página dela</div></div></div>`;
   if (aba === "financeiras") return abaFinanceiras(cab, abas);
+  if (aba === "mercado") return visaoMercadoEmpresas(linhasEmpresas(mercado), cab, abas);
   if (aba === "operacional") return paginaOperacional(cab, abas);
   if (aba === "manchetes") {
     app.innerHTML = `${cab}${abas}
@@ -657,22 +672,8 @@ async function paginaEmpresas(aba) {
     </div>`;
     return;
   }
-  app.innerHTML = `${cab}${abas}
-    <div class="cabecalho"><h2 style="margin:0">Empresas não financeiras</h2><input class="filtro" id="filtro" placeholder="filtrar por nome, ticker ou setor"></div>
-    <div class="painel"><div class="rolagem"><table class="tabela" id="tab">
-      <thead><tr><th>Papel</th><th>Empresa</th><th>Setor</th><th>Market cap</th><th>Receita LTM</th><th>Lucro LTM</th>
-      <th>Margem líq.</th><th>ROE</th><th>DL/EBITDA</th><th>DL/EBITDA c/ IFRS16</th><th>P/L</th><th>DY 12m</th></tr></thead><tbody></tbody></table></div></div>`;
-  const corpo = app.querySelector("tbody");
-  function desenhar(f = "") {
-    const q = f.trim().toUpperCase();
-    corpo.innerHTML = linhas.filter((e) => !q || e.nome.toUpperCase().includes(q) || e.tickers.some((t) => t.includes(q)) || (e.setor || "").toUpperCase().includes(q))
-      .map((e) => `<tr class="clicavel" onclick="location.hash='#/on/empresa/${esc(e.id)}'">
-        <td>${esc(e.tickers.join(" / "))}</td><td>${esc(e.nome.slice(0, 38))}</td><td class="sub">${esc((e.setor || "").slice(0, 30))}</td>
-        <td>${reais(e.mc)}</td><td>${reais(e.receita_ltm)}</td><td class="${classeSinal(e.lucro_ltm)}">${reais(e.lucro_ltm)}</td>
-        <td>${pct(e.m_liquida_ltm)}</td><td>${pct(e.roe)}</td><td>${vezes(e.dl_ebitda)}</td><td>${vezes(e.dl_ebitda_ifrs16)}</td><td>${vezes(e.pl)}</td><td>${pct(e.dy, 2)}</td></tr>`).join("");
-  }
-  desenhar();
-  document.getElementById("filtro").addEventListener("input", (ev) => desenhar(ev.target.value));
+  const setor = SETOR_TABELA; SETOR_TABELA = "";
+  return tabelaEmpresas(linhasEmpresas(mercado), cab, abas, setor);
 }
 
 /* ============ Empresas > Operacional ============ */
@@ -1163,6 +1164,241 @@ async function paginaFii(id) {
   document.getElementById("abas-fii").addEventListener("click", (ev) => { const b = ev.target.closest("button"); if (b) mostrar(b.dataset.k); });
   mostrar(ABA_FII);
 }
+
+/* ============ Ferramentas de gráfico (transformar a série, média histórica com banda) ============ */
+// O gráfico guarda as opções originais; o botão ∿ do painel redesenha com a série transformada
+const ORIGEM_GRAFICO = new WeakMap();
+const TRANSFORMACOES = [["original", "Original"], ["var", "Variação no período"], ["var12", "Variação em 12 meses"],
+  ["mm3", "Média móvel de 3 meses"], ["mm12", "Média móvel de 12 meses"], ["base100", "Base 100 (início)"]];
+
+function _pares(valores) { return valores.map((x) => (Array.isArray(x) ? x : [null, x])); }
+
+function transformarValores(valores, modo, xTempo) {
+  if (modo === "original") return valores;
+  const pts = _pares(valores), t = (d) => new Date(d).getTime(), DIA = 864e5;
+  const saida = pts.map(([d, v], i) => {
+    if (v == null) return null;
+    if (modo === "var") { const a = i > 0 ? pts[i - 1][1] : null; return a ? (v / a - 1) * 100 : null; }
+    if (modo === "base100") { const p = pts.find(([, x]) => x != null && x !== 0); return p ? (v / p[1]) * 100 : null; }
+    if (!xTempo) {  // categorias (anos): 12 meses = ponto anterior; médias = janelas de pontos
+      if (modo === "var12") { const a = i > 0 ? pts[i - 1][1] : null; return a ? (v / a - 1) * 100 : null; }
+      const n = modo === "mm3" ? 3 : 12, jan = pts.slice(Math.max(0, i - n + 1), i + 1).map(([, x]) => x).filter((x) => x != null);
+      return jan.length === Math.min(n, i + 1) ? jan.reduce((s, x) => s + x, 0) / jan.length : null;
+    }
+    if (modo === "var12") {
+      let j = i; while (j > 0 && t(pts[j][0]) > t(d) - 360 * DIA) j--;
+      const a = pts[j][1]; return j < i && a && t(d) - t(pts[j][0]) <= 400 * DIA ? (v / a - 1) * 100 : null;
+    }
+    const dias = modo === "mm3" ? 90 : 365, jan = [];
+    for (let j = i; j >= 0 && t(pts[j][0]) > t(d) - dias * DIA; j--) if (pts[j][1] != null) jan.push(pts[j][1]);
+    return t(d) - t(pts[0][0]) >= (dias - 31) * DIA ? jan.reduce((s, x) => s + x, 0) / jan.length : null;
+  });
+  return valores.map((x, i) => (Array.isArray(x) ? [x[0], saida[i]] : saida[i]));
+}
+
+// média e banda de ±1 desvio-padrão dos últimos `anos` anos da primeira série (linha tracejada e faixa no fundo)
+function marcasMedia(valores, xTempo, anos = 10) {
+  const pts = _pares(valores), lim = Date.now() - anos * 365.25 * 864e5;
+  const v = pts.filter(([d, x]) => x != null && isFinite(x) && (!xTempo || new Date(d).getTime() >= lim)).map(([, x]) => x);
+  if (v.length < 6) return null;
+  const m = v.reduce((s, x) => s + x, 0) / v.length, dp = Math.sqrt(v.reduce((s, x) => s + (x - m) ** 2, 0) / v.length);
+  return { m, dp };
+}
+
+function aplicarFerramentas(op, estado) {
+  const xTempo = !!op.xTempo, novo = { ...op, __transformado: true };
+  const muda = estado.modo !== "original", emPct = ["var", "var12"].includes(estado.modo);
+  novo.series = op.series.map((s) => ({ ...s, valores: transformarValores(s.valores, estado.modo, xTempo),
+    ...(emPct || estado.modo === "base100" ? { eixo: "esq", pilha: undefined, tipo: "line", area: false } : {}) }));
+  if (emPct) { novo.eixoEsq = "pctPronto"; novo.eixoDir = null; novo.limitesEsq = null; }
+  if (estado.modo === "base100") { novo.eixoEsq = "numero"; novo.eixoDir = null; novo.limitesEsq = null; }
+  if (muda) novo.faixa = null;
+  if (estado.media && novo.series.length) {
+    const mm = marcasMedia(novo.series[0].valores, xTempo);
+    if (mm) novo.series[0] = { ...novo.series[0], extra: { markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: COR.cinza },
+      label: { color: COR.cinza, position: "insideStartTop", formatter: `média 10 anos: ${num(mm.m, 2)}` }, data: [{ yAxis: mm.m }] },
+      markArea: { silent: true, itemStyle: { color: "rgba(139,148,158,.12)" }, data: [[{ yAxis: mm.m - mm.dp }, { yAxis: mm.m + mm.dp }]] } } };
+  }
+  return novo;
+}
+
+function abrirFerramentas(painel, botao) {
+  const el = painel.querySelector(".grafico"), g = el && echarts.getInstanceByDom(el), op = el && ORIGEM_GRAFICO.get(el);
+  if (!op) return;
+  const velho = painel.querySelector(".menu-ferramentas"); if (velho) { velho.remove(); return; }
+  const estado = el.__estado || { modo: "original", media: false };
+  painel.insertAdjacentHTML("beforeend", `<div class="menu-ferramentas">
+    <div class="sub" style="margin-bottom:4px">Transformar a série</div>
+    ${TRANSFORMACOES.map(([k, r]) => `<label><input type="radio" name="tf" value="${k}" ${k === estado.modo ? "checked" : ""}> ${r}</label>`).join("")}
+    <hr><label><input type="checkbox" id="tf-media" ${estado.media ? "checked" : ""}> Média de 10 anos e banda de ±1 desvio-padrão</label></div>`);
+  const menu = painel.querySelector(".menu-ferramentas");
+  menu.addEventListener("change", () => {
+    el.__estado = { modo: menu.querySelector("input[name=tf]:checked").value, media: menu.querySelector("#tf-media").checked };
+    if (g) { graficos.splice(graficos.indexOf(g), 1); g.dispose(); }
+    grafico(el, aplicarFerramentas(op, el.__estado));
+    botao.classList.toggle("ativo", el.__estado.modo !== "original" || el.__estado.media);
+  });
+}
+
+/* ============ Economia › Conjuntura: painel-síntese ============ */
+const BLOCOS_CONJUNTURA = [
+  ["Atividade", [["pib_12m", "PIB (4 trimestres)", "pct", false, "tri"], ["ibcbr_12m", "IBC-Br (12 meses)", "pct"], ["pim_12m", "Indústria (contra 12 meses antes)", "pct"],
+    ["pmc_12m", "Varejo (contra 12 meses antes)", "pct"], ["pms_12m", "Serviços (contra 12 meses antes)", "pct"], ["desemprego", "Desemprego", "pct", true],
+    ["caged_12m", "Emprego formal (saldo 12 meses)", "mil"], ["renda_familias_12m", "Renda real das famílias (12 meses)", "pct"]]],
+  ["Preços e expectativas", [["ipca_12m", "IPCA 12 meses", "pct", true], ["nucleos_media_12m", "Média dos núcleos 12 meses", "pct", true],
+    ["ipca_servicos_12m", "IPCA serviços 12 meses", "pct", true], ["ipca_difusao_mm3", "Difusão (média 3 meses)", "pct", true],
+    ["igpm_12m", "IGP-M 12 meses", "pct", true], ["focus_ipca_12m", "IPCA esperado 12 meses (Focus)", "pct", true]]],
+  ["Juros e crédito", [["selic_meta", "Selic meta", "pct"], ["juro_real_exante", "Juro real ex-ante (Focus)", "pct"], ["juro_real", "Juro real ex-post", "pct"],
+    ["icc_total", "Custo do crédito (ICC)", "pct", true], ["inad_total", "Inadimplência total", "pct", true]]],
+  ["Fiscal e externo", [["primario", "Resultado primário 12m (% PIB)", "pct"], ["dbgg", "Dívida bruta (% PIB)", "pct", true],
+    ["tc_pib", "Transações correntes (% PIB, 12m)", "pct"], ["cambio_real", "Câmbio real efetivo (índice)", "num"],
+    ["usd", "Dólar PTAX", "rs"], ["icbr_12m", "Commodities IC-Br (12 meses)", "pct"]]],
+];
+
+function sparkline(vals, cor = "#f0b429") {
+  const v = vals.filter((x) => x != null && isFinite(x));
+  if (v.length < 2) return "";
+  const mn = Math.min(...v), mx = Math.max(...v), w = 90, h = 24, k = (x) => (mx === mn ? h / 2 : h - 2 - ((x - mn) / (mx - mn)) * (h - 4));
+  const pts = v.map((x, i) => `${((i / (v.length - 1)) * w).toFixed(1)},${k(x).toFixed(1)}`).join(" ");
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}"><polyline fill="none" stroke="${cor}" stroke-width="1.5" points="${pts}"/>
+    <circle cx="${w}" cy="${k(v[v.length - 1]).toFixed(1)}" r="2.5" fill="${cor}"/></svg>`;
+}
+
+function desenharConjuntura(S) {
+  const fmt = (t, x) => (x == null ? "—" : t === "pct" ? `${num(x, 2)}%` : t === "mil" ? `${num(x / 1000, 0)} mil` : t === "rs" ? `R$ ${num(x, 2)}` : num(x, 1));
+  const linha = ([k, nome, tipo, , freq]) => {
+    const s = S[k]; if (!s || !s.valores.length) return "";
+    const n = s.valores.length - 1, d = s.datas[n], v = s.valores[n];
+    const em = (meses) => { const alvo = new Date(d); alvo.setMonth(alvo.getMonth() - meses); let j = n; while (j > 0 && new Date(s.datas[j]) > alvo) j--; return s.valores[j]; };
+    const lim = new Date(d); lim.setFullYear(lim.getFullYear() - 5);
+    const h5 = s.valores.filter((x, i) => new Date(s.datas[i]) >= lim);
+    const m5 = h5.reduce((a, b) => a + b, 0) / h5.length, dp = Math.sqrt(h5.reduce((a, b) => a + (b - m5) ** 2, 0) / h5.length);
+    const z = dp ? (v - m5) / dp : 0, zc = Math.max(-2, Math.min(2, z));
+    const barra = `<div class="z-barra"><span style="left:${50 + zc * 25}%"></span></div>`;
+    const ult24 = s.valores.filter((x, i) => new Date(s.datas[i]) >= new Date(new Date(d).setFullYear(new Date(d).getFullYear() - 2)));
+    const seta = (a) => (a == null ? "" : v > a ? "▲" : v < a ? "▼" : "▬");
+    const ref = freq === "tri" ? `${Math.ceil(Number(d.slice(5, 7)) / 3)}º tri/${d.slice(2, 4)}` : rotuloData(d);
+    return `<tr><td style="text-align:left">${nome}</td><td><b>${fmt(tipo, v)}</b> <span class="sub">${esc(ref)}</span></td>
+      <td>${fmt(tipo, em(3))} <span class="sub">${seta(em(3))}</span></td><td>${fmt(tipo, em(12))} <span class="sub">${seta(em(12))}</span></td>
+      <td>${fmt(tipo, m5)}</td><td title="desvios-padrão em relação à média de 5 anos: ${num(z, 1)}">${barra}</td><td>${sparkline(ult24)}</td></tr>`;
+  };
+  return BLOCOS_CONJUNTURA.map(([bloco, itens]) => `<div class="painel largo" data-info="conjuntura"><h2>${bloco}</h2><div class="rolagem"><table class="tabela tabela-conj">
+    <tr><th style="text-align:left">Indicador</th><th>Último</th><th>3 meses antes</th><th>12 meses antes</th><th>Média 5 anos</th>
+      <th>Frente à média 5a<br><span class="sub">abaixo · acima</span></th><th>24 meses</th></tr>
+    ${itens.map(linha).join("")}</table></div></div>`).join("");
+}
+function rotuloData(d) { return /-01$/.test(d) ? `${MESES[Number(d.slice(5, 7)) - 1]}/${d.slice(2, 4)}` : dataBR(d); }
+
+/* ============ Empresas › Visão do mercado e tabela ordenável ============ */
+let ORDEM_EMP = { campo: "mc", desc: true };
+const COLUNAS_EMP = [
+  ["mc", "Market cap", reais], ["receita_ltm", "Receita LTM", reais], ["lucro_ltm", "Lucro LTM", reais], ["m_liquida_ltm", "Margem líq.", pct],
+  ["roe", "ROE", pct], ["roic", "ROIC", pct], ["dl_ebitda", "DL/EBITDA", vezes], ["p_l", "P/L", vezes], ["ev_ebitda", "EV/EBITDA", vezes],
+  ["p_vp", "P/VP", vezes], ["fcf_yield", "FCF yield", pct], ["dy", "DY 12m", (v) => pct(v, 2)],
+];
+
+function linhasEmpresas(mercado) {
+  const mapa = Object.fromEntries(mercado.empresas.map((m) => [m.id, m]));
+  return INDICE.map((e) => {
+    const m = mapa[e.id] || {}, mc = m.market_cap || null, ev = mc != null && e.divida_liquida != null ? mc + e.divida_liquida : null;
+    return { ...e, patrimonio: e.pl, mc, dy: m.dy_12m, p_l: mc && e.lucro_ltm > 0 ? mc / e.lucro_ltm : null,
+      ev_ebitda: ev && e.ebitda_ltm > 0 ? ev / e.ebitda_ltm : null, p_vp: mc && e.pl > 0 ? mc / e.pl : null,
+      fcf_yield: mc && e.fcf_ltm != null ? e.fcf_ltm / mc : null };
+  });
+}
+
+function tabelaEmpresas(linhas, cab, abas, setorInicial = "") {
+  const setores = [...new Set(linhas.map((e) => e.setor).filter(Boolean))].sort();
+  app.innerHTML = `${cab}${abas}
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
+      <input class="filtro" id="filtro" placeholder="filtrar por nome ou ticker" style="max-width:240px">
+      <select class="filtro" id="f-setor" style="max-width:300px"><option value="">Todos os setores</option>${setores.map((s) => `<option ${s === setorInicial ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+      <label class="sub">P/L até <input class="filtro" id="f-pl" type="number" step="1" style="width:70px"></label>
+      <label class="sub">ROE mín. (%) <input class="filtro" id="f-roe" type="number" step="1" style="width:70px"></label>
+      <label class="sub">DL/EBITDA até <input class="filtro" id="f-dl" type="number" step="0.5" style="width:70px"></label></div>
+    <div class="painel" data-info="tabela_empresas"><div class="rolagem rolagem-y" style="max-height:75vh"><table class="tabela" id="tab-emp"></table></div>
+      <div class="nota" id="nota-emp"></div></div>`;
+  const val = (id) => { const x = document.getElementById(id).value; return x === "" ? null : Number(x); };
+  const desenhar = () => {
+    const q = document.getElementById("filtro").value.trim().toUpperCase(), setor = document.getElementById("f-setor").value;
+    const plMax = val("f-pl"), roeMin = val("f-roe"), dlMax = val("f-dl");
+    const lista = linhas.filter((e) => (!q || e.nome.toUpperCase().includes(q) || e.tickers.some((t) => t.includes(q))) && (!setor || e.setor === setor)
+      && (plMax == null || (e.p_l != null && e.p_l <= plMax)) && (roeMin == null || (e.roe != null && e.roe * 100 >= roeMin))
+      && (dlMax == null || (e.dl_ebitda != null && e.dl_ebitda <= dlMax)))
+      .sort((a, b) => { const x = a[ORDEM_EMP.campo], y = b[ORDEM_EMP.campo]; if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * (ORDEM_EMP.desc ? -1 : 1); });
+    document.getElementById("tab-emp").innerHTML = `<tr><th style="text-align:left">Papel</th><th style="text-align:left">Setor</th>
+      ${COLUNAS_EMP.map(([k, r]) => `<th data-ordem="${k}" style="cursor:pointer">${r}${ORDEM_EMP.campo === k ? (ORDEM_EMP.desc ? " ▾" : " ▴") : ""}</th>`).join("")}</tr>
+      ${lista.map((e) => `<tr class="clicavel" data-id="${esc(e.id)}"><td style="text-align:left"><b>${esc(e.tickers[0])}</b> <span class="sub">${esc(e.nome.slice(0, 26))}</span></td>
+        <td style="text-align:left" class="sub">${esc((e.setor || "").slice(0, 28))}</td>${COLUNAS_EMP.map(([k, , f]) => `<td class="${["lucro_ltm"].includes(k) ? classeSinal(e[k]) : ""}">${f(e[k])}</td>`).join("")}</tr>`).join("")}`;
+    document.getElementById("nota-emp").textContent = `${lista.length} de ${linhas.length} empresas. Clique no título da coluna para ordenar. P/L = market cap ÷ lucro dos últimos 12 meses;
+      EV/EBITDA = (market cap + dívida líquida) ÷ EBITDA de 12 meses; P/VP = market cap ÷ patrimônio líquido; FCF yield = fluxo de caixa livre de 12 meses ÷ market cap.
+      Múltiplos só com denominador positivo.`;
+  };
+  ["filtro", "f-pl", "f-roe", "f-dl"].forEach((id) => document.getElementById(id).addEventListener("input", desenhar));
+  document.getElementById("f-setor").addEventListener("change", desenhar);
+  document.getElementById("tab-emp").addEventListener("click", (ev) => {
+    const th = ev.target.closest("[data-ordem]");
+    if (th) { const k = th.dataset.ordem; ORDEM_EMP = { campo: k, desc: ORDEM_EMP.campo === k ? !ORDEM_EMP.desc : true }; desenhar(); return; }
+    const tr = ev.target.closest("[data-id]"); if (tr) location.hash = `#/on/empresa/${encodeURIComponent(tr.dataset.id)}`;
+  });
+  desenhar();
+}
+
+const mediana = (v) => { v = v.filter((x) => x != null && isFinite(x)).sort((a, b) => a - b); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+
+async function visaoMercadoEmpresas(linhas, cab, abas) {
+  const tes = await dados("dados/tesouro.json").catch(() => null);
+  const ntnb = (() => { const c = (((tes || {}).curvas || {}).hoje || {}).ipca || []; return c.length ? c.reduce((a, b) => (Math.abs(b.anos - 10) < Math.abs(a.anos - 10) ? b : a)) : null; })();
+  const com = (f) => linhas.filter(f);
+  const soma = (ls, k) => ls.reduce((s, e) => s + (e[k] || 0), 0);
+  const base = com((e) => e.mc && e.lucro_ltm != null);
+  const pl = soma(base, "mc") / soma(base, "lucro_ltm");
+  const bEv = com((e) => e.mc && e.ebitda_ltm != null && e.divida_liquida != null);
+  const evEbitda = (soma(bEv, "mc") + soma(bEv, "divida_liquida")) / soma(bEv, "ebitda_ltm");
+  const bVp = com((e) => e.mc && e.patrimonio > 0);
+  const pvp = soma(bVp, "mc") / soma(bVp, "patrimonio"), roe = soma(bVp, "lucro_ltm") / soma(bVp, "patrimonio");
+  const bDy = com((e) => e.mc && e.dy != null), dy = bDy.reduce((s, e) => s + e.dy * e.mc, 0) / soma(bDy, "mc");
+  const bFcf = com((e) => e.mc && e.fcf_ltm != null), fcfy = soma(bFcf, "fcf_ltm") / soma(bFcf, "mc");
+  const premio = ntnb && pl > 0 ? (1 / pl) * 100 - ntnb.taxa : null;
+  const porSetor = {};
+  linhas.filter((e) => e.mc).forEach((e) => (porSetor[e.setor || "Sem setor"] = porSetor[e.setor || "Sem setor"] || []).push(e));
+  const setores = Object.entries(porSetor).map(([s, ls]) => ({ s, n: ls.length, mc: soma(ls, "mc"), p_l: mediana(ls.map((e) => e.p_l)), ev: mediana(ls.map((e) => e.ev_ebitda)),
+    pvp: mediana(ls.map((e) => e.p_vp)), roe: mediana(ls.map((e) => e.roe)), dl: mediana(ls.map((e) => e.dl_ebitda)), dy: mediana(ls.map((e) => e.dy)) }))
+    .sort((a, b) => b.mc - a.mc);
+  app.innerHTML = `${cab}${abas}
+    <div class="grade-cartoes">
+      ${cartao("Valor de mercado", reais(soma(com((e) => e.mc), "mc")), `${com((e) => e.mc).length} empresas não financeiras`)}
+      ${cartao("P/L da bolsa", vezes(pl), "Σ market cap ÷ Σ lucro 12 meses")}
+      ${cartao("EV/EBITDA", vezes(evEbitda), "(Σ market cap + Σ dívida líquida) ÷ Σ EBITDA")}
+      ${cartao("P/VP", vezes(pvp), "Σ market cap ÷ Σ patrimônio")}
+      ${cartao("ROE agregado", pct(roe), "Σ lucro ÷ Σ patrimônio")}
+      ${cartao("Dividend yield", pct(dy, 2), "ponderado pelo market cap")}
+      ${cartao("FCF yield", pct(fcfy, 2), "Σ fluxo de caixa livre ÷ Σ market cap")}
+      ${cartao("Prêmio de risco", premio != null ? `${num(premio, 2)} p.p.` : "—", ntnb ? `lucro/preço (${num(100 / pl, 2)}%) − NTN-B ${ntnb.vencimento.slice(0, 4)} (${num(ntnb.taxa, 2)}%)` : "")}
+    </div>
+    <div class="grade">
+      <div class="painel largo" data-info="valuation_setores"><h2>Setores · medianas das empresas</h2><div class="rolagem"><table class="tabela" id="tab-setores">
+        <tr><th style="text-align:left">Setor</th><th>Empresas</th><th>Market cap</th><th>P/L</th><th>EV/EBITDA</th><th>P/VP</th><th>ROE</th><th>DL/EBITDA</th><th>DY</th></tr>
+        ${setores.map((x) => `<tr class="clicavel" data-setor="${esc(x.s)}"><td style="text-align:left;white-space:normal">${esc(x.s)}</td><td>${x.n}</td><td>${reais(x.mc)}</td>
+          <td>${vezes(x.p_l)}</td><td>${vezes(x.ev)}</td><td>${vezes(x.pvp)}</td><td>${pct(x.roe)}</td><td>${vezes(x.dl)}</td><td>${pct(x.dy, 2)}</td></tr>`).join("")}
+      </table></div><div class="nota">Clique num setor para ver as empresas dele na tabela. Medianas: o valor da empresa do meio da fila, que não se deixa levar por um caso extremo.</div></div>
+      <div class="painel largo" data-info="valuation_dispersao"><h2>ROE × P/VP (cada ponto é uma empresa)</h2><div class="grafico alto" id="g-disp"></div>
+        <div class="nota">Quem gera mais retorno sobre o patrimônio costuma valer mais vezes o patrimônio. Pontos acima da nuvem: caros para o ROE que entregam; abaixo: baratos (ou com risco que o ROE não mostra). Eixos cortados em P/VP de 0 a 8x e ROE de −20% a 60%.</div></div>
+    </div>
+    <div class="nota secao">Protótipo: valuation com o market cap de hoje e os resultados dos últimos 12 meses (CVM). O histórico do P/L e do EV/EBITDA da bolsa exige montar o market cap de cada data (cotação × ações) — próxima etapa.</div>`;
+  document.getElementById("tab-setores").addEventListener("click", (ev) => {
+    const tr = ev.target.closest("[data-setor]"); if (!tr) return;
+    SETOR_TABELA = tr.dataset.setor; location.hash = "#/on/empresas/tabela";
+  });
+  const pts = linhas.filter((e) => e.p_vp != null && e.roe != null && e.p_vp < 8 && e.roe > -0.2 && e.roe < 0.6).map((e) => [e.roe * 100, e.p_vp, e.tickers[0], e.mc]);
+  const g = echarts.init(document.getElementById("g-disp")); graficos.push(g);
+  g.setOption({ backgroundColor: "transparent", textStyle: { fontFamily: "JetBrains Mono" }, grid: { left: 60, right: 24, top: 20, bottom: 50 },
+    tooltip: { backgroundColor: "#151c25", borderColor: COR.borda, textStyle: { color: COR.texto }, formatter: (p) => `<b>${p.value[2]}</b><br>ROE ${num(p.value[0], 1)}% · P/VP ${num(p.value[1], 2)}x<br>market cap ${reais(p.value[3])}` },
+    xAxis: { type: "value", name: "ROE (%)", nameLocation: "middle", nameGap: 30, axisLabel: { color: COR.cinza }, splitLine: { lineStyle: { color: COR.grade } } },
+    yAxis: { type: "value", name: "P/VP", axisLabel: { color: COR.cinza, formatter: (v) => `${v}x` }, splitLine: { lineStyle: { color: COR.grade } } },
+    series: [{ type: "scatter", data: pts, symbolSize: (v) => Math.max(5, Math.min(26, Math.sqrt(v[3] / 1e9) * 2.2)), itemStyle: { color: COR.ambar, opacity: 0.75 } }] });
+}
+let SETOR_TABELA = "";
 
 /* ============ Empresa ============ */
 let VISAO = "trimestral";
@@ -1842,7 +2078,7 @@ function desenharDreBalancoResumido(emp) {
 
 /* ============ Macro ============ */
 let JANELA_MACRO = 10;
-const SUBS_MACRO = [["atividade", "Atividade"], ["inflacao", "Inflação"], ["expectativas", "Expectativas (Focus)"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["credito", "Crédito"], ["cambio", "Câmbio"], ["externo", "Setor externo"]];
+const SUBS_MACRO = [["conjuntura", "Conjuntura"], ["atividade", "Atividade"], ["inflacao", "Inflação"], ["expectativas", "Expectativas (Focus)"], ["monetaria", "Política monetária"], ["fiscal", "Política fiscal"], ["credito", "Crédito"], ["cambio", "Câmbio"], ["externo", "Setor externo"]];
 const SUBS_CREDITO = [["total", "Total"], ["pj", "Pessoa jurídica"], ["pf", "Pessoa física"]];
 let ABA_CREDITO = "total";
 const SUBS_FISCAL = [["arrecadacao", "Arrecadação"], ["despesas", "Despesas"], ["endividamento", "Endividamento"]];
@@ -1858,8 +2094,8 @@ const NUCLEOS = [["nucleo_ex0", "EX0", COR.azul], ["nucleo_ex2", "EX2", COR.cinz
 
 async function paginaMacro(sub) {
   if (!SUBS_MACRO.some(([k]) => k === sub)) sub = SUBS_MACRO[0][0];
-  const [macro, cred, ext, fis] = await Promise.all([dados("dados/macro.json"), sub === "credito" ? dados("dados/credito.json").catch(() => null) : null,
-    sub === "externo" ? dados("dados/setor_externo.json").catch(() => null) : null,
+  const [macro, cred, ext, fis] = await Promise.all([dados("dados/macro.json"), ["credito", "conjuntura"].includes(sub) ? dados("dados/credito.json").catch(() => null) : null,
+    ["externo", "conjuntura"].includes(sub) ? dados("dados/setor_externo.json").catch(() => null) : null,
     sub === "fiscal" ? dados("dados/fiscal.json").catch(() => null) : null]);
   // Setor externo: séries do BC e do Comex Stat entram no mesmo dicionário (prefixo cx_ para o Comex); valores em US$
   const S = { ...macro.series, ...((cred && cred.series) || {}), ...((fis && fis.series) || {}), ...((ext && ext.bc) || {}),
@@ -1869,6 +2105,7 @@ async function paginaMacro(sub) {
   const mes = (k) => (u(k).data ? `${MESES[Number(u(k).data.slice(5, 7)) - 1]}/${u(k).data.slice(2, 4)}` : "");
   const focusAno = (k) => { const a = String(new Date().getFullYear()); const f = F[k] && F[k][a]; return f ? f.valores[f.valores.length - 1] : null; };
   const cartoes = {
+    conjuntura: [],
     inflacao: [cartao("IPCA no mês", pctPronto(u("ipca").valor), mes("ipca")), cartao("IPCA 12 meses", pctPronto(u("ipca_12m").valor), mes("ipca_12m")),
       cartao("IPCA 3m anualizado", pctPronto(u("ipca_mm3").valor), "sem ajuste sazonal"),
       cartao("Média dos núcleos 12m", pctPronto(u("nucleos_media_12m").valor), "EX0, EX3, MS, DP, P55"),
@@ -1897,7 +2134,7 @@ async function paginaMacro(sub) {
   app.innerHTML = `
     <div class="cabecalho"><div><h1>Macro</h1><div class="sub">Banco Central (SGS, Estatísticas Fiscais, de Crédito e do Setor Externo), Tesouro Nacional (RTN, Dívida Pública, SICONFI), Receita Federal, IBGE, FGV, Comex Stat e boletim Focus · atualizado em ${dataBR(macro.gerado_em)} · botões = janela inicial; use a roda do mouse ou a barra para ver mais</div></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        ${sub === "expectativas" ? "" : `<div class="seletor" id="janela">${[[1, "1A"], [5, "5A"], [10, "10A"], [99, "Máx"]].map(([a, r]) => `<button data-a="${a}" class="${a === JANELA_MACRO ? "ativo" : ""}">${r}</button>`).join("")}</div>`}
+        ${["expectativas", "conjuntura"].includes(sub) ? "" : `<div class="seletor" id="janela">${[[1, "1A"], [5, "5A"], [10, "10A"], [99, "Máx"]].map(([a, r]) => `<button data-a="${a}" class="${a === JANELA_MACRO ? "ativo" : ""}">${r}</button>`).join("")}</div>`}
         <a class="botao" href="downloads/macro.xlsx" download>Baixar planilha de Macro</a></div></div>
     <div class="abas">${SUBS_MACRO.map(([k, n]) => `<a href="#/on/macro/${k}" class="${k === sub ? "ativo" : ""}">${n}</a>`).join("")}</div>
     ${sub === "credito" ? `<div class="seletor seletor-editoria" id="sub-credito" style="margin:-4px 0 12px">${SUBS_CREDITO.map(([k, n]) => `<button data-k="${k}" class="${k === ABA_CREDITO ? "ativo" : ""}">${n}</button>`).join("")}</div>
@@ -1929,6 +2166,13 @@ async function paginaMacro(sub) {
 }
 
 function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
+  if (sub === "conjuntura") {
+    const neg = (s) => (s ? { ...s, valores: s.valores.map((x) => (x == null ? null : -x)) } : null);
+    document.getElementById("graficos-macro").innerHTML = desenharConjuntura({ ...S, primario: neg(S.nfsp_primario) }) +
+      `<div class="nota secao">Painel-síntese (protótipo): último valor de cada indicador, a direção contra 3 e 12 meses antes, a média dos últimos 5 anos e a posição
+      frente a essa média (marcador à direita = acima da média, em desvios-padrão). Cada indicador tem o gráfico completo na sua aba.</div>`;
+    return;
+  }
   limparGraficos();
   // Histórico completo em todos os gráficos; os botões de janela só escolhem o início (dá para dar zoom para trás)
   const inicio = (anos) => { if (anos >= 99) return null; const d = new Date(); d.setFullYear(d.getFullYear() - anos); return d.toISOString().slice(0, 10); };
@@ -2176,11 +2420,18 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
   // cada item: { t: título, info, op: opções do gráfico | alt: { rótulo do botão: opções }, largo, focus }
   const defs = {
     inflacao: [
-      { t: "Inflação: IPCA, IGP-M e INCC", info: "ipca", alt: comparativo, largo: true },
-      { t: "IPCA", info: "ipca", alt: indice("ipca") },
-      { t: "Núcleos do IPCA", info: "nucleos", alt: nucleos },
+      { t: "Inflação: IPCA, IGP-M e INCC", info: "ipca", alt: comparativo, largo: true, meta: true },
+      { t: "IPCA", info: "ipca", alt: indice("ipca"), meta: true },
+      { t: "Núcleos do IPCA", info: "nucleos", alt: nucleos, meta: true },
       { t: "IGP-M", info: "igpm", alt: indice("igpm") },
       { t: "INCC-DI (custo da construção)", info: "incc", alt: indice("incc") },
+      ...(S.ipca_servicos_12m ? [{ t: "Abertura do IPCA: serviços, livres, administrados, industriais e alimentação", info: "ipca_abertura", largo: true, meta: true, alt: Object.fromEntries(
+        [["12 meses", "_12m"], ["3 meses anualizado", "_mm3"]].map(([r, suf]) => [r, { eixoEsq: "pctPronto", series: [
+          ["ipca_servicos", "Serviços", COR.ambar], ["ipca_livres", "Livres", COR.azul], ["ipca_administrados", "Administrados", COR.roxo],
+          ["ipca_industriais", "Bens industriais", COR.ciano], ["ipca_alimentos_dom", "Alimentação no domicílio", COR.verde]]
+          .map(([k, nome, cor]) => ({ nome, valores: P(S[k + suf]), tipo: "line", cor })) }])) }] : []),
+      ...(S.ipca_difusao ? [{ t: "Índice de difusão do IPCA (% dos itens com alta no mês)", info: "ipca_difusao", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Difusão no mês", valores: P(S.ipca_difusao), cor: COR.cinza }, { nome: "Média de 3 meses", valores: P(S.ipca_difusao_mm3), tipo: "line", cor: COR.ambar }] } }] : []),
     ],
     atividade: [
       // linha 1: PIB anual inteiro; linha 2: IBC-Br | PIB trimestral; linha 3: desemprego inteiro
@@ -2191,10 +2442,27 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
       { t: "PIB trimestral", info: "pib_tri", op: { series: [{ nome: "Trimestral (dessaz., tri/tri)", valores: P(S.pib_tri), cor: COR.azul }, { nome: "Acumulado em 4 trimestres", valores: P(S.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto" } },
       { t: "Desemprego (PNAD Contínua, trimestre móvel)", info: "desemprego_br", largo: true, op: { eixoEsq: "pctPronto", series: [
         { nome: "Taxa de desocupação", valores: P(S.desemprego), tipo: "line", cor: COR.vermelho }] } },
+      ...(S.pim ? [{ t: "Indústria, varejo e serviços (IBGE, dessazonalizado)", info: "pim_pmc_pms", largo: true, alt: {
+        "Contra 12 meses antes": { eixoEsq: "pctPronto", series: [{ nome: "Indústria (PIM)", valores: P(S.pim_12m), tipo: "line", cor: COR.azul },
+          { nome: "Varejo (PMC)", valores: P(S.pmc_12m), tipo: "line", cor: COR.verde }, { nome: "Serviços (PMS)", valores: P(S.pms_12m), tipo: "line", cor: COR.ambar }] },
+        "Índice (2022=100)": { eixoEsq: "numero", series: [{ nome: "Indústria (PIM)", valores: P(S.pim), tipo: "line", cor: COR.azul },
+          { nome: "Varejo (PMC)", valores: P(S.pmc), tipo: "line", cor: COR.verde }, { nome: "Serviços (PMS)", valores: P(S.pms), tipo: "line", cor: COR.ambar }] } } }] : []),
+      ...(S.ibcbr_industria_12m ? [{ t: "IBC-Br por setor (acumulado em 12 meses)", info: "ibcbr_setores", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Agropecuária", valores: P(S.ibcbr_agro_12m), tipo: "line", cor: COR.verde }, { nome: "Indústria", valores: P(S.ibcbr_industria_12m), tipo: "line", cor: COR.azul },
+        { nome: "Serviços", valores: P(S.ibcbr_servicos_12m), tipo: "line", cor: COR.ambar }] } }] : []),
+      ...(S.caged_saldo ? [{ t: "Emprego formal (Novo Caged)", info: "caged", op: { eixoEsq: "inteiro", eixoDir: "inteiro", inicio: "2021-01-01", series: [
+        { nome: "Saldo do mês", valores: P(S.caged_saldo), cor: COR.azul }, { nome: "Saldo em 12 meses", valores: P(S.caged_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] } }] : []),
+      ...(S.renda_familias_12m ? [{ t: "Renda disponível real das famílias (variação em 12 meses)", info: "renda_familias", op: { eixoEsq: "pctPronto", series: [
+        { nome: "Renda real (deflacionada pelo IPCA)", valores: P(S.renda_familias_12m), tipo: "line", cor: COR.verde }] } }] : []),
     ],
     monetaria: [
       { t: "Selic meta, CDI e IPCA 12 meses", info: "selic", largo: true, op: { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "CDI", valores: P(S.cdi), tipo: "line", cor: COR.ciano }, { nome: "IPCA 12m", valores: P(S.ipca_12m), tipo: "line", cor: COR.vermelho }, { nome: "Média dos núcleos 12m", valores: P(S.nucleos_media_12m), tipo: "line", cor: COR.roxo, tracejado: true }], eixoEsq: "pctPronto", degrau: true } },
-      { t: "Juro real ex-post (Selic ÷ IPCA 12m)", info: "juro_real", largo: true, op: { series: [{ nome: "Juro real", valores: P(S.juro_real), tipo: "line", cor: COR.verde }], eixoEsq: "pctPronto" } },
+      { t: "Juro real: ex-ante (com a inflação esperada do Focus) e ex-post (com a inflação passada)", info: "juro_real", largo: true, op: { eixoEsq: "pctPronto", series: [
+        ...(S.juro_real_exante ? [{ nome: "Ex-ante: Selic ÷ IPCA esperado 12 meses", valores: P(S.juro_real_exante), tipo: "line", cor: COR.ambar }] : []),
+        { nome: "Ex-post: Selic ÷ IPCA 12 meses", valores: P(S.juro_real), tipo: "line", cor: COR.verde }] } },
+      ...(S.focus_ipca_12m ? [{ t: "Inflação esperada para os próximos 12 meses (Focus) × IPCA 12 meses", info: "focus12", largo: true, meta: true, alt: { "12 meses": { eixoEsq: "pctPronto", series: [
+        { nome: "IPCA esperado 12 meses (Focus)", valores: P(S.focus_ipca_12m), tipo: "line", cor: COR.ambar },
+        { nome: "IPCA 12 meses (realizado)", valores: P(S.ipca_12m), tipo: "line", cor: COR.azul }] } } }] : []),
     ],
     credito: cred ? defsCredito(ABA_CREDITO) : [],
     externo: ext ? defsExterno() : [],
@@ -2223,6 +2491,13 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
     ]) : defsFiscal(ABA_FISCAL),
     cambio: [
       { t: "Câmbio PTAX", info: "cambio", largo: true, op: { series: [{ nome: "Dólar", valores: P(S.usd), tipo: "line", cor: COR.verde }, { nome: "Euro", valores: P(S.eur), tipo: "line", cor: COR.roxo }], eixoEsq: "preco" } },
+      ...(S.cambio_real ? [{ t: "Câmbio real efetivo (índice; acima da média = real mais barato)", info: "cambio_real", media: true, op: { eixoEsq: "numero", series: [
+        { nome: "Câmbio real efetivo", valores: P(S.cambio_real), tipo: "line", cor: COR.ambar }] } }] : []),
+      ...(S.icbr ? [{ t: "Commodities em reais: IC-Br do Banco Central (índice)", info: "icbr", alt: {
+        "Índice": { eixoEsq: "numero", series: [["icbr", "IC-Br total", COR.ambar], ["icbr_agro", "Agropecuária", COR.verde], ["icbr_metal", "Metal", COR.azul], ["icbr_energia", "Energia", COR.vermelho]]
+          .map(([k, nome, cor]) => ({ nome, valores: P(S[k]), tipo: "line", cor })) },
+        "12 meses": { eixoEsq: "pctPronto", series: [["icbr_12m", "IC-Br total", COR.ambar], ["icbr_agro_12m", "Agropecuária", COR.verde], ["icbr_metal_12m", "Metal", COR.azul], ["icbr_energia_12m", "Energia", COR.vermelho]]
+          .map(([k, nome, cor]) => ({ nome, valores: P(S[k]), tipo: "line", cor })) } } }] : []),
     ],
     expectativas: Object.keys(NOMES_FOCUS).map((k) => ({ t: NOMES_FOCUS[k], info: "focus", focus: k })),
   }[sub];
@@ -2244,9 +2519,13 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
         series: anosF.map((a, j) => ({ nome: a, valores: F[d.focus][a].datas.map((x, n) => [x, F[d.focus][a].valores[n]]), tipo: "line", cor: PALETA_DATAS[j % PALETA_DATAS.length] })) });
       return;
     }
-    const opcoes = d.alt ? d.alt[ESCOLHA_GRAFICO[d.t] || Object.keys(d.alt)[0]] : d.op;
+    const chave = d.alt ? ESCOLHA_GRAFICO[d.t] || Object.keys(d.alt)[0] : "";
+    const opcoes = d.alt ? d.alt[chave] : d.op;
     const { inicio: ini, xTempo = true, ...resto } = opcoes;
-    grafico(el, xTempo ? { xTempo: true, inicioTempo: (ini !== undefined ? ini : corte) || "1990-01-01", deslizante: true, ...resto } : resto);
+    const meta = d.meta && /12|anualiz/i.test(chave) ? { faixa: { de: 1.5, ate: 4.5, ref: 3, rotulo: "meta 3%" } } : {};
+    const final = xTempo ? { xTempo: true, inicioTempo: (ini !== undefined ? ini : corte) || "1990-01-01", deslizante: true, ...resto, ...meta } : { ...resto, ...meta };
+    if (d.media) { ORIGEM_GRAFICO.set(el, final); el.__estado = { modo: "original", media: true }; _graficoBase(el, aplicarFerramentas(final, el.__estado)); return; }
+    grafico(el, final);
   };
   defs.forEach((_, i) => desenhar(i));
   if (sub === "fiscal" && fis) {  // tabelas da Política fiscal no fim da aba
