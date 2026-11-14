@@ -543,7 +543,7 @@ window.EXPLICATIVOS = {
   focus: {
     titulo: "Boletim Focus",
     html: `<p>Pesquisa semanal do <b>Banco Central</b> com bancos, gestoras e consultorias. Cada gráfico mostra a
-      <b>mediana</b> das projeções para cada ano, ao longo do tempo — dá para ver como as expectativas mudaram.</p>
+      <b>mediana</b> das projeções para cada ano que o Focus projeta (o ano corrente e os seguintes, hoje até 4 anos à frente), ao longo do tempo — dá para ver como as expectativas mudaram.</p>
       <p>Divulgado às segundas-feiras de manhã. Para a Selic, o valor é o esperado para o fim de cada ano.</p>
       <p class="sub">Fonte: Banco Central (API Olinda de expectativas de mercado).</p>`,
   },

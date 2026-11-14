@@ -316,7 +316,7 @@ def gerar():
         saida["dmf_ipca"] = _empacotar(ipca_dmf[partes.index >= "2003-01-01"].round(2),
                                        "Dívida mobiliária federal — participação IPCA (por diferença: 100% − demais indexadores)", "%")
 
-    focus = {chave: baixar_focus(nome, todos_os_anos=(chave == "selic")) for chave, nome in FOCUS.items()}
+    focus = {chave: baixar_focus(nome, todos_os_anos=True) for chave, nome in FOCUS.items()}  # todos os anos que o Focus projeta
     arquivo = DIR_DADOS_SITE / "macro.json"
     arquivo.write_text(json.dumps({"gerado_em": date.today().isoformat(), "series": saida, "focus": focus, "falhas": falhas},
                                   ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
