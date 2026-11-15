@@ -223,14 +223,13 @@ def _regrediu(nova, antiga, compactada=False):
     return None
 
 
-# ---------------- Conjuntura (protótipo das sugestões de 2026-11-14) ----------------
-# Séries do Banco Central conferidas por valor; as marcadas "a confirmar" precisam ter o nome conferido no SGS antes de ir ao ar
+# ---------------- Conjuntura (sugestões de 2026-11-14) ----------------
+# Séries do Banco Central com o nome conferido no catálogo de dados abertos do BC. Bens industriais (27863) e alimentação no
+# domicílio (27864) ficam de fora até o nome ser conferido no SGS (o catálogo não traz essas duas).
 SERIES_CONJUNTURA = {
     "ipca_servicos": (10844, "IPCA — serviços", "% a.m."),
     "ipca_livres": (11428, "IPCA — itens livres", "% a.m."),
-    "ipca_administrados": (4449, "IPCA — preços monitorados (administrados) [a confirmar]", "% a.m."),
-    "ipca_industriais": (27863, "IPCA — bens industriais [a confirmar]", "% a.m."),
-    "ipca_alimentos_dom": (27864, "IPCA — alimentação no domicílio [a confirmar]", "% a.m."),
+    "ipca_administrados": (4449, "IPCA — preços monitorados (administrados)", "% a.m."),
     "ipca_difusao": (21379, "IPCA — índice de difusão", "% dos itens"),
     "cambio_real": (11752, "Taxa de câmbio real efetiva (índice)", "índice"),
     "icbr": (27574, "Índice de Commodities Brasil (IC-Br), em reais", "índice"),
@@ -320,7 +319,7 @@ def conjuntura(saida, brutas, anteriores, falhas):
             novas[chave] = baixar_sgs(codigo)
             guardar(chave, novas[chave], nome, un)
         tentar(chave, baixar)
-    for k in ("ipca_servicos", "ipca_livres", "ipca_administrados", "ipca_industriais", "ipca_alimentos_dom"):
+    for k in ("ipca_servicos", "ipca_livres", "ipca_administrados"):
         if k in novas:
             guardar(f"{k}_12m", acumulado_12m(novas[k]), f"{SERIES_CONJUNTURA[k][1]} — 12 meses", "%")
             guardar(f"{k}_mm3", mm3_anualizada(novas[k]), f"{SERIES_CONJUNTURA[k][1]} — 3 meses anualizado", "% a.a.")

@@ -1272,7 +1272,7 @@ function leituraMacro(chave, S) {
     case "ipca": return `IPCA em 12 meses: <b>${pp(u("ipca_12m"))}</b> em ${ud("ipca_12m")} — ${meta(u("ipca_12m"))} e ${comp("ipca_12m")}.`;
     case "nucleos": return `Média dos 5 núcleos em 12 meses: <b>${pp(u("nucleos_media_12m"))}</b> em ${ud("nucleos_media_12m")} — ${meta(u("nucleos_media_12m"))}; em 3 meses anualizados, ${pp(u("nucleos_media_mm3"))}.`;
     case "abertura": {
-      const g = [["ipca_servicos_12m", "serviços"], ["ipca_livres_12m", "livres"], ["ipca_administrados_12m", "administrados"], ["ipca_industriais_12m", "bens industriais"], ["ipca_alimentos_dom_12m", "alimentação no domicílio"]]
+      const g = [["ipca_servicos_12m", "serviços"], ["ipca_livres_12m", "livres"], ["ipca_administrados_12m", "administrados"]]
         .map(([k, n]) => [n, u(k)]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
       return g.length ? `Em 12 meses até ${ud("ipca_servicos_12m")}: maior alta em <b>${g[0][0]} (${pp(g[0][1])})</b>, menor em <b>${g[g.length - 1][0]} (${pp(g[g.length - 1][1])})</b>. Serviços, o grupo mais ligado ao mercado de trabalho, em ${pp(u("ipca_servicos_12m"))}.` : "";
     }
@@ -1416,7 +1416,7 @@ function visaoMercadoEmpresas(todas, cab, abas) {
         <div class="nota">Em geral, quem tem ROE maior negocia a P/VP maior. Muito acima da nuvem: caro para o ROE de hoje (ou o mercado espera melhora); muito abaixo:
           barato (ou com risco que o ROE não mostra). Cores: os 8 maiores setores; os nomes são as 12 maiores empresas. Eixos cortados em P/VP até 8x e ROE de −20% a 60%.</div></div>
     </div>
-    <div class="nota secao">Protótipo: múltiplos com o market cap de hoje e os resultados dos últimos 12 meses (CVM). O prêmio de risco da bolsa (lucro/preço − juro real da NTN-B)
+    <div class="nota secao">Múltiplos com o market cap de hoje e os resultados dos últimos 12 meses (CVM). O prêmio de risco da bolsa (lucro/preço − juro real da NTN-B)
       entra quando houver o histórico do valuation (market cap de cada data), porque um número isolado não tem referência de comparação.</div>`;
   document.getElementById("sel-pv").addEventListener("click", (ev) => {
     const b = ev.target.closest("button"); if (!b) return;
@@ -2213,7 +2213,7 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
   if (sub === "conjuntura") {
     const neg = (s) => (s ? { ...s, valores: s.valores.map((x) => (x == null ? null : -x)) } : null);
     document.getElementById("graficos-macro").innerHTML = desenharConjuntura({ ...S, primario: neg(S.nfsp_primario) }) +
-      `<div class="nota secao">Painel-síntese (protótipo): último valor de cada indicador, a direção contra 3 e 12 meses antes, a média dos últimos 5 anos e a posição
+      `<div class="nota secao">Painel-síntese: último valor de cada indicador, a direção contra 3 e 12 meses antes, a média dos últimos 10 anos e a posição
       frente a essa média (marcador à direita = acima da média, em desvios-padrão). Cada indicador tem o gráfico completo na sua aba.</div>`;
     return;
   }
@@ -2469,9 +2469,8 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
       { t: "Núcleos do IPCA", info: "nucleos", alt: nucleos, meta: true, leitura: "nucleos" },
       { t: "IGP-M", info: "igpm", alt: indice("igpm") },
       { t: "INCC-DI (custo da construção)", info: "incc", alt: indice("incc") },
-      ...(S.ipca_servicos_12m ? [{ t: "Abertura do IPCA (mesma escala nos cinco gráficos)", info: "ipca_abertura", largo: true, leitura: "abertura",
-        mini: [["ipca_servicos", "Serviços", COR.ambar], ["ipca_livres", "Livres", COR.azul], ["ipca_administrados", "Administrados", COR.roxo],
-          ["ipca_industriais", "Bens industriais", COR.ciano], ["ipca_alimentos_dom", "Alimentação (domicílio)", COR.verde]],
+      ...(S.ipca_servicos_12m ? [{ t: "Abertura do IPCA: serviços, livres e administrados (mesma escala)", info: "ipca_abertura", largo: true, leitura: "abertura",
+        mini: [["ipca_servicos", "Serviços", COR.ambar], ["ipca_livres", "Livres", COR.azul], ["ipca_administrados", "Administrados", COR.roxo]],
         alt: { "12 meses": "_12m", "3 meses anualizado": "_mm3" } }] : []),
       ...(S.ipca_difusao ? [{ t: "Índice de difusão do IPCA (% dos itens com alta no mês)", info: "ipca_difusao", leitura: "difusao", op: { eixoEsq: "pctPronto", media: true, series: [
         { nome: "Média de 3 meses", valores: P(S.ipca_difusao_mm3), tipo: "line", cor: COR.ambar }, { nome: "Difusão no mês", valores: P(S.ipca_difusao), cor: "rgba(139,148,158,.45)" }] } }] : []),

@@ -1141,10 +1141,10 @@ window.EXPLICATIVOS = {
   ipca_abertura: {
     titulo: "Abertura do IPCA",
     html: `<ul><li><b>Serviços</b>: mais ligados ao mercado de trabalho e à inércia; o Copom acompanha de perto.</li>
-      <li><b>Livres</b>: preços definidos pelo mercado. <b>Administrados</b> (monitorados): energia, combustíveis, planos de saúde, tarifas.</li>
-      <li><b>Bens industriais</b>: sensíveis ao câmbio. <b>Alimentação no domicílio</b>: sensível a clima e commodities agrícolas.</li></ul>
-      <p>Cinco gráficos pequenos na <b>mesma escala</b>, para comparar os grupos sem linhas cruzadas. A faixa verde é o intervalo da meta (1,5% a 4,5%, centro 3%),
-      só na visão de 12 meses. Protótipo: os códigos de administrados, bens industriais e alimentação no domicílio precisam ter o nome conferido no SGS antes de ir ao ar.</p><p class="sub">Fonte: IBGE, séries do Banco Central.</p>`,
+      <li><b>Livres</b>: preços definidos pelo mercado. <b>Administrados</b> (monitorados): energia, combustíveis, planos de saúde, tarifas.</li></ul>
+      <p>Gráficos pequenos na <b>mesma escala</b>, para comparar os grupos sem linhas cruzadas. A faixa verde é o intervalo da meta (1,5% a 4,5%, centro 3%),
+      só na visão de 12 meses. Bens industriais e alimentação no domicílio entram quando o código da série for conferido no Banco Central.</p>
+      <p class="sub">Fonte: IBGE, séries do Banco Central (SGS 10844, 11428 e 4449).</p>`,
   },
   ipca_difusao: {
     titulo: "Índice de difusão",
