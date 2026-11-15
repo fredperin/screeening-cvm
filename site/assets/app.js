@@ -81,14 +81,22 @@ function formatar(tipo, v) {
  * series: [{nome, valores, tipo:"bar"|"line", eixo:"esq"|"dir", cor}]
  * eixoEsq/eixoDir: "reais" | "pct" | "pctPronto" | "vezes" | "preco"
  */
-function grafico(el, opcoes) {
-  if (!opcoes.__transformado) { ORIGEM_GRAFICO.set(el, opcoes); el.__estado = null; }
-  return _graficoBase(el, opcoes);
-}
-
-function _graficoBase(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTempo = false, xNome = null, degrau = false,
-  janela = 24, inicioTempo = null, deslizante = false, limitesEsq = null, detalhe = null, faixa = null }) {
-  const rotuloFim = xTempo && series.length <= 4 && series.some((s) => s.tipo === "line" && !s.area);
+function grafico(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, xTempo = false, xNome = null, degrau = false,
+  janela = 24, inicioTempo = null, deslizante = false, limitesEsq = null, detalhe = null, faixa = null, media = false, semLegendaValor = false, semLegenda = false, compacto = false }) {
+  // último valor de cada série: na legenda (até 6 séries) e na ponta da linha só quando há até 3 linhas que terminam afastadas
+  const ultimoDe = (s) => { for (let i = s.valores.length - 1; i >= 0; i--) { const x = s.valores[i], v = Array.isArray(x) ? x[1] : x; if (v != null && isFinite(v)) return v; } return null; };
+  const ultimos = series.map(ultimoDe), fmtS = (s, v) => formatar(s.eixo === "dir" ? eixoDir : eixoEsq, v);
+  const linhas = series.map((s, j) => j).filter((j) => series[j].tipo === "line" && !series[j].area && ultimos[j] != null && series[j].eixo !== "dir");
+  let rotuloFim = !compacto && xTempo && linhas.length >= 1 && linhas.length <= 3 && series.length <= 3;
+  if (rotuloFim && linhas.length > 1) {
+    const todos = linhas.flatMap((j) => series[j].valores.map((x) => (Array.isArray(x) ? x[1] : x))).filter((v) => v != null && isFinite(v));
+    const faixaY = Math.max(...todos) - Math.min(...todos) || 1, fins = linhas.map((j) => ultimos[j]).sort((a, b) => a - b);
+    rotuloFim = fins.every((v, i) => i === 0 || (v - fins[i - 1]) / faixaY > 0.07);
+  }
+  const legendaValor = !semLegendaValor && series.length <= 6;
+  const mm = media && series.length ? marcasMedia(series[0].valores) : null;
+  // a faixa da meta vai na série de 12 meses (quando houver barras mensais no outro eixo) ou na primeira
+  const jFaixa = faixa ? Math.max(0, series.findIndex((s) => /12/.test(s.nome))) : -1;
   const g = echarts.init(el, null, { renderer: "canvas" });
   graficos.push(g);
   const eixosY = [{ ...eixoValor(eixoEsq, "left"), ...(limitesEsq ? { min: limitesEsq[0], max: limitesEsq[1], scale: false } : {}) }];
@@ -96,8 +104,9 @@ function _graficoBase(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, 
   g.setOption({
     backgroundColor: "transparent",
     textStyle: { fontFamily: "JetBrains Mono" },
-    grid: { left: 64, right: (eixoDir ? 64 : 24) + (rotuloFim ? 58 : 0), top: 36, bottom: deslizante ? 70 : 48 },
-    legend: { top: 0, type: "scroll", textStyle: { color: COR.texto, fontSize: 11 }, itemHeight: 8, itemGap: 14, pageTextStyle: { color: COR.cinza } },
+    grid: compacto ? { left: 42, right: 10, top: 10, bottom: 24 } : { left: 64, right: (eixoDir ? 64 : 24) + (rotuloFim ? 58 : 0), top: semLegenda ? 12 : 36, bottom: deslizante ? 70 : 48 },
+    legend: { show: !semLegenda, top: 0, type: "scroll", textStyle: { color: COR.texto, fontSize: 11 }, itemHeight: 8, itemGap: 14, pageTextStyle: { color: COR.cinza },
+      formatter: (nome) => { const j = series.findIndex((s) => s.nome === nome); return legendaValor && j >= 0 && ultimos[j] != null ? `${nome} · ${fmtS(series[j], ultimos[j])}` : nome; } },
     tooltip: {
       trigger: "axis", backgroundColor: "#151c25", borderColor: COR.borda, textStyle: { color: COR.texto, fontSize: 12 },
       valueFormatter: undefined,
@@ -114,7 +123,7 @@ function _graficoBase(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, 
       },
     },
     xAxis: xTempo
-      ? { type: "time", axisLabel: { color: COR.cinza }, axisLine: { lineStyle: { color: COR.borda } }, splitLine: { show: false } }
+      ? { type: "time", ...(compacto ? { splitNumber: 3 } : {}), axisLabel: { color: COR.cinza, hideOverlap: true }, axisLine: { lineStyle: { color: COR.borda } }, splitLine: { show: false } }
       : xNome
         ? { type: "value", name: xNome, nameLocation: "middle", nameGap: 28, nameTextStyle: { color: COR.cinza }, axisLabel: { color: COR.cinza }, axisLine: { lineStyle: { color: COR.borda } }, splitLine: { show: false }, scale: true }
         : { type: "category", data: rotulos, axisLabel: { color: COR.cinza, hideOverlap: true }, axisLine: { lineStyle: { color: COR.borda } } },
@@ -130,12 +139,14 @@ function _graficoBase(el, { rotulos, series, eixoEsq = "reais", eixoDir = null, 
       symbol: s.tipo === "line" && !xTempo && s.valores.length < 40 ? "circle" : "none", symbolSize: 4,
       connectNulls: true, barMaxWidth: 28, step: degrau && s.tipo === "line" ? "end" : false, smooth: false, stack: s.pilha,
       ...(s.area ? { areaStyle: { color: s.cor, opacity: 0.85 }, lineStyle: { width: 0 } } : {}),
-      ...(rotuloFim && s.tipo === "line" && !s.area ? { endLabel: { show: true, color: s.cor, fontSize: 11, fontFamily: "JetBrains Mono",
+      ...(rotuloFim && linhas.includes(j) ? { endLabel: { show: true, color: s.cor, fontSize: 11, fontFamily: "JetBrains Mono",
         formatter: (p) => formatar(s.eixo === "dir" ? eixoDir : eixoEsq, Array.isArray(p.value) ? p.value[1] : p.value) } } : {}),
-      ...(faixa && j === 0 ? { markArea: { silent: true, itemStyle: { color: "rgba(63,185,80,.08)" }, data: [[{ yAxis: faixa.de }, { yAxis: faixa.ate }]] },
+      ...(faixa && j === jFaixa ? { markArea: { silent: true, itemStyle: { color: "rgba(63,185,80,.08)" }, data: [[{ yAxis: faixa.de }, { yAxis: faixa.ate }]] },
         markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: COR.verde, opacity: 0.6 },
           label: { color: COR.verde, formatter: faixa.rotulo || "" }, data: [{ yAxis: faixa.ref }] } } : {}),
-      ...(s.extra || {}),
+      ...(mm && j === 0 ? { markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: COR.cinza },
+          label: { color: COR.cinza, position: "insideStartTop", formatter: `média de 10 anos: ${formatar(eixoEsq, mm.m)}` }, data: [{ yAxis: mm.m }] },
+        markArea: { silent: true, itemStyle: { color: "rgba(139,148,158,.10)" }, data: [[{ yAxis: mm.m - mm.dp }, { yAxis: mm.m + mm.dp }]] } } : {}),
     })),
   });
   if (series.length >= MUITAS_SERIES) botaoTodasSeries(el);
@@ -173,8 +184,7 @@ function decorarPaineis(raiz = app) {
     const botoes = [];
     if (temInfo) botoes.push(`<button data-acao="info" title="O que é e como é calculado">ⓘ</button>`);
     if (temGrafico) botoes.push(`<button data-acao="csv" title="Baixar a série histórica completa (CSV, abre no Excel)">⤓</button>`,
-      `<button data-acao="tela" title="Tela cheia (Esc para sair)">⛶</button>`,
-      `<button data-acao="transf" title="Transformar a série (variação, médias móveis, base 100) e média histórica com banda">∿</button>`);
+      `<button data-acao="tela" title="Tela cheia (Esc para sair)">⛶</button>`);
     const caixa = titulo.querySelector(".ferramentas");
     if (caixa) caixa.insertAdjacentHTML("beforeend", botoes.join(""));
     else titulo.insertAdjacentHTML("beforeend", `<span class="ferramentas">${botoes.join("")}</span>`);
@@ -389,7 +399,6 @@ app.addEventListener("click", (ev) => {
   if (b.dataset.acao === "info") abrirExplicativo(painel.dataset.info, painel);
   else if (b.dataset.acao === "csv") baixarCsv(painel);
   else if (b.dataset.acao === "tela") alternarTelaCheia(painel);
-  else if (b.dataset.acao === "transf") abrirFerramentas(painel, b);
   else if (b.dataset.acao === "todas") alternarTodasSeries(painel);
 });
 document.getElementById("modal").addEventListener("click", (ev) => {
@@ -1165,97 +1174,41 @@ async function paginaFii(id) {
   mostrar(ABA_FII);
 }
 
-/* ============ Ferramentas de gráfico (transformar a série, média histórica com banda) ============ */
-// O gráfico guarda as opções originais; o botão ∿ do painel redesenha com a série transformada
-const ORIGEM_GRAFICO = new WeakMap();
-const TRANSFORMACOES = [["original", "Original"], ["var", "Variação no período"], ["var12", "Variação em 12 meses"],
-  ["mm3", "Média móvel de 3 meses"], ["mm12", "Média móvel de 12 meses"], ["base100", "Base 100 (início)"]];
-
-function _pares(valores) { return valores.map((x) => (Array.isArray(x) ? x : [null, x])); }
-
-function transformarValores(valores, modo, xTempo) {
-  if (modo === "original") return valores;
-  const pts = _pares(valores), t = (d) => new Date(d).getTime(), DIA = 864e5;
-  const saida = pts.map(([d, v], i) => {
-    if (v == null) return null;
-    if (modo === "var") { const a = i > 0 ? pts[i - 1][1] : null; return a ? (v / a - 1) * 100 : null; }
-    if (modo === "base100") { const p = pts.find(([, x]) => x != null && x !== 0); return p ? (v / p[1]) * 100 : null; }
-    if (!xTempo) {  // categorias (anos): 12 meses = ponto anterior; médias = janelas de pontos
-      if (modo === "var12") { const a = i > 0 ? pts[i - 1][1] : null; return a ? (v / a - 1) * 100 : null; }
-      const n = modo === "mm3" ? 3 : 12, jan = pts.slice(Math.max(0, i - n + 1), i + 1).map(([, x]) => x).filter((x) => x != null);
-      return jan.length === Math.min(n, i + 1) ? jan.reduce((s, x) => s + x, 0) / jan.length : null;
-    }
-    if (modo === "var12") {
-      let j = i; while (j > 0 && t(pts[j][0]) > t(d) - 360 * DIA) j--;
-      const a = pts[j][1]; return j < i && a && t(d) - t(pts[j][0]) <= 400 * DIA ? (v / a - 1) * 100 : null;
-    }
-    const dias = modo === "mm3" ? 90 : 365, jan = [];
-    for (let j = i; j >= 0 && t(pts[j][0]) > t(d) - dias * DIA; j--) if (pts[j][1] != null) jan.push(pts[j][1]);
-    return t(d) - t(pts[0][0]) >= (dias - 31) * DIA ? jan.reduce((s, x) => s + x, 0) / jan.length : null;
-  });
-  return valores.map((x, i) => (Array.isArray(x) ? [x[0], saida[i]] : saida[i]));
-}
-
-// média e banda de ±1 desvio-padrão dos últimos `anos` anos da primeira série (linha tracejada e faixa no fundo)
-function marcasMedia(valores, xTempo, anos = 10) {
-  const pts = _pares(valores), lim = Date.now() - anos * 365.25 * 864e5;
-  const v = pts.filter(([d, x]) => x != null && isFinite(x) && (!xTempo || new Date(d).getTime() >= lim)).map(([, x]) => x);
+/* ============ Média histórica (linha tracejada e banda de ±1 desvio-padrão) ============ */
+function marcasMedia(valores, anos = 10) {
+  const lim = Date.now() - anos * 365.25 * 864e5;
+  const v = valores.map((x) => (Array.isArray(x) ? x : [null, x]))
+    .filter(([d, x]) => x != null && isFinite(x) && (d == null || new Date(d).getTime() >= lim)).map(([, x]) => x);
   if (v.length < 6) return null;
-  const m = v.reduce((s, x) => s + x, 0) / v.length, dp = Math.sqrt(v.reduce((s, x) => s + (x - m) ** 2, 0) / v.length);
-  return { m, dp };
+  const m = v.reduce((s, x) => s + x, 0) / v.length;
+  return { m, dp: Math.sqrt(v.reduce((s, x) => s + (x - m) ** 2, 0) / v.length) };
 }
 
-function aplicarFerramentas(op, estado) {
-  const xTempo = !!op.xTempo, novo = { ...op, __transformado: true };
-  const muda = estado.modo !== "original", emPct = ["var", "var12"].includes(estado.modo);
-  novo.series = op.series.map((s) => ({ ...s, valores: transformarValores(s.valores, estado.modo, xTempo),
-    ...(emPct || estado.modo === "base100" ? { eixo: "esq", pilha: undefined, tipo: "line", area: false } : {}) }));
-  if (emPct) { novo.eixoEsq = "pctPronto"; novo.eixoDir = null; novo.limitesEsq = null; }
-  if (estado.modo === "base100") { novo.eixoEsq = "numero"; novo.eixoDir = null; novo.limitesEsq = null; }
-  if (muda) novo.faixa = null;
-  if (estado.media && novo.series.length) {
-    const mm = marcasMedia(novo.series[0].valores, xTempo);
-    if (mm) novo.series[0] = { ...novo.series[0], extra: { markLine: { silent: true, symbol: "none", lineStyle: { type: "dashed", color: COR.cinza },
-      label: { color: COR.cinza, position: "insideStartTop", formatter: `média 10 anos: ${num(mm.m, 2)}` }, data: [{ yAxis: mm.m }] },
-      markArea: { silent: true, itemStyle: { color: "rgba(139,148,158,.12)" }, data: [[{ yAxis: mm.m - mm.dp }, { yAxis: mm.m + mm.dp }]] } } };
-  }
-  return novo;
+// valor de uma série n meses antes da última data (ou da data indicada)
+function serieEm(s, meses = 0, data = null) {
+  if (!s || !s.datas.length) return null;
+  const ref = new Date(data || s.datas[s.datas.length - 1]); ref.setMonth(ref.getMonth() - meses);
+  let j = s.datas.length - 1; while (j > 0 && new Date(s.datas[j]) > ref) j--;
+  return new Date(s.datas[j]) <= ref ? s.valores[j] : null;
 }
-
-function abrirFerramentas(painel, botao) {
-  const el = painel.querySelector(".grafico"), g = el && echarts.getInstanceByDom(el), op = el && ORIGEM_GRAFICO.get(el);
-  if (!op) return;
-  const velho = painel.querySelector(".menu-ferramentas"); if (velho) { velho.remove(); return; }
-  const estado = el.__estado || { modo: "original", media: false };
-  painel.insertAdjacentHTML("beforeend", `<div class="menu-ferramentas">
-    <div class="sub" style="margin-bottom:4px">Transformar a série</div>
-    ${TRANSFORMACOES.map(([k, r]) => `<label><input type="radio" name="tf" value="${k}" ${k === estado.modo ? "checked" : ""}> ${r}</label>`).join("")}
-    <hr><label><input type="checkbox" id="tf-media" ${estado.media ? "checked" : ""}> Média de 10 anos e banda de ±1 desvio-padrão</label></div>`);
-  const menu = painel.querySelector(".menu-ferramentas");
-  menu.addEventListener("change", () => {
-    el.__estado = { modo: menu.querySelector("input[name=tf]:checked").value, media: menu.querySelector("#tf-media").checked };
-    if (g) { graficos.splice(graficos.indexOf(g), 1); g.dispose(); }
-    grafico(el, aplicarFerramentas(op, el.__estado));
-    botao.classList.toggle("ativo", el.__estado.modo !== "original" || el.__estado.media);
-  });
-}
+function rotuloData(d) { return d && /-01$/.test(d) ? `${MESES[Number(d.slice(5, 7)) - 1]}/${d.slice(2, 4)}` : dataBR(d); }
+const pp = (x, c = 2) => (x == null ? "—" : `${num(x, c)}%`);
+const sinal = (x, c = 2, suf = "%") => (x == null ? "—" : `${x >= 0 ? "+" : ""}${num(x, c)}${suf}`);
 
 /* ============ Economia › Conjuntura: painel-síntese ============ */
+// [chave, nome, formato, sentido]: sentido 1 = quanto maior melhor; -1 = quanto menor melhor; "meta" = quanto mais perto de 3% melhor; 0 = sem juízo
 const BLOCOS_CONJUNTURA = [
-  ["Atividade", [["pib_12m", "PIB (4 trimestres)", "pct", false, "tri"], ["ibcbr_12m", "IBC-Br (12 meses)", "pct"], ["pim_12m", "Indústria (contra 12 meses antes)", "pct"],
-    ["pmc_12m", "Varejo (contra 12 meses antes)", "pct"], ["pms_12m", "Serviços (contra 12 meses antes)", "pct"], ["desemprego", "Desemprego", "pct", true],
-    ["caged_12m", "Emprego formal (saldo 12 meses)", "mil"], ["renda_familias_12m", "Renda real das famílias (12 meses)", "pct"]]],
-  ["Preços e expectativas", [["ipca_12m", "IPCA 12 meses", "pct", true], ["nucleos_media_12m", "Média dos núcleos 12 meses", "pct", true],
-    ["ipca_servicos_12m", "IPCA serviços 12 meses", "pct", true], ["ipca_difusao_mm3", "Difusão (média 3 meses)", "pct", true],
-    ["igpm_12m", "IGP-M 12 meses", "pct", true], ["focus_ipca_12m", "IPCA esperado 12 meses (Focus)", "pct", true]]],
-  ["Juros e crédito", [["selic_meta", "Selic meta", "pct"], ["juro_real_exante", "Juro real ex-ante (Focus)", "pct"], ["juro_real", "Juro real ex-post", "pct"],
-    ["icc_total", "Custo do crédito (ICC)", "pct", true], ["inad_total", "Inadimplência total", "pct", true]]],
-  ["Fiscal e externo", [["primario", "Resultado primário 12m (% PIB)", "pct"], ["dbgg", "Dívida bruta (% PIB)", "pct", true],
-    ["tc_pib", "Transações correntes (% PIB, 12m)", "pct"], ["cambio_real", "Câmbio real efetivo (índice)", "num"],
-    ["usd", "Dólar PTAX", "rs"], ["icbr_12m", "Commodities IC-Br (12 meses)", "pct"]]],
+  ["Atividade e emprego", [["pib_12m", "PIB (4 trimestres)", "pct", 1, "tri"], ["ibcbr_12m", "IBC-Br (12 meses)", "pct", 1], ["pim_12m", "Indústria (contra 12 meses antes)", "pct", 1],
+    ["pmc_12m", "Varejo (contra 12 meses antes)", "pct", 1], ["pms_12m", "Serviços (contra 12 meses antes)", "pct", 1], ["desemprego", "Desemprego", "pct", -1],
+    ["caged_12m", "Emprego formal (variação do estoque em 12 meses)", "mil", 1]]],
+  ["Inflação", [["ipca_12m", "IPCA 12 meses", "pct", "meta"], ["nucleos_media_12m", "Média dos núcleos 12 meses", "pct", "meta"],
+    ["ipca_servicos_12m", "IPCA serviços 12 meses", "pct", "meta"], ["focus_ipca_12m", "IPCA esperado 12 meses (Focus)", "pct", "meta"]]],
+  ["Juros e crédito", [["selic_meta", "Selic meta", "pct", 0], ["juro_real_exante", "Juro real esperado (ex-ante)", "pct", 0], ["inad_total", "Inadimplência do crédito", "pct", -1]]],
+  ["Fiscal e externo", [["primario", "Resultado primário 12 meses (% PIB)", "pct", 1], ["dbgg", "Dívida bruta (% PIB)", "pct", -1],
+    ["tc_pib", "Transações correntes 12 meses (% PIB)", "pct", 1], ["cambio_real", "Câmbio real efetivo (índice; alta = real mais fraco)", "num", 0]]],
 ];
 
-function sparkline(vals, cor = "#f0b429") {
+function sparkline(vals, cor) {
   const v = vals.filter((x) => x != null && isFinite(x));
   if (v.length < 2) return "";
   const mn = Math.min(...v), mx = Math.max(...v), w = 90, h = 24, k = (x) => (mx === mn ? h / 2 : h - 2 - ((x - mn) / (mx - mn)) * (h - 4));
@@ -1265,77 +1218,151 @@ function sparkline(vals, cor = "#f0b429") {
 }
 
 function desenharConjuntura(S) {
-  const fmt = (t, x) => (x == null ? "—" : t === "pct" ? `${num(x, 2)}%` : t === "mil" ? `${num(x / 1000, 0)} mil` : t === "rs" ? `R$ ${num(x, 2)}` : num(x, 1));
-  const linha = ([k, nome, tipo, , freq]) => {
-    const s = S[k]; if (!s || !s.valores.length) return "";
-    const n = s.valores.length - 1, d = s.datas[n], v = s.valores[n];
-    const em = (meses) => { const alvo = new Date(d); alvo.setMonth(alvo.getMonth() - meses); let j = n; while (j > 0 && new Date(s.datas[j]) > alvo) j--; return s.valores[j]; };
-    const lim = new Date(d); lim.setFullYear(lim.getFullYear() - 5);
-    const h5 = s.valores.filter((x, i) => new Date(s.datas[i]) >= lim);
-    const m5 = h5.reduce((a, b) => a + b, 0) / h5.length, dp = Math.sqrt(h5.reduce((a, b) => a + (b - m5) ** 2, 0) / h5.length);
-    const z = dp ? (v - m5) / dp : 0, zc = Math.max(-2, Math.min(2, z));
-    const barra = `<div class="z-barra"><span style="left:${50 + zc * 25}%"></span></div>`;
-    const ult24 = s.valores.filter((x, i) => new Date(s.datas[i]) >= new Date(new Date(d).setFullYear(new Date(d).getFullYear() - 2)));
-    const seta = (a) => (a == null ? "" : v > a ? "▲" : v < a ? "▼" : "▬");
-    const ref = freq === "tri" ? `${Math.ceil(Number(d.slice(5, 7)) / 3)}º tri/${d.slice(2, 4)}` : rotuloData(d);
-    return `<tr><td style="text-align:left">${nome}</td><td><b>${fmt(tipo, v)}</b> <span class="sub">${esc(ref)}</span></td>
-      <td>${fmt(tipo, em(3))} <span class="sub">${seta(em(3))}</span></td><td>${fmt(tipo, em(12))} <span class="sub">${seta(em(12))}</span></td>
-      <td>${fmt(tipo, m5)}</td><td title="desvios-padrão em relação à média de 5 anos: ${num(z, 1)}">${barra}</td><td>${sparkline(ult24)}</td></tr>`;
-  };
-  return BLOCOS_CONJUNTURA.map(([bloco, itens]) => `<div class="painel largo" data-info="conjuntura"><h2>${bloco}</h2><div class="rolagem"><table class="tabela tabela-conj">
-    <tr><th style="text-align:left">Indicador</th><th>Último</th><th>3 meses antes</th><th>12 meses antes</th><th>Média 5 anos</th>
-      <th>Frente à média 5a<br><span class="sub">abaixo · acima</span></th><th>24 meses</th></tr>
-    ${itens.map(linha).join("")}</table></div></div>`).join("");
+  const fmt = (t, x) => (x == null ? "—" : t === "pct" ? `${num(x, 2)}%` : t === "mil" ? `${x >= 0 ? "+" : ""}${num(x / 1000, 0)} mil` : num(x, 1));
+  return BLOCOS_CONJUNTURA.map(([bloco, itens]) => {
+    const recente = itens.map(([k]) => (S[k] && S[k].datas.length ? S[k].datas[S[k].datas.length - 1] : "")).sort().pop();
+    const linha = ([k, nome, tipo, sentido, freq]) => {
+      const s = S[k]; if (!s || !s.valores.length) return "";
+      const n = s.valores.length - 1, d = s.datas[n], v = s.valores[n];
+      const lim = new Date(d); lim.setFullYear(lim.getFullYear() - 10);
+      const h = s.valores.filter((x, i) => new Date(s.datas[i]) >= lim);
+      const med = h.reduce((a, b) => a + b, 0) / h.length, dp = Math.sqrt(h.reduce((a, b) => a + (b - med) ** 2, 0) / h.length) || 1;
+      const z = (v - med) / dp;
+      // leitura: melhor ou pior que a média de 10 anos (inflação: comparada com a meta de 3%)
+      let txt, cls;
+      if (sentido === "meta") {
+        const dist = Math.abs(v - 3);
+        txt = v > 4.5 ? "acima do teto da meta" : v < 1.5 ? "abaixo do piso da meta" : dist < 0.25 ? "no centro da meta" : `dentro da meta, ${v > 3 ? "acima" : "abaixo"} do centro`;
+        cls = v > 4.5 || v < 1.5 ? "neg" : dist < 0.75 ? "pos" : "";
+      } else {
+        const lado = Math.abs(z) < 0.5 ? "perto da média" : z > 0 ? "acima da média" : "abaixo da média";
+        const bom = sentido === 0 || Math.abs(z) < 0.5 ? null : (z > 0) === (sentido > 0);
+        txt = bom == null ? lado : `${lado} · ${bom ? "melhor" : "pior"}`;
+        cls = bom == null ? "" : bom ? "pos" : "neg";
+      }
+      const cor = cls === "pos" ? "#3fb950" : cls === "neg" ? "#f85149" : "#8b949e";
+      const zc = Math.max(-2, Math.min(2, z));
+      const ult24 = s.valores.filter((x, i) => new Date(s.datas[i]) >= new Date(new Date(d).setFullYear(new Date(d).getFullYear() - 2)));
+      const ref = freq === "tri" ? `${Math.ceil(Number(d.slice(5, 7)) / 3)}º tri/${d.slice(2, 4)}` : rotuloData(d);
+      const atrasado = (new Date(recente) - new Date(d)) / 864e5 > 75 && freq !== "tri";
+      const seta = (a) => (a == null ? "" : v > a ? "▲" : v < a ? "▼" : "▬");
+      const v3 = serieEm(s, freq === "tri" ? 3 : 3), v12 = serieEm(s, 12);
+      return `<tr><td style="text-align:left">${nome}</td>
+        <td><b>${fmt(tipo, v)}</b> <span class="${atrasado ? "atrasado" : "sub"}" ${atrasado ? 'title="dado mais antigo que os demais do bloco"' : ""}>${esc(ref)}</span></td>
+        <td>${fmt(tipo, v3)} <span class="sub">${seta(v3)}</span></td><td>${fmt(tipo, v12)} <span class="sub">${seta(v12)}</span></td>
+        <td>${fmt(tipo, med)}</td>
+        <td title="${num(z, 1)} desvio(s)-padrão em relação à média de 10 anos"><div class="z-barra"><span style="left:${50 + zc * 25}%;background:${cor}"></span></div></td>
+        <td style="text-align:left" class="${cls}">${txt}</td><td>${sparkline(ult24, cor === "#8b949e" ? "#f0b429" : cor)}</td></tr>`;
+    };
+    return `<div class="painel largo" data-info="conjuntura"><h2>${bloco}</h2><div class="rolagem"><table class="tabela tabela-conj">
+      <tr><th style="text-align:left">Indicador</th><th>Último</th><th>3 meses antes</th><th>12 meses antes</th><th>Média 10 anos</th>
+        <th>Posição</th><th style="text-align:left">Leitura</th><th>24 meses</th></tr>
+      ${itens.map(linha).join("")}</table></div></div>`;
+  }).join("");
 }
-function rotuloData(d) { return /-01$/.test(d) ? `${MESES[Number(d.slice(5, 7)) - 1]}/${d.slice(2, 4)}` : dataBR(d); }
 
-/* ============ Empresas › Visão do mercado e tabela ordenável ============ */
-let ORDEM_EMP = { campo: "mc", desc: true };
-const COLUNAS_EMP = [
-  ["mc", "Market cap", reais], ["receita_ltm", "Receita LTM", reais], ["lucro_ltm", "Lucro LTM", reais], ["m_liquida_ltm", "Margem líq.", pct],
-  ["roe", "ROE", pct], ["roic", "ROIC", pct], ["dl_ebitda", "DL/EBITDA", vezes], ["p_l", "P/L", vezes], ["ev_ebitda", "EV/EBITDA", vezes],
-  ["p_vp", "P/VP", vezes], ["fcf_yield", "FCF yield", pct], ["dy", "DY 12m", (v) => pct(v, 2)],
-];
+/* ============ Frases de leitura dos gráficos de Macro (geradas pelos dados, sem opinião) ============ */
+function leituraMacro(chave, S) {
+  const u = (k) => (S[k] && S[k].valores.length ? S[k].valores[S[k].valores.length - 1] : null);
+  const ud = (k) => (S[k] && S[k].datas.length ? rotuloData(S[k].datas[S[k].datas.length - 1]) : "");
+  const meta = (v) => (v == null ? "" : v > 4.5 ? "acima do teto da meta (4,5%)" : v < 1.5 ? "abaixo do piso da meta (1,5%)" : v > 3 ? "dentro da meta, acima do centro (3%)" : "dentro da meta, abaixo do centro (3%)");
+  const comp = (k) => { const v = u(k), a = serieEm(S[k], 12); return v == null || a == null ? "" : `${v > a ? "acima" : v < a ? "abaixo" : "igual"} de 12 meses antes (${pp(a)})`; };
+  const media10 = (k) => { const m = S[k] ? marcasMedia(S[k].datas.map((d, i) => [d, S[k].valores[i]])) : null; return m ? m.m : null; };
+  switch (chave) {
+    case "ipca": return `IPCA em 12 meses: <b>${pp(u("ipca_12m"))}</b> em ${ud("ipca_12m")} — ${meta(u("ipca_12m"))} e ${comp("ipca_12m")}.`;
+    case "nucleos": return `Média dos 5 núcleos em 12 meses: <b>${pp(u("nucleos_media_12m"))}</b> em ${ud("nucleos_media_12m")} — ${meta(u("nucleos_media_12m"))}; em 3 meses anualizados, ${pp(u("nucleos_media_mm3"))}.`;
+    case "abertura": {
+      const g = [["ipca_servicos_12m", "serviços"], ["ipca_livres_12m", "livres"], ["ipca_administrados_12m", "administrados"], ["ipca_industriais_12m", "bens industriais"], ["ipca_alimentos_dom_12m", "alimentação no domicílio"]]
+        .map(([k, n]) => [n, u(k)]).filter(([, v]) => v != null).sort((a, b) => b[1] - a[1]);
+      return g.length ? `Em 12 meses até ${ud("ipca_servicos_12m")}: maior alta em <b>${g[0][0]} (${pp(g[0][1])})</b>, menor em <b>${g[g.length - 1][0]} (${pp(g[g.length - 1][1])})</b>. Serviços, o grupo mais ligado ao mercado de trabalho, em ${pp(u("ipca_servicos_12m"))}.` : "";
+    }
+    case "difusao": return `<b>${pp(u("ipca_difusao"), 1)}</b> dos itens subiram em ${ud("ipca_difusao")} (média de 3 meses ${pp(u("ipca_difusao_mm3"), 1)}; média de 10 anos ${pp(media10("ipca_difusao_mm3"), 1)}).`;
+    case "atividade": return `Em ${ud("pim_12m")}, contra 12 meses antes: indústria <b>${sinal(u("pim_12m"), 1)}</b>, varejo <b>${sinal(u("pmc_12m"), 1)}</b>, serviços <b>${sinal(u("pms_12m"), 1)}</b>.`;
+    case "caged": { const a = serieEm(S.caged_12m, 12); return `Variação do estoque de empregos formais em ${ud("caged_saldo")}: <b>${sinal(u("caged_saldo") / 1000, 0, " mil")}</b>; em 12 meses, <b>${sinal(u("caged_12m") / 1000, 0, " mil")}</b>${a != null ? ` (um ano antes: ${sinal(a / 1000, 0, " mil")})` : ""}.`; }
+    case "desemprego": {
+      const s = S.desemprego; if (!s) return "";
+      const minimo = Math.min(...s.valores), v = u("desemprego"), a = serieEm(s, 12);
+      return `Desemprego de <b>${pp(v, 1)}</b> no trimestre até ${ud("desemprego")}${a != null ? `, ${num(Math.abs(v - a), 1)} ponto ${v < a ? "abaixo" : "acima"} de um ano antes` : ""}${v <= minimo + 0.05 ? " — a menor taxa da série (desde 2012)" : ""}.`;
+    }
+    case "juro_real": return `Juro real esperado: <b>${pp(u("juro_real_exante"))}</b> (Selic média esperada para 12 meses ${pp(u("focus_selic_12m"))} ÷ IPCA esperado ${pp(u("focus_ipca_12m"))}); média de 10 anos ${pp(media10("juro_real_exante"))}.`;
+    case "focus12": { const e = u("focus_ipca_12m"), r = u("ipca_12m"); return e == null ? "" : `O mercado espera IPCA de <b>${pp(e)}</b> nos próximos 12 meses, contra ${pp(r)} nos últimos 12 — expectativa de ${e > r ? "alta" : "queda"} da inflação; ${meta(e)}.`; }
+    case "cambio_real": {
+      const v = u("cambio_real"), m = media10("cambio_real"); if (v == null || m == null) return "";
+      const dif = (v / m - 1) * 100, base = `Índice em <b>${num(v, 1)}</b> (${ud("cambio_real")}), ${num(Math.abs(dif), 1)}% ${dif > 0 ? "acima" : "abaixo"} da média de 10 anos (${num(m, 1)})`;
+      return Math.abs(dif) < 5 ? `${base} — praticamente na média: o real não está nem caro nem barato frente ao padrão recente.`
+        : `${base} — real ${dif > 0 ? "mais desvalorizado" : "mais valorizado"} que a média (exportação ${dif > 0 ? "mais" : "menos"} competitiva).`;
+    }
+    case "icbr": return `Commodities em reais, em 12 meses até ${ud("icbr_12m")}: total <b>${sinal(u("icbr_12m"), 1)}</b> · agropecuária ${sinal(u("icbr_agro_12m"), 1)} · metal ${sinal(u("icbr_metal_12m"), 1)} · energia ${sinal(u("icbr_energia_12m"), 1)}.`;
+    default: return "";
+  }
+}
+
+// séries em base 100 numa data (índices com bases diferentes ficam comparáveis)
+function base100(s, data) {
+  if (!s) return [];
+  const i = s.datas.findIndex((d) => d >= data); if (i < 0 || !s.valores[i]) return [];
+  return s.datas.slice(i).map((d, j) => [d, (s.valores[i + j] / s.valores[i]) * 100]);
+}
+
+/* ============ Empresas › Visão do mercado e tabela ============ */
+let ORDEM_EMP = { campo: "mc", desc: true }, GRUPO_COLS = "valuation", SEM_PV = false, SETOR_TABELA = "";
+const COLS_EMP = {
+  mc: ["Market cap", reais], receita_ltm: ["Receita LTM", reais], lucro_ltm: ["Lucro LTM", reais], m_liquida_ltm: ["Margem líq.", pct],
+  roe: ["ROE", pct], roic: ["ROIC", pct], divida_liquida: ["Dívida líquida", reais], dl_ebitda: ["DL/EBITDA", vezes], dl_ebitda_ifrs16: ["DL/EBITDA c/ IFRS16", vezes],
+  p_l: ["P/L", vezes], ev_ebitda: ["EV/EBITDA", vezes], p_vp: ["P/VP", vezes], fcf_yield: ["FCF yield", pct], dy: ["DY 12m", (v) => pct(v, 2)],
+};
+const GRUPOS_EMP = [["valuation", "Valuation", ["mc", "p_l", "ev_ebitda", "p_vp", "fcf_yield", "dy"]], ["rentabilidade", "Rentabilidade", ["receita_ltm", "lucro_ltm", "m_liquida_ltm", "roe", "roic"]],
+  ["endividamento", "Endividamento", ["divida_liquida", "dl_ebitda", "dl_ebitda_ifrs16"]], ["tudo", "Tudo", Object.keys(COLS_EMP)]];
+// setor da CVM com as holdings ("Emp. Adm. Part. – …") no setor da atividade e as abreviações das holdings unificadas
+const SETOR_ALIAS = { "Const. Civil, Mat. Const. e Decoração": "Construção Civil, Mat. Constr. e Decoração",
+  "Máqs., Equip., Veíc. e Peças": "Máquinas, Equipamentos, Veículos e Peças", "Sem Setor Principal": "Sem setor" };
+const setorBase = (s) => { const x = (s || "Sem setor").replace(/^Emp\. Adm\. Part\. - /, "").trim(); return SETOR_ALIAS[x] || x; };
+const PETRO_VALE = new Set(["PETR4", "PETR3", "VALE3"]);
 
 function linhasEmpresas(mercado) {
   const mapa = Object.fromEntries(mercado.empresas.map((m) => [m.id, m]));
   return INDICE.map((e) => {
     const m = mapa[e.id] || {}, mc = m.market_cap || null, ev = mc != null && e.divida_liquida != null ? mc + e.divida_liquida : null;
-    return { ...e, patrimonio: e.pl, mc, dy: m.dy_12m, p_l: mc && e.lucro_ltm > 0 ? mc / e.lucro_ltm : null,
+    return { ...e, setorG: setorBase(e.setor), patrimonio: e.pl, mc, dy: m.dy_12m, p_l: mc && e.lucro_ltm > 0 ? mc / e.lucro_ltm : null,
       ev_ebitda: ev && e.ebitda_ltm > 0 ? ev / e.ebitda_ltm : null, p_vp: mc && e.pl > 0 ? mc / e.pl : null,
       fcf_yield: mc && e.fcf_ltm != null ? e.fcf_ltm / mc : null };
   });
 }
 
 function tabelaEmpresas(linhas, cab, abas, setorInicial = "") {
-  const setores = [...new Set(linhas.map((e) => e.setor).filter(Boolean))].sort();
+  const setores = [...new Set(linhas.map((e) => e.setorG))].sort();
   app.innerHTML = `${cab}${abas}
-    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center">
-      <input class="filtro" id="filtro" placeholder="filtrar por nome ou ticker" style="max-width:240px">
-      <select class="filtro" id="f-setor" style="max-width:300px"><option value="">Todos os setores</option>${setores.map((s) => `<option ${s === setorInicial ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
-      <label class="sub">P/L até <input class="filtro" id="f-pl" type="number" step="1" style="width:70px"></label>
-      <label class="sub">ROE mín. (%) <input class="filtro" id="f-roe" type="number" step="1" style="width:70px"></label>
-      <label class="sub">DL/EBITDA até <input class="filtro" id="f-dl" type="number" step="0.5" style="width:70px"></label></div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:8px;align-items:center">
+      <input class="filtro" id="filtro" placeholder="filtrar por nome ou ticker" style="max-width:220px">
+      <select class="filtro" id="f-setor" style="max-width:280px"><option value="">Todos os setores</option>${setores.map((s) => `<option ${s === setorInicial ? "selected" : ""}>${esc(s)}</option>`).join("")}</select>
+      <label class="sub">P/L até <input class="filtro" id="f-pl" type="number" step="1" style="width:64px"></label>
+      <label class="sub">ROE mín. (%) <input class="filtro" id="f-roe" type="number" step="1" style="width:64px"></label>
+      <label class="sub">DL/EBITDA até <input class="filtro" id="f-dl" type="number" step="0.5" style="width:64px"></label></div>
+    <div class="seletor seletor-editoria" id="grupo-cols" style="margin-bottom:8px">${GRUPOS_EMP.map(([k, r]) => `<button data-k="${k}" class="${k === GRUPO_COLS ? "ativo" : ""}">${r}</button>`).join("")}</div>
     <div class="painel" data-info="tabela_empresas"><div class="rolagem rolagem-y" style="max-height:75vh"><table class="tabela" id="tab-emp"></table></div>
       <div class="nota" id="nota-emp"></div></div>`;
   const val = (id) => { const x = document.getElementById(id).value; return x === "" ? null : Number(x); };
   const desenhar = () => {
+    const cols = GRUPOS_EMP.find(([k]) => k === GRUPO_COLS)[2];
     const q = document.getElementById("filtro").value.trim().toUpperCase(), setor = document.getElementById("f-setor").value;
     const plMax = val("f-pl"), roeMin = val("f-roe"), dlMax = val("f-dl");
-    const lista = linhas.filter((e) => (!q || e.nome.toUpperCase().includes(q) || e.tickers.some((t) => t.includes(q))) && (!setor || e.setor === setor)
+    const lista = linhas.filter((e) => (!q || e.nome.toUpperCase().includes(q) || e.tickers.some((t) => t.includes(q))) && (!setor || e.setorG === setor)
       && (plMax == null || (e.p_l != null && e.p_l <= plMax)) && (roeMin == null || (e.roe != null && e.roe * 100 >= roeMin))
       && (dlMax == null || (e.dl_ebitda != null && e.dl_ebitda <= dlMax)))
       .sort((a, b) => { const x = a[ORDEM_EMP.campo], y = b[ORDEM_EMP.campo]; if (x == null) return 1; if (y == null) return -1; return (x < y ? -1 : x > y ? 1 : 0) * (ORDEM_EMP.desc ? -1 : 1); });
     document.getElementById("tab-emp").innerHTML = `<tr><th style="text-align:left">Papel</th><th style="text-align:left">Setor</th>
-      ${COLUNAS_EMP.map(([k, r]) => `<th data-ordem="${k}" style="cursor:pointer">${r}${ORDEM_EMP.campo === k ? (ORDEM_EMP.desc ? " ▾" : " ▴") : ""}</th>`).join("")}</tr>
+      ${cols.map((k) => `<th data-ordem="${k}" style="cursor:pointer">${COLS_EMP[k][0]}${ORDEM_EMP.campo === k ? (ORDEM_EMP.desc ? " ▾" : " ▴") : ""}</th>`).join("")}</tr>
       ${lista.map((e) => `<tr class="clicavel" data-id="${esc(e.id)}"><td style="text-align:left"><b>${esc(e.tickers[0])}</b> <span class="sub">${esc(e.nome.slice(0, 26))}</span></td>
-        <td style="text-align:left" class="sub">${esc((e.setor || "").slice(0, 28))}</td>${COLUNAS_EMP.map(([k, , f]) => `<td class="${["lucro_ltm"].includes(k) ? classeSinal(e[k]) : ""}">${f(e[k])}</td>`).join("")}</tr>`).join("")}`;
-    document.getElementById("nota-emp").textContent = `${lista.length} de ${linhas.length} empresas. Clique no título da coluna para ordenar. P/L = market cap ÷ lucro dos últimos 12 meses;
-      EV/EBITDA = (market cap + dívida líquida) ÷ EBITDA de 12 meses; P/VP = market cap ÷ patrimônio líquido; FCF yield = fluxo de caixa livre de 12 meses ÷ market cap.
-      Múltiplos só com denominador positivo.`;
+        <td style="text-align:left" class="sub">${esc(e.setorG.slice(0, 30))}</td>${cols.map((k) => `<td class="${k === "lucro_ltm" ? classeSinal(e[k]) : ""}">${COLS_EMP[k][1](e[k])}</td>`).join("")}</tr>`).join("")}`;
+    document.getElementById("nota-emp").textContent = `${lista.length} de ${linhas.length} empresas. Botões acima: grupo de colunas; clique no título da coluna para ordenar.
+      P/L = market cap ÷ lucro de 12 meses; EV/EBITDA = (market cap + dívida líquida) ÷ EBITDA de 12 meses; P/VP = market cap ÷ patrimônio; FCF yield = fluxo de caixa livre de 12 meses ÷ market cap. Múltiplos só com denominador positivo.`;
   };
   ["filtro", "f-pl", "f-roe", "f-dl"].forEach((id) => document.getElementById(id).addEventListener("input", desenhar));
   document.getElementById("f-setor").addEventListener("change", desenhar);
+  document.getElementById("grupo-cols").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    GRUPO_COLS = b.dataset.k; document.querySelectorAll("#grupo-cols button").forEach((x) => x.classList.toggle("ativo", x === b)); desenhar();
+  });
   document.getElementById("tab-emp").addEventListener("click", (ev) => {
     const th = ev.target.closest("[data-ordem]");
     if (th) { const k = th.dataset.ordem; ORDEM_EMP = { campo: k, desc: ORDEM_EMP.campo === k ? !ORDEM_EMP.desc : true }; desenhar(); return; }
@@ -1346,59 +1373,76 @@ function tabelaEmpresas(linhas, cab, abas, setorInicial = "") {
 
 const mediana = (v) => { v = v.filter((x) => x != null && isFinite(x)).sort((a, b) => a - b); if (!v.length) return null; const m = Math.floor(v.length / 2); return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
 
-async function visaoMercadoEmpresas(linhas, cab, abas) {
-  const tes = await dados("dados/tesouro.json").catch(() => null);
-  const ntnb = (() => { const c = (((tes || {}).curvas || {}).hoje || {}).ipca || []; return c.length ? c.reduce((a, b) => (Math.abs(b.anos - 10) < Math.abs(a.anos - 10) ? b : a)) : null; })();
-  const com = (f) => linhas.filter(f);
+function visaoMercadoEmpresas(todas, cab, abas) {
   const soma = (ls, k) => ls.reduce((s, e) => s + (e[k] || 0), 0);
-  const base = com((e) => e.mc && e.lucro_ltm != null);
+  const linhas = SEM_PV ? todas.filter((e) => !e.tickers.some((t) => PETRO_VALE.has(t))) : todas;
+  const comLucro = linhas.filter((e) => e.mc && e.lucro_ltm != null), base = comLucro.filter((e) => e.lucro_ltm > 0), foraPl = comLucro.length - base.length;
   const pl = soma(base, "mc") / soma(base, "lucro_ltm");
-  const bEv = com((e) => e.mc && e.ebitda_ltm != null && e.divida_liquida != null);
+  const comEbitda = linhas.filter((e) => e.mc && e.divida_liquida != null && e.ebitda_ltm != null);
+  const bEv = comEbitda.filter((e) => e.ebitda_ltm > 0), foraEv = comEbitda.length - bEv.length;
   const evEbitda = (soma(bEv, "mc") + soma(bEv, "divida_liquida")) / soma(bEv, "ebitda_ltm");
-  const bVp = com((e) => e.mc && e.patrimonio > 0);
+  const bVp = linhas.filter((e) => e.mc && e.patrimonio > 0);
   const pvp = soma(bVp, "mc") / soma(bVp, "patrimonio"), roe = soma(bVp, "lucro_ltm") / soma(bVp, "patrimonio");
-  const bDy = com((e) => e.mc && e.dy != null), dy = bDy.reduce((s, e) => s + e.dy * e.mc, 0) / soma(bDy, "mc");
-  const bFcf = com((e) => e.mc && e.fcf_ltm != null), fcfy = soma(bFcf, "fcf_ltm") / soma(bFcf, "mc");
-  const premio = ntnb && pl > 0 ? (1 / pl) * 100 - ntnb.taxa : null;
+  const bDy = linhas.filter((e) => e.mc && e.dy != null), dy = bDy.reduce((s, e) => s + e.dy * e.mc, 0) / soma(bDy, "mc");
+  const bFcf = linhas.filter((e) => e.mc && e.fcf_ltm != null), fcfy = soma(bFcf, "fcf_ltm") / soma(bFcf, "mc");
+  const pv = todas.filter((e) => e.tickers.some((t) => PETRO_VALE.has(t)) && e.mc), pesoPV = soma(pv, "mc") / soma(todas.filter((e) => e.mc), "mc");
+
   const porSetor = {};
-  linhas.filter((e) => e.mc).forEach((e) => (porSetor[e.setor || "Sem setor"] = porSetor[e.setor || "Sem setor"] || []).push(e));
-  const setores = Object.entries(porSetor).map(([s, ls]) => ({ s, n: ls.length, mc: soma(ls, "mc"), p_l: mediana(ls.map((e) => e.p_l)), ev: mediana(ls.map((e) => e.ev_ebitda)),
-    pvp: mediana(ls.map((e) => e.p_vp)), roe: mediana(ls.map((e) => e.roe)), dl: mediana(ls.map((e) => e.dl_ebitda)), dy: mediana(ls.map((e) => e.dy)) }))
-    .sort((a, b) => b.mc - a.mc);
+  todas.filter((e) => e.mc).forEach((e) => (porSetor[e.setorG] = porSetor[e.setorG] || []).push(e));
+  const todosSetores = Object.entries(porSetor).map(([s, ls]) => ({ s, n: ls.length, mc: soma(ls, "mc"), p_l: mediana(ls.map((e) => e.p_l)), ev: mediana(ls.map((e) => e.ev_ebitda)),
+    pvp: mediana(ls.map((e) => e.p_vp)), roe: mediana(ls.map((e) => e.roe)), dl: mediana(ls.map((e) => e.dl_ebitda)), dy: mediana(ls.map((e) => e.dy)) })).sort((a, b) => b.mc - a.mc);
+  const setores = todosSetores.filter((x) => x.n >= 3), ocultos = todosSetores.length - setores.length;
   app.innerHTML = `${cab}${abas}
+    <div class="seletor seletor-editoria" id="sel-pv" style="margin-bottom:10px"><button data-k="com" class="${SEM_PV ? "" : "ativo"}">Todas as empresas</button>
+      <button data-k="sem" class="${SEM_PV ? "ativo" : ""}">Sem Petrobras e Vale</button>
+      <span class="sub" style="margin-left:8px">Petrobras e Vale somam ${pct(pesoPV)} do valor de mercado das empresas não financeiras.</span></div>
     <div class="grade-cartoes">
-      ${cartao("Valor de mercado", reais(soma(com((e) => e.mc), "mc")), `${com((e) => e.mc).length} empresas não financeiras`)}
-      ${cartao("P/L da bolsa", vezes(pl), "Σ market cap ÷ Σ lucro 12 meses")}
-      ${cartao("EV/EBITDA", vezes(evEbitda), "(Σ market cap + Σ dívida líquida) ÷ Σ EBITDA")}
+      ${cartao("Valor de mercado", reais(soma(linhas.filter((e) => e.mc), "mc")), `${linhas.filter((e) => e.mc).length} empresas não financeiras`)}
+      ${cartao("P/L da bolsa", vezes(pl), `Σ market cap ÷ Σ lucro de 12 meses · ${foraPl} empresa(s) com prejuízo fora`)}
+      ${cartao("EV/EBITDA", vezes(evEbitda), `(Σ market cap + Σ dívida líquida) ÷ Σ EBITDA · ${foraEv} empresa(s) com EBITDA negativo fora`)}
       ${cartao("P/VP", vezes(pvp), "Σ market cap ÷ Σ patrimônio")}
       ${cartao("ROE agregado", pct(roe), "Σ lucro ÷ Σ patrimônio")}
       ${cartao("Dividend yield", pct(dy, 2), "ponderado pelo market cap")}
       ${cartao("FCF yield", pct(fcfy, 2), "Σ fluxo de caixa livre ÷ Σ market cap")}
-      ${cartao("Prêmio de risco", premio != null ? `${num(premio, 2)} p.p.` : "—", ntnb ? `lucro/preço (${num(100 / pl, 2)}%) − NTN-B ${ntnb.vencimento.slice(0, 4)} (${num(ntnb.taxa, 2)}%)` : "")}
     </div>
     <div class="grade">
       <div class="painel largo" data-info="valuation_setores"><h2>Setores · medianas das empresas</h2><div class="rolagem"><table class="tabela" id="tab-setores">
         <tr><th style="text-align:left">Setor</th><th>Empresas</th><th>Market cap</th><th>P/L</th><th>EV/EBITDA</th><th>P/VP</th><th>ROE</th><th>DL/EBITDA</th><th>DY</th></tr>
         ${setores.map((x) => `<tr class="clicavel" data-setor="${esc(x.s)}"><td style="text-align:left;white-space:normal">${esc(x.s)}</td><td>${x.n}</td><td>${reais(x.mc)}</td>
           <td>${vezes(x.p_l)}</td><td>${vezes(x.ev)}</td><td>${vezes(x.pvp)}</td><td>${pct(x.roe)}</td><td>${vezes(x.dl)}</td><td>${pct(x.dy, 2)}</td></tr>`).join("")}
-      </table></div><div class="nota">Clique num setor para ver as empresas dele na tabela. Medianas: o valor da empresa do meio da fila, que não se deixa levar por um caso extremo.</div></div>
-      <div class="painel largo" data-info="valuation_dispersao"><h2>ROE × P/VP (cada ponto é uma empresa)</h2><div class="grafico alto" id="g-disp"></div>
-        <div class="nota">Quem gera mais retorno sobre o patrimônio costuma valer mais vezes o patrimônio. Pontos acima da nuvem: caros para o ROE que entregam; abaixo: baratos (ou com risco que o ROE não mostra). Eixos cortados em P/VP de 0 a 8x e ROE de −20% a 60%.</div></div>
+      </table></div><div class="nota">Setor da CVM, com as holdings ("Emp. Adm. Part. – …") somadas ao setor da atividade. ${ocultos} setor(es) com menos de 3 empresas
+        ficam fora (as empresas aparecem na tabela). Clique num setor para ver as empresas dele.</div></div>
+      <div class="painel largo" data-info="valuation_dispersao"><h2>ROE × P/VP (cada ponto é uma empresa; tamanho = market cap)</h2><div class="grafico alto" id="g-disp"></div>
+        <div class="nota">Em geral, quem tem ROE maior negocia a P/VP maior. Muito acima da nuvem: caro para o ROE de hoje (ou o mercado espera melhora); muito abaixo:
+          barato (ou com risco que o ROE não mostra). Cores: os 8 maiores setores; os nomes são as 12 maiores empresas. Eixos cortados em P/VP até 8x e ROE de −20% a 60%.</div></div>
     </div>
-    <div class="nota secao">Protótipo: valuation com o market cap de hoje e os resultados dos últimos 12 meses (CVM). O histórico do P/L e do EV/EBITDA da bolsa exige montar o market cap de cada data (cotação × ações) — próxima etapa.</div>`;
+    <div class="nota secao">Protótipo: múltiplos com o market cap de hoje e os resultados dos últimos 12 meses (CVM). O prêmio de risco da bolsa (lucro/preço − juro real da NTN-B)
+      entra quando houver o histórico do valuation (market cap de cada data), porque um número isolado não tem referência de comparação.</div>`;
+  document.getElementById("sel-pv").addEventListener("click", (ev) => {
+    const b = ev.target.closest("button"); if (!b) return;
+    SEM_PV = b.dataset.k === "sem"; limparGraficos(); visaoMercadoEmpresas(todas, cab, abas);
+  });
   document.getElementById("tab-setores").addEventListener("click", (ev) => {
     const tr = ev.target.closest("[data-setor]"); if (!tr) return;
     SETOR_TABELA = tr.dataset.setor; location.hash = "#/on/empresas/tabela";
   });
-  const pts = linhas.filter((e) => e.p_vp != null && e.roe != null && e.p_vp < 8 && e.roe > -0.2 && e.roe < 0.6).map((e) => [e.roe * 100, e.p_vp, e.tickers[0], e.mc]);
+  const cores = [COR.ambar, COR.azul, COR.verde, COR.roxo, COR.ciano, COR.vermelho, "#db61a2", "#e3b341"];
+  const grandes = todosSetores.slice(0, 8).map((x) => x.s);
+  const maiores = new Set([...todas].filter((e) => e.mc).sort((a, b) => b.mc - a.mc).slice(0, 12).map((e) => e.id));
+  const ponto = (e) => ({ value: [e.roe * 100, e.p_vp, e.tickers[0], e.mc, e.setorG], label: { show: maiores.has(e.id), formatter: e.tickers[0], position: "top", color: COR.texto, fontSize: 10 } });
+  const ok = todas.filter((e) => e.p_vp != null && e.roe != null && e.p_vp < 8 && e.roe > -0.2 && e.roe < 0.6);
   const g = echarts.init(document.getElementById("g-disp")); graficos.push(g);
-  g.setOption({ backgroundColor: "transparent", textStyle: { fontFamily: "JetBrains Mono" }, grid: { left: 60, right: 24, top: 20, bottom: 50 },
-    tooltip: { backgroundColor: "#151c25", borderColor: COR.borda, textStyle: { color: COR.texto }, formatter: (p) => `<b>${p.value[2]}</b><br>ROE ${num(p.value[0], 1)}% · P/VP ${num(p.value[1], 2)}x<br>market cap ${reais(p.value[3])}` },
+  g.setOption({ backgroundColor: "transparent", textStyle: { fontFamily: "JetBrains Mono" }, grid: { left: 60, right: 24, top: 46, bottom: 50 },
+    legend: { top: 0, type: "scroll", textStyle: { color: COR.texto, fontSize: 11 }, pageTextStyle: { color: COR.cinza } },
+    tooltip: { backgroundColor: "#151c25", borderColor: COR.borda, textStyle: { color: COR.texto },
+      formatter: (p) => `<b>${p.value[2]}</b> · ${esc(p.value[4])}<br>ROE ${num(p.value[0], 1)}% · P/VP ${num(p.value[1], 2)}x<br>market cap ${reais(p.value[3])}` },
     xAxis: { type: "value", name: "ROE (%)", nameLocation: "middle", nameGap: 30, axisLabel: { color: COR.cinza }, splitLine: { lineStyle: { color: COR.grade } } },
     yAxis: { type: "value", name: "P/VP", axisLabel: { color: COR.cinza, formatter: (v) => `${v}x` }, splitLine: { lineStyle: { color: COR.grade } } },
-    series: [{ type: "scatter", data: pts, symbolSize: (v) => Math.max(5, Math.min(26, Math.sqrt(v[3] / 1e9) * 2.2)), itemStyle: { color: COR.ambar, opacity: 0.75 } }] });
+    series: [...grandes.map((s, j) => ({ name: s, type: "scatter", data: ok.filter((e) => e.setorG === s).map(ponto),
+      symbolSize: (v) => Math.max(5, Math.min(26, Math.sqrt(v[3] / 1e9) * 2.2)), itemStyle: { color: cores[j], opacity: 0.8 } })),
+    { name: "Outros setores", type: "scatter", data: ok.filter((e) => !grandes.includes(e.setorG)).map(ponto),
+      symbolSize: (v) => Math.max(5, Math.min(26, Math.sqrt(v[3] / 1e9) * 2.2)), itemStyle: { color: COR.cinza, opacity: 0.5 } }] });
 }
-let SETOR_TABELA = "";
 
 /* ============ Empresa ============ */
 let VISAO = "trimestral";
@@ -2420,18 +2464,17 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
   // cada item: { t: título, info, op: opções do gráfico | alt: { rótulo do botão: opções }, largo, focus }
   const defs = {
     inflacao: [
-      { t: "Inflação: IPCA, IGP-M e INCC", info: "ipca", alt: comparativo, largo: true, meta: true },
-      { t: "IPCA", info: "ipca", alt: indice("ipca"), meta: true },
-      { t: "Núcleos do IPCA", info: "nucleos", alt: nucleos, meta: true },
+      { t: "Inflação: IPCA, IGP-M e INCC", info: "ipca", alt: comparativo, largo: true },
+      { t: "IPCA", info: "ipca", alt: indice("ipca"), meta: true, leitura: "ipca" },
+      { t: "Núcleos do IPCA", info: "nucleos", alt: nucleos, meta: true, leitura: "nucleos" },
       { t: "IGP-M", info: "igpm", alt: indice("igpm") },
       { t: "INCC-DI (custo da construção)", info: "incc", alt: indice("incc") },
-      ...(S.ipca_servicos_12m ? [{ t: "Abertura do IPCA: serviços, livres, administrados, industriais e alimentação", info: "ipca_abertura", largo: true, meta: true, alt: Object.fromEntries(
-        [["12 meses", "_12m"], ["3 meses anualizado", "_mm3"]].map(([r, suf]) => [r, { eixoEsq: "pctPronto", series: [
-          ["ipca_servicos", "Serviços", COR.ambar], ["ipca_livres", "Livres", COR.azul], ["ipca_administrados", "Administrados", COR.roxo],
-          ["ipca_industriais", "Bens industriais", COR.ciano], ["ipca_alimentos_dom", "Alimentação no domicílio", COR.verde]]
-          .map(([k, nome, cor]) => ({ nome, valores: P(S[k + suf]), tipo: "line", cor })) }])) }] : []),
-      ...(S.ipca_difusao ? [{ t: "Índice de difusão do IPCA (% dos itens com alta no mês)", info: "ipca_difusao", op: { eixoEsq: "pctPronto", series: [
-        { nome: "Difusão no mês", valores: P(S.ipca_difusao), cor: COR.cinza }, { nome: "Média de 3 meses", valores: P(S.ipca_difusao_mm3), tipo: "line", cor: COR.ambar }] } }] : []),
+      ...(S.ipca_servicos_12m ? [{ t: "Abertura do IPCA (mesma escala nos cinco gráficos)", info: "ipca_abertura", largo: true, leitura: "abertura",
+        mini: [["ipca_servicos", "Serviços", COR.ambar], ["ipca_livres", "Livres", COR.azul], ["ipca_administrados", "Administrados", COR.roxo],
+          ["ipca_industriais", "Bens industriais", COR.ciano], ["ipca_alimentos_dom", "Alimentação (domicílio)", COR.verde]],
+        alt: { "12 meses": "_12m", "3 meses anualizado": "_mm3" } }] : []),
+      ...(S.ipca_difusao ? [{ t: "Índice de difusão do IPCA (% dos itens com alta no mês)", info: "ipca_difusao", leitura: "difusao", op: { eixoEsq: "pctPronto", media: true, series: [
+        { nome: "Média de 3 meses", valores: P(S.ipca_difusao_mm3), tipo: "line", cor: COR.ambar }, { nome: "Difusão no mês", valores: P(S.ipca_difusao), cor: "rgba(139,148,158,.45)" }] } }] : []),
     ],
     atividade: [
       // linha 1: PIB anual inteiro; linha 2: IBC-Br | PIB trimestral; linha 3: desemprego inteiro
@@ -2440,29 +2483,29 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
         { nome: "Crescimento real", valores: S.pib_anual ? S.pib_anual.valores : [], tipo: "line", eixo: "dir", cor: COR.ambar }] } },
       { t: "IBC-Br (prévia mensal do PIB)", info: "ibcbr", op: { series: [{ nome: "Mensal (dessaz., m/m)", valores: P(S.ibcbr_mensal), cor: COR.azul }, { nome: "Acumulado em 12 meses", valores: P(S.ibcbr_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto", inicio: inicio(Math.min(JANELA_MACRO, 3)) } },
       { t: "PIB trimestral", info: "pib_tri", op: { series: [{ nome: "Trimestral (dessaz., tri/tri)", valores: P(S.pib_tri), cor: COR.azul }, { nome: "Acumulado em 4 trimestres", valores: P(S.pib_12m), tipo: "line", eixo: "dir", cor: COR.ambar }], eixoEsq: "pctPronto", eixoDir: "pctPronto" } },
-      { t: "Desemprego (PNAD Contínua, trimestre móvel)", info: "desemprego_br", largo: true, op: { eixoEsq: "pctPronto", series: [
+      { t: "Desemprego (PNAD Contínua, trimestre móvel)", info: "desemprego_br", largo: true, leitura: "desemprego", op: { eixoEsq: "pctPronto", series: [
         { nome: "Taxa de desocupação", valores: P(S.desemprego), tipo: "line", cor: COR.vermelho }] } },
-      ...(S.pim ? [{ t: "Indústria, varejo e serviços (IBGE, dessazonalizado)", info: "pim_pmc_pms", largo: true, alt: {
-        "Contra 12 meses antes": { eixoEsq: "pctPronto", series: [{ nome: "Indústria (PIM)", valores: P(S.pim_12m), tipo: "line", cor: COR.azul },
-          { nome: "Varejo (PMC)", valores: P(S.pmc_12m), tipo: "line", cor: COR.verde }, { nome: "Serviços (PMS)", valores: P(S.pms_12m), tipo: "line", cor: COR.ambar }] },
-        "Índice (2022=100)": { eixoEsq: "numero", series: [{ nome: "Indústria (PIM)", valores: P(S.pim), tipo: "line", cor: COR.azul },
-          { nome: "Varejo (PMC)", valores: P(S.pmc), tipo: "line", cor: COR.verde }, { nome: "Serviços (PMS)", valores: P(S.pms), tipo: "line", cor: COR.ambar }] } } }] : []),
-      ...(S.ibcbr_industria_12m ? [{ t: "IBC-Br por setor (acumulado em 12 meses)", info: "ibcbr_setores", op: { eixoEsq: "pctPronto", series: [
-        { nome: "Agropecuária", valores: P(S.ibcbr_agro_12m), tipo: "line", cor: COR.verde }, { nome: "Indústria", valores: P(S.ibcbr_industria_12m), tipo: "line", cor: COR.azul },
-        { nome: "Serviços", valores: P(S.ibcbr_servicos_12m), tipo: "line", cor: COR.ambar }] } }] : []),
-      ...(S.caged_saldo ? [{ t: "Emprego formal (Novo Caged)", info: "caged", op: { eixoEsq: "inteiro", eixoDir: "inteiro", inicio: "2021-01-01", series: [
-        { nome: "Saldo do mês", valores: P(S.caged_saldo), cor: COR.azul }, { nome: "Saldo em 12 meses", valores: P(S.caged_12m), tipo: "line", eixo: "dir", cor: COR.ambar }] } }] : []),
-      ...(S.renda_familias_12m ? [{ t: "Renda disponível real das famílias (variação em 12 meses)", info: "renda_familias", op: { eixoEsq: "pctPronto", series: [
+      ...(S.pim ? [{ t: "Indústria, varejo e serviços (IBGE, volume dessazonalizado)", info: "pim_pmc_pms", largo: true, leitura: "atividade", alt: {
+        "Contra 12 meses antes": { eixoEsq: "pctPronto", inicio: desde(5), series: [{ nome: "Indústria", valores: P(S.pim_12m), tipo: "line", cor: COR.azul },
+          { nome: "Varejo", valores: P(S.pmc_12m), tipo: "line", cor: COR.verde }, { nome: "Serviços", valores: P(S.pms_12m), tipo: "line", cor: COR.ambar }] },
+        "Base 100 = fev/2020 (pré-pandemia)": { eixoEsq: "numero", inicio: "2020-01-01", series: [{ nome: "Indústria", valores: base100(S.pim, "2020-02-01"), tipo: "line", cor: COR.azul },
+          { nome: "Varejo", valores: base100(S.pmc, "2020-02-01"), tipo: "line", cor: COR.verde }, { nome: "Serviços", valores: base100(S.pms, "2020-02-01"), tipo: "line", cor: COR.ambar }] } } }] : []),
+      ...(S.ibcbr_industria_12m ? [{ t: "IBC-Br: indústria e serviços (acumulado em 12 meses)", info: "ibcbr_setores", op: { eixoEsq: "pctPronto", inicio: desde(5), series: [
+        { nome: "Indústria", valores: P(S.ibcbr_industria_12m), tipo: "line", cor: COR.azul }, { nome: "Serviços", valores: P(S.ibcbr_servicos_12m), tipo: "line", cor: COR.ambar }] } }] : []),
+      ...(S.caged_saldo ? [{ t: "Emprego formal: variação mensal do estoque de vínculos (Novo Caged)", info: "caged", leitura: "caged", op: { eixoEsq: "inteiro", inicio: "2021-01-01", series: [
+        { nome: "Variação no mês", valores: P(S.caged_saldo), cor: COR.azul }, { nome: "Média de 3 meses", valores: P(S.caged_saldo_mm3), tipo: "line", cor: COR.ambar }] } }] : []),
+      ...(S.renda_familias_12m ? [{ t: "Renda disponível real das famílias (variação em 12 meses)", info: "renda_familias", op: { eixoEsq: "pctPronto", inicio: desde(10), series: [
         { nome: "Renda real (deflacionada pelo IPCA)", valores: P(S.renda_familias_12m), tipo: "line", cor: COR.verde }] } }] : []),
     ],
     monetaria: [
       { t: "Selic meta, CDI e IPCA 12 meses", info: "selic", largo: true, op: { series: [{ nome: "Selic meta", valores: P(S.selic_meta), tipo: "line", cor: COR.ambar }, { nome: "CDI", valores: P(S.cdi), tipo: "line", cor: COR.ciano }, { nome: "IPCA 12m", valores: P(S.ipca_12m), tipo: "line", cor: COR.vermelho }, { nome: "Média dos núcleos 12m", valores: P(S.nucleos_media_12m), tipo: "line", cor: COR.roxo, tracejado: true }], eixoEsq: "pctPronto", degrau: true } },
-      { t: "Juro real: ex-ante (com a inflação esperada do Focus) e ex-post (com a inflação passada)", info: "juro_real", largo: true, op: { eixoEsq: "pctPronto", series: [
-        ...(S.juro_real_exante ? [{ nome: "Ex-ante: Selic ÷ IPCA esperado 12 meses", valores: P(S.juro_real_exante), tipo: "line", cor: COR.ambar }] : []),
-        { nome: "Ex-post: Selic ÷ IPCA 12 meses", valores: P(S.juro_real), tipo: "line", cor: COR.verde }] } },
-      ...(S.focus_ipca_12m ? [{ t: "Inflação esperada para os próximos 12 meses (Focus) × IPCA 12 meses", info: "focus12", largo: true, meta: true, alt: { "12 meses": { eixoEsq: "pctPronto", series: [
-        { nome: "IPCA esperado 12 meses (Focus)", valores: P(S.focus_ipca_12m), tipo: "line", cor: COR.ambar },
-        { nome: "IPCA 12 meses (realizado)", valores: P(S.ipca_12m), tipo: "line", cor: COR.azul }] } } }] : []),
+      { t: "Juro real esperado (ex-ante) e realizado (ex-post)", info: "juro_real", largo: true, leitura: "juro_real", op: { eixoEsq: "pctPronto", media: true, series: [
+        ...(S.juro_real_exante ? [{ nome: "Esperado: Selic média esperada 12m ÷ IPCA esperado 12m (Focus)", valores: P(S.juro_real_exante), tipo: "line", cor: COR.ambar }] : []),
+        { nome: "Realizado: Selic ÷ IPCA dos últimos 12 meses", valores: P(S.juro_real), tipo: "line", cor: COR.cinza }] } },
+      ...(S.focus_ipca_12m ? [{ t: "Inflação esperada para os próximos 12 meses (Focus) × realizada nos últimos 12", info: "focus12", largo: true, meta: true, leitura: "focus12",
+        alt: { "12 meses": { eixoEsq: "pctPronto", series: [
+          { nome: "Esperada (Focus)", valores: P(S.focus_ipca_12m), tipo: "line", cor: COR.ambar },
+          { nome: "Realizada (IPCA 12 meses)", valores: P(S.ipca_12m), tipo: "line", cor: COR.azul }] } } }] : []),
     ],
     credito: cred ? defsCredito(ABA_CREDITO) : [],
     externo: ext ? defsExterno() : [],
@@ -2491,13 +2534,13 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
     ]) : defsFiscal(ABA_FISCAL),
     cambio: [
       { t: "Câmbio PTAX", info: "cambio", largo: true, op: { series: [{ nome: "Dólar", valores: P(S.usd), tipo: "line", cor: COR.verde }, { nome: "Euro", valores: P(S.eur), tipo: "line", cor: COR.roxo }], eixoEsq: "preco" } },
-      ...(S.cambio_real ? [{ t: "Câmbio real efetivo (índice; acima da média = real mais barato)", info: "cambio_real", media: true, op: { eixoEsq: "numero", series: [
+      ...(S.cambio_real ? [{ t: "Câmbio real efetivo (alta = real mais desvalorizado)", info: "cambio_real", largo: true, leitura: "cambio_real", op: { eixoEsq: "numero", media: true, series: [
         { nome: "Câmbio real efetivo", valores: P(S.cambio_real), tipo: "line", cor: COR.ambar }] } }] : []),
-      ...(S.icbr ? [{ t: "Commodities em reais: IC-Br do Banco Central (índice)", info: "icbr", alt: {
-        "Índice": { eixoEsq: "numero", series: [["icbr", "IC-Br total", COR.ambar], ["icbr_agro", "Agropecuária", COR.verde], ["icbr_metal", "Metal", COR.azul], ["icbr_energia", "Energia", COR.vermelho]]
+      ...(S.icbr ? [{ t: "Commodities em reais: IC-Br do Banco Central", info: "icbr", largo: true, leitura: "icbr", alt: {
+        "12 meses": { eixoEsq: "pctPronto", inicio: desde(10), series: [["icbr_12m", "IC-Br total", COR.ambar], ["icbr_agro_12m", "Agropecuária", COR.verde], ["icbr_metal_12m", "Metal", COR.azul], ["icbr_energia_12m", "Energia", COR.vermelho]]
           .map(([k, nome, cor]) => ({ nome, valores: P(S[k]), tipo: "line", cor })) },
-        "12 meses": { eixoEsq: "pctPronto", series: [["icbr_12m", "IC-Br total", COR.ambar], ["icbr_agro_12m", "Agropecuária", COR.verde], ["icbr_metal_12m", "Metal", COR.azul], ["icbr_energia_12m", "Energia", COR.vermelho]]
-          .map(([k, nome, cor]) => ({ nome, valores: P(S[k]), tipo: "line", cor })) } } }] : []),
+        "Base 100 = jan/2020": { eixoEsq: "numero", inicio: "2020-01-01", series: [["icbr", "IC-Br total", COR.ambar], ["icbr_agro", "Agropecuária", COR.verde], ["icbr_metal", "Metal", COR.azul], ["icbr_energia", "Energia", COR.vermelho]]
+          .map(([k, nome, cor]) => ({ nome, valores: base100(S[k], "2020-01-01"), tipo: "line", cor })) } } }] : []),
     ],
     expectativas: Object.keys(NOMES_FOCUS).map((k) => ({ t: NOMES_FOCUS[k], info: "focus", focus: k })),
   }[sub];
@@ -2507,12 +2550,26 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
       ? `<div class="cabecalho" style="margin-bottom:6px"><h2 style="margin:0">${d.t}</h2><div class="seletor" data-alt="${i}">
           ${Object.keys(d.alt).map((k) => `<button data-k="${k}" class="${k === (ESCOLHA_GRAFICO[d.t] || Object.keys(d.alt)[0]) ? "ativo" : ""}">${k}</button>`).join("")}</div></div>`
       : `<h2>${d.t}</h2>`;
-    return `<div class="painel${d.largo ? " largo" : ""}" data-info="${d.info}">${titulo}<div class="grafico" id="gm-${i}"></div></div>`;
+    const leitura = d.leitura ? `<div class="leitura" id="lt-${i}">${leituraMacro(d.leitura, S)}</div>` : "";
+    return `<div class="painel${d.largo ? " largo" : ""}" data-info="${d.info}">${titulo}${leitura}${d.mini ? `<div class="grade-mini" id="gm-${i}"></div>` : `<div class="grafico" id="gm-${i}"></div>`}</div>`;
   }).join("");
   const desenhar = (i) => {
     const d = defs[i], el = document.getElementById(`gm-${i}`);
     const antigo = echarts.getInstanceByDom(el);
     if (antigo) { graficos.splice(graficos.indexOf(antigo), 1); antigo.dispose(); }
+    if (d.mini) {  // pequenos gráficos lado a lado, todos na mesma escala
+      el.querySelectorAll(".grafico-mini").forEach((m) => { const g = echarts.getInstanceByDom(m); if (g) { graficos.splice(graficos.indexOf(g), 1); g.dispose(); } });
+      const chave = ESCOLHA_GRAFICO[d.t] || Object.keys(d.alt)[0], suf = d.alt[chave], ini = corte || "2016-01-01";
+      const vals = d.mini.flatMap(([k]) => (S[k + suf] ? S[k + suf].valores.filter((v, j) => S[k + suf].datas[j] >= ini) : []));
+      const lim = [Math.floor(Math.min(...vals, 0)), Math.ceil(Math.max(...vals, 5))];
+      el.innerHTML = d.mini.map(([k, nome, cor], j) => { const s = S[k + suf], v = s && s.valores.length ? s.valores[s.valores.length - 1] : null;
+        return `<div><div style="margin:2px 0 0 8px;font-size:12px"><span style="color:${cor}">${nome}</span> · <b>${pp(v)}</b></div><div class="grafico-mini" id="gm-${i}-${j}"></div></div>`; }).join("");
+      d.mini.forEach(([k, nome, cor], j) => grafico(document.getElementById(`gm-${i}-${j}`), { xTempo: true, inicioTempo: ini, eixoEsq: "pctPronto", limitesEsq: lim,
+        semLegenda: true, compacto: true, faixa: suf === "_12m" ? { de: 1.5, ate: 4.5, ref: 3, rotulo: "" } : null,
+        series: [{ nome, valores: P(S[k + suf]), tipo: "line", cor }] }));
+      setTimeout(() => el.querySelectorAll(".grafico-mini").forEach((m) => { const g = echarts.getInstanceByDom(m); if (g) g.resize(); }), 60);
+      return;
+    }
     if (d.focus) {
       const anosF = Object.keys(F[d.focus] || {}).sort();
       grafico(el, { xTempo: true, eixoEsq: d.focus === "cambio" ? "preco" : "pctPronto",
@@ -2522,12 +2579,12 @@ function desenharMacro(S, F, sub, cred = null, ext = null, fis = null) {
     const chave = d.alt ? ESCOLHA_GRAFICO[d.t] || Object.keys(d.alt)[0] : "";
     const opcoes = d.alt ? d.alt[chave] : d.op;
     const { inicio: ini, xTempo = true, ...resto } = opcoes;
-    const meta = d.meta && /12|anualiz/i.test(chave) ? { faixa: { de: 1.5, ate: 4.5, ref: 3, rotulo: "meta 3%" } } : {};
+    const meta = d.meta && /12/.test(chave) ? { faixa: { de: 1.5, ate: 4.5, ref: 3, rotulo: "meta 3% (faixa 1,5% a 4,5%)" } } : {};
     const final = xTempo ? { xTempo: true, inicioTempo: (ini !== undefined ? ini : corte) || "1990-01-01", deslizante: true, ...resto, ...meta } : { ...resto, ...meta };
-    if (d.media) { ORIGEM_GRAFICO.set(el, final); el.__estado = { modo: "original", media: true }; _graficoBase(el, aplicarFerramentas(final, el.__estado)); return; }
     grafico(el, final);
   };
   defs.forEach((_, i) => desenhar(i));
+  setTimeout(() => graficos.forEach((g) => g.resize()), 80);  // painéis que viram largura inteira depois do desenho (sozinhos na linha)
   if (sub === "fiscal" && fis) {  // tabelas da Política fiscal no fim da aba
     if (ABA_FISCAL === "arrecadacao") area.insertAdjacentHTML("beforeend", tabelaTributos(S));
     if (ABA_FISCAL === "endividamento") area.insertAdjacentHTML("beforeend",

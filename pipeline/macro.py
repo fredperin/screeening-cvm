@@ -237,7 +237,7 @@ SERIES_CONJUNTURA = {
     "icbr_agro": (27575, "IC-Br — agropecuária", "índice"),
     "icbr_metal": (27576, "IC-Br — metal", "índice"),
     "icbr_energia": (27577, "IC-Br — energia", "índice"),
-    "caged_estoque": (28763, "Emprego formal — estoque de vínculos (Novo Caged)", "vínculos"),
+    "caged_estoque": (28763, "Emprego formal — estoque de vínculos formais (Novo Caged, via Banco Central)", "vínculos"),
     "ibcbr_agro": (29601, "IBC-Br — agropecuária (observado)", "índice"),
     "ibcbr_industria": (29603, "IBC-Br — indústria (observado)", "índice"),
     "ibcbr_servicos": (29605, "IBC-Br — serviços (observado)", "índice"),
@@ -270,6 +270,36 @@ def _focus_ipca_12m():
     return s[~s.index.duplicated(keep="last")]
 
 
+def _selic_esperada_12m(selic_diaria):
+    """Selic média esperada para os próximos 12 meses, mês a mês, com as medianas do Focus para o fim de cada ano.
+    Trajetória linear: Selic de hoje -> mediana para dezembro deste ano -> mediana para dezembro do ano seguinte;
+    a média é tirada nos 12 meses seguintes. Aproximação (o Focus por reunião do Copom só existe para os meses recentes)."""
+    filtro = "Indicador eq 'Selic' and baseCalculo eq 0 and Data ge '2001-01-01'"
+    dados = _get(f"{URL_FOCUS}?$filter={quote(filtro)}&$select=Data,DataReferencia,Mediana&$format=json&$top=1000000")
+    df = pd.DataFrame(dados.get("value", []))
+    df = df[df["DataReferencia"].astype(str).str.isdigit()]
+    df["Data"] = pd.to_datetime(df["Data"])
+    df["mes"] = df["Data"].dt.to_period("M")
+    ult = df.sort_values("Data").groupby(["mes", "DataReferencia"])["Mediana"].last()  # última mediana de cada mês
+    selic_mes = selic_diaria.resample("MS").last().ffill()
+    saida = {}
+    for mes in sorted({m for m, _ in ult.index}):
+        ano, m = mes.year, mes.month
+        e_ano, e_seg = ult.get((mes, str(ano))), ult.get((mes, str(ano + 1)))
+        s0 = selic_mes.get(pd.Timestamp(ano, m, 1))
+        if e_ano is None or e_seg is None or s0 is None or pd.isna(s0):
+            continue
+        caminho = []
+        for k in range(1, 13):  # meses à frente
+            alvo = m + k
+            if alvo <= 12:
+                caminho.append(s0 + (e_ano - s0) * k / (12 - m) if m < 12 else e_ano)
+            else:
+                caminho.append(e_ano + (e_seg - e_ano) * (alvo - 12) / 12)
+        saida[pd.Timestamp(ano, m, 1)] = sum(caminho) / 12
+    return pd.Series(saida).sort_index()
+
+
 def conjuntura(saida, brutas, anteriores, falhas):
     """Séries do painel de conjuntura e das abas de Atividade, Inflação, Monetária e Câmbio. Falha mantém a versão anterior."""
     def guardar(chave, serie, nome, un, casas=4):
@@ -298,8 +328,10 @@ def conjuntura(saida, brutas, anteriores, falhas):
         guardar("ipca_difusao_mm3", novas["ipca_difusao"].rolling(3).mean(), "IPCA — difusão, média de 3 meses", "% dos itens")
     if "caged_estoque" in novas:
         e = novas["caged_estoque"]
-        guardar("caged_saldo", e.diff(), "Emprego formal — saldo do mês (variação do estoque)", "vínculos", 0)
-        guardar("caged_12m", e.diff(12), "Emprego formal — saldo em 12 meses", "vínculos", 0)
+        # variação do estoque de vínculos: pode diferir do saldo oficial do Ministério do Trabalho (declarações fora do prazo entram no estoque)
+        guardar("caged_saldo", e.diff(), "Emprego formal — variação mensal do estoque de vínculos (Novo Caged, via BC)", "vínculos", 0)
+        guardar("caged_saldo_mm3", e.diff().rolling(3).mean(), "Emprego formal — variação mensal do estoque, média de 3 meses", "vínculos", 0)
+        guardar("caged_12m", e.diff(12), "Emprego formal — variação do estoque de vínculos em 12 meses", "vínculos", 0)
     for k in ("ibcbr_agro", "ibcbr_industria", "ibcbr_servicos"):
         if k in novas:
             s = novas[k]
@@ -317,11 +349,13 @@ def conjuntura(saida, brutas, anteriores, falhas):
 
     def juro_ex_ante():
         f12 = _focus_ipca_12m()
-        guardar("focus_ipca_12m", f12.resample("MS").last(), "Focus — IPCA esperado nos próximos 12 meses (suavizado)", "%")
-        selic = brutas["selic_meta"].resample("MS").last().ffill()
-        juntos = pd.concat([selic, f12.resample("MS").last()], axis=1, keys=["selic", "exp"]).dropna()
+        exp_ipca = f12.resample("MS").last()
+        guardar("focus_ipca_12m", exp_ipca, "Focus — IPCA esperado nos próximos 12 meses (suavizado)", "%")
+        selic_esp = _selic_esperada_12m(brutas["selic_meta"])
+        guardar("focus_selic_12m", selic_esp, "Selic média esperada nos próximos 12 meses (Focus, fim de cada ano, interpolado)", "% a.a.")
+        juntos = pd.concat([selic_esp, exp_ipca], axis=1, keys=["selic", "exp"]).dropna()
         guardar("juro_real_exante", ((1 + juntos["selic"] / 100) / (1 + juntos["exp"] / 100) - 1) * 100,
-                "Juro real ex-ante (Selic meta ÷ IPCA esperado 12 meses, Focus)", "% a.a.")
+                "Juro real ex-ante (Selic média esperada 12 meses ÷ IPCA esperado 12 meses, Focus)", "% a.a.")
     tentar("juro_real_exante", juro_ex_ante)
 
 

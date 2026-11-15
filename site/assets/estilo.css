@@ -212,14 +212,14 @@ body.sem-rolagem { overflow: hidden; }
 .abre-conta{cursor:pointer}
 .abre-conta:hover{color:var(--ambar)}
 
-/* Protótipo: menu de ferramentas do gráfico (∿) e painel de conjuntura */
-.painel { position: relative; }
-.menu-ferramentas { position: absolute; top: 34px; right: 10px; z-index: 20; background: var(--painel); border: 1px solid var(--ambar);
-  border-radius: 6px; padding: 10px 12px; font-size: 12px; display: flex; flex-direction: column; gap: 4px; box-shadow: 0 6px 18px rgba(0,0,0,.5); }
-.menu-ferramentas hr { border: 0; border-top: 1px solid var(--borda); margin: 6px 0; width: 100%; }
-.ferramentas button.ativo { color: var(--ambar); }
+/* Protótipo: painel de conjuntura, frases de leitura e mini-gráficos */
 .tabela-conj td { vertical-align: middle; }
-.z-barra { position: relative; width: 90px; height: 8px; margin: 0 auto; border-radius: 4px;
-  background: linear-gradient(90deg, rgba(57,197,207,.55), rgba(139,148,158,.15) 50%, rgba(240,180,41,.55)); }
+.tabela-conj .atrasado { color: var(--ambar); }
+.z-barra { position: relative; width: 90px; height: 8px; margin: 0 auto; border-radius: 4px; background: rgba(139,148,158,.18); }
 .z-barra::after { content: ""; position: absolute; left: 50%; top: -3px; height: 14px; border-left: 1px dashed var(--texto-fraco); }
-.z-barra span { position: absolute; top: -3px; width: 4px; height: 14px; margin-left: -2px; background: var(--texto-forte); border-radius: 2px; }
+.z-barra span { position: absolute; top: -3px; width: 5px; height: 14px; margin-left: -2px; border-radius: 2px; }
+.leitura { font-size: 12.5px; line-height: 1.5; color: var(--texto); background: rgba(240,180,41,.06); border-left: 2px solid var(--ambar);
+  padding: 6px 10px; margin: 0 0 8px; }
+.grade-mini { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.grafico-mini { height: 190px; }
+@media (max-width: 1100px) { .grade-mini { grid-template-columns: repeat(2, 1fr); } }

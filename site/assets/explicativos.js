@@ -527,13 +527,6 @@ window.EXPLICATIVOS = {
       </ul>
       <p class="sub">Fonte: Banco Central, séries 432 e 4389 do SGS.</p>`,
   },
-  juro_real: {
-    titulo: "Juro real ex-post",
-    html: `<p>Quanto a Selic rende <b>acima da inflação</b> que já aconteceu: <code>(1 + Selic meta) ÷ (1 + IPCA 12 meses) − 1</code>.</p>
-      <p>É "ex-post" porque usa a inflação passada. O juro real que o Banco Central olha para calibrar a política é o
-        <b>ex-ante</b> (juro futuro contra a inflação esperada), que aparece na seção Juros na curva DI x IPCA e no Tesouro IPCA+.</p>
-      <p class="sub">Fonte: Cálculo do site com a Selic meta (SGS 432) e o IPCA 12 meses (IBGE, SGS 433).</p>`,
-  },
   cambio: {
     titulo: "Câmbio PTAX",
     html: `<p>Taxa de câmbio de referência calculada pelo <b>Banco Central</b>: média de 4 consultas feitas aos dealers de câmbio
@@ -1117,9 +1110,11 @@ window.EXPLICATIVOS = {
   },
   conjuntura: {
     titulo: "Painel de conjuntura",
-    html: `<p>Uma linha por indicador: último valor, valor de 3 e de 12 meses antes (com a direção), média dos últimos 5 anos e a posição do valor atual
-      frente a essa média, em desvios-padrão (marcador à esquerda = abaixo da média; à direita = acima). O mini-gráfico mostra os últimos 24 meses.</p>
-      <p>"Acima da média" não é bom nem ruim por si: desemprego acima da média é ruim; crescimento acima da média é bom. Fontes: as mesmas de cada aba.</p>`,
+    html: `<p>Uma linha por indicador: último valor, valor de 3 e de 12 meses antes, média dos últimos 10 anos e a posição do valor atual frente a essa média
+      (marcador à esquerda = abaixo; à direita = acima; cada quarto da barra = 1 desvio-padrão).</p>
+      <p><b>Leitura e cor</b>: verde = melhor que a média de 10 anos, vermelho = pior, considerando o sentido de cada indicador (desemprego maior é pior;
+      crescimento maior é melhor). Inflação é comparada com a <b>meta de 3%</b> (faixa de 1,5% a 4,5%), não com a média. Selic, juro real e câmbio ficam sem cor:
+      mais alto ou mais baixo não é, por si, melhor ou pior. Data em âmbar = dado mais antigo que os demais do bloco.</p>`,
   },
   pim_pmc_pms: {
     titulo: "Indústria, varejo e serviços (IBGE)",
@@ -1134,8 +1129,9 @@ window.EXPLICATIVOS = {
   },
   caged: {
     titulo: "Emprego formal (Novo Caged)",
-    html: `<p>Saldo de empregos com carteira assinada: admissões menos desligamentos. Calculado pela variação do estoque de vínculos formais publicado
-      pelo Banco Central a partir do Novo Caged (Ministério do Trabalho).</p><p class="sub">Fonte: Banco Central (SGS 28763).</p>`,
+    html: `<p>Variação mensal do <b>estoque de vínculos formais</b> (com carteira assinada) que o Banco Central publica a partir do Novo Caged.
+      Pode diferir do "saldo" divulgado pelo Ministério do Trabalho no mês, porque o estoque incorpora declarações entregues fora do prazo.</p>
+      <p class="sub">Fonte: Banco Central (SGS 28763), a partir do Novo Caged (Ministério do Trabalho).</p>`,
   },
   renda_familias: {
     titulo: "Renda disponível das famílias",
@@ -1147,8 +1143,8 @@ window.EXPLICATIVOS = {
     html: `<ul><li><b>Serviços</b>: mais ligados ao mercado de trabalho e à inércia; o Copom acompanha de perto.</li>
       <li><b>Livres</b>: preços definidos pelo mercado. <b>Administrados</b> (monitorados): energia, combustíveis, planos de saúde, tarifas.</li>
       <li><b>Bens industriais</b>: sensíveis ao câmbio. <b>Alimentação no domicílio</b>: sensível a clima e commodities agrícolas.</li></ul>
-      <p>A faixa verde é o intervalo da meta (1,5% a 4,5%, centro 3%). Protótipo: os códigos de administrados, bens industriais e alimentação no domicílio
-      precisam ter o nome conferido no SGS antes de ir ao ar.</p><p class="sub">Fonte: IBGE, séries do Banco Central.</p>`,
+      <p>Cinco gráficos pequenos na <b>mesma escala</b>, para comparar os grupos sem linhas cruzadas. A faixa verde é o intervalo da meta (1,5% a 4,5%, centro 3%),
+      só na visão de 12 meses. Protótipo: os códigos de administrados, bens industriais e alimentação no domicílio precisam ter o nome conferido no SGS antes de ir ao ar.</p><p class="sub">Fonte: IBGE, séries do Banco Central.</p>`,
   },
   ipca_difusao: {
     titulo: "Índice de difusão",
@@ -1163,8 +1159,8 @@ window.EXPLICATIVOS = {
   cambio_real: {
     titulo: "Câmbio real efetivo",
     html: `<p>Índice do Banco Central que compara o real com as moedas dos principais parceiros comerciais, descontada a inflação de cada país.
-      <b>Alta = real mais desvalorizado</b> (exportação mais competitiva); queda = real mais valorizado. A linha tracejada é a média de 10 anos e a faixa,
-      ±1 desvio-padrão.</p><p class="sub">Fonte: Banco Central (SGS 11752).</p>`,
+      <b>Alta = real mais desvalorizado</b> (exportação mais competitiva); queda = real mais valorizado. A linha tracejada é a média de 10 anos e a faixa cinza,
+      ±1 desvio-padrão: fora da faixa, o câmbio está longe do seu padrão recente.</p><p class="sub">Fonte: Banco Central (SGS 11752).</p>`,
   },
   icbr: {
     titulo: "Índice de Commodities Brasil (IC-Br)",
@@ -1188,6 +1184,15 @@ window.EXPLICATIVOS = {
     titulo: "ROE × P/VP",
     html: `<p>Cada ponto é uma empresa (tamanho = market cap). Em geral, quem tem ROE maior negocia a P/VP maior. Empresas muito acima da nuvem estão caras
       para o retorno que entregam hoje (ou o mercado espera melhora); muito abaixo, baratas (ou com riscos que o ROE não mostra).</p>`,
+  },
+  juro_real: {
+    titulo: "Juro real esperado e realizado",
+    html: `<ul><li><b>Esperado (ex-ante)</b>: Selic média esperada para os próximos 12 meses ÷ IPCA esperado para os próximos 12 meses, ambos do Focus. A Selic média
+        esperada é uma aproximação: trajetória linear da Selic de hoje até a mediana do Focus para o fim deste ano e daí até a mediana para o fim do ano seguinte.
+        É a medida que importa para a política monetária: mostra quão apertados os juros estarão à frente.</li>
+      <li><b>Realizado (ex-post)</b>: Selic meta ÷ IPCA dos últimos 12 meses.</li></ul>
+      <p>A linha tracejada é a média de 10 anos do juro esperado; a faixa cinza, ±1 desvio-padrão.</p>
+      <p class="sub">Fonte: Banco Central (Selic e Focus, API Olinda) e IBGE (IPCA).</p>`,
   },
   historico_ajustes: {
     titulo: "Histórico de ajustes",
