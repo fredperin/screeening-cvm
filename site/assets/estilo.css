@@ -211,3 +211,15 @@ body.sem-rolagem { overflow: hidden; }
 .tabela-av tr.detalhe td{color:var(--texto-fraco);font-size:.95em}
 .abre-conta{cursor:pointer}
 .abre-conta:hover{color:var(--ambar)}
+
+/* Painel de conjuntura, frases de leitura e mini-gráficos */
+.tabela-conj td { vertical-align: middle; }
+.tabela-conj .atrasado { color: var(--ambar); }
+.z-barra { position: relative; width: 90px; height: 8px; margin: 0 auto; border-radius: 4px; background: rgba(139,148,158,.18); }
+.z-barra::after { content: ""; position: absolute; left: 50%; top: -3px; height: 14px; border-left: 1px dashed var(--texto-fraco); }
+.z-barra span { position: absolute; top: -3px; width: 5px; height: 14px; margin-left: -2px; border-radius: 2px; }
+.leitura { font-size: 12.5px; line-height: 1.5; color: var(--texto); background: rgba(240,180,41,.06); border-left: 2px solid var(--ambar);
+  padding: 6px 10px; margin: 0 0 8px; }
+.grade-mini { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.grafico-mini { height: 190px; }
+@media (max-width: 1100px) { .grade-mini { grid-template-columns: repeat(2, 1fr); } }

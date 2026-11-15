@@ -223,6 +223,141 @@ def _regrediu(nova, antiga, compactada=False):
     return None
 
 
+# ---------------- Conjuntura (sugestões de 2026-11-14) ----------------
+# Séries do Banco Central com o nome conferido no catálogo de dados abertos do BC. Bens industriais (27863) e alimentação no
+# domicílio (27864) ficam de fora até o nome ser conferido no SGS (o catálogo não traz essas duas).
+SERIES_CONJUNTURA = {
+    "ipca_servicos": (10844, "IPCA — serviços", "% a.m."),
+    "ipca_livres": (11428, "IPCA — itens livres", "% a.m."),
+    "ipca_administrados": (4449, "IPCA — preços monitorados (administrados)", "% a.m."),
+    "ipca_difusao": (21379, "IPCA — índice de difusão", "% dos itens"),
+    "cambio_real": (11752, "Taxa de câmbio real efetiva (índice)", "índice"),
+    "icbr": (27574, "Índice de Commodities Brasil (IC-Br), em reais", "índice"),
+    "icbr_agro": (27575, "IC-Br — agropecuária", "índice"),
+    "icbr_metal": (27576, "IC-Br — metal", "índice"),
+    "icbr_energia": (27577, "IC-Br — energia", "índice"),
+    "caged_estoque": (28763, "Emprego formal — estoque de vínculos formais (Novo Caged, via Banco Central)", "vínculos"),
+    "ibcbr_agro": (29601, "IBC-Br — agropecuária (observado)", "índice"),
+    "ibcbr_industria": (29603, "IBC-Br — indústria (observado)", "índice"),
+    "ibcbr_servicos": (29605, "IBC-Br — serviços (observado)", "índice"),
+    "renda_familias": (29027, "Renda disponível bruta das famílias, real (IPCA), dessazonalizada", "R$ milhões"),
+}
+SIDRA_CONJUNTURA = {  # IBGE (SIDRA), índices com ajuste sazonal (2022=100)
+    "pim": ("t/8888/n1/all/v/12607/p/all/c544/129314", "Produção industrial — indústria geral (PIM-PF, dessaz.)"),
+    "pmc": ("t/8880/n1/all/v/7170/p/all/c11046/56734", "Vendas no varejo — volume (PMC, dessaz.)"),
+    "pms": ("t/5906/n1/all/v/7168/p/all/c11046/56726", "Volume de serviços (PMS, dessaz.)"),
+}
+URL_FOCUS_12M = "https://olinda.bcb.gov.br/olinda/servico/Expectativas/versao/v1/odata/ExpectativasMercadoInflacao12Meses"
+
+
+def _sidra(caminho):
+    import re
+    dados = _get(f"https://apisidra.ibge.gov.br/values/{caminho}")
+    linhas = {}
+    for r in dados[1:]:
+        periodo = next((v for v in r.values() if isinstance(v, str) and re.fullmatch(r"\d{6}", v)), None)
+        if periodo and r.get("V") not in (None, "...", "-", "X"):
+            linhas[pd.Timestamp(int(periodo[:4]), int(periodo[4:]), 1)] = float(r["V"])
+    return pd.Series(linhas).sort_index()
+
+
+def _focus_ipca_12m():
+    filtro = "Indicador eq 'IPCA' and Suavizada eq 'S' and baseCalculo eq 0"
+    dados = _get(f"{URL_FOCUS_12M}?$filter={quote(filtro)}&$select=Data,Mediana&$format=json&$top=100000")
+    df = pd.DataFrame(dados.get("value", []))
+    s = pd.Series(df["Mediana"].astype(float).values, index=pd.to_datetime(df["Data"])).sort_index()
+    return s[~s.index.duplicated(keep="last")]
+
+
+def _selic_esperada_12m(selic_diaria):
+    """Selic média esperada para os próximos 12 meses, mês a mês, com as medianas do Focus para o fim de cada ano.
+    Trajetória linear: Selic de hoje -> mediana para dezembro deste ano -> mediana para dezembro do ano seguinte;
+    a média é tirada nos 12 meses seguintes. Aproximação (o Focus por reunião do Copom só existe para os meses recentes)."""
+    filtro = "Indicador eq 'Selic' and baseCalculo eq 0 and Data ge '2001-01-01'"
+    dados = _get(f"{URL_FOCUS}?$filter={quote(filtro)}&$select=Data,DataReferencia,Mediana&$format=json&$top=1000000")
+    df = pd.DataFrame(dados.get("value", []))
+    df = df[df["DataReferencia"].astype(str).str.isdigit()]
+    df["Data"] = pd.to_datetime(df["Data"])
+    df["mes"] = df["Data"].dt.to_period("M")
+    ult = df.sort_values("Data").groupby(["mes", "DataReferencia"])["Mediana"].last()  # última mediana de cada mês
+    selic_mes = selic_diaria.resample("MS").last().ffill()
+    saida = {}
+    for mes in sorted({m for m, _ in ult.index}):
+        ano, m = mes.year, mes.month
+        e_ano, e_seg = ult.get((mes, str(ano))), ult.get((mes, str(ano + 1)))
+        s0 = selic_mes.get(pd.Timestamp(ano, m, 1))
+        if e_ano is None or e_seg is None or s0 is None or pd.isna(s0):
+            continue
+        caminho = []
+        for k in range(1, 13):  # meses à frente
+            alvo = m + k
+            if alvo <= 12:
+                caminho.append(s0 + (e_ano - s0) * k / (12 - m) if m < 12 else e_ano)
+            else:
+                caminho.append(e_ano + (e_seg - e_ano) * (alvo - 12) / 12)
+        saida[pd.Timestamp(ano, m, 1)] = sum(caminho) / 12
+    return pd.Series(saida).sort_index()
+
+
+def conjuntura(saida, brutas, anteriores, falhas):
+    """Séries do painel de conjuntura e das abas de Atividade, Inflação, Monetária e Câmbio. Falha mantém a versão anterior."""
+    def guardar(chave, serie, nome, un, casas=4):
+        saida[chave] = _empacotar(serie.dropna(), nome, un, casas)
+
+    def tentar(chave, funcao):
+        try:
+            funcao()
+        except Exception as e:  # noqa: BLE001
+            falhas.append(f"{chave}: {e}")
+            print("   ⚠️ conjuntura —", chave, e)
+            if chave in anteriores:
+                saida[chave] = anteriores[chave]
+
+    novas = {}
+    for chave, (codigo, nome, un) in SERIES_CONJUNTURA.items():
+        def baixar(chave=chave, codigo=codigo, nome=nome, un=un):
+            novas[chave] = baixar_sgs(codigo)
+            guardar(chave, novas[chave], nome, un)
+        tentar(chave, baixar)
+    for k in ("ipca_servicos", "ipca_livres", "ipca_administrados"):
+        if k in novas:
+            guardar(f"{k}_12m", acumulado_12m(novas[k]), f"{SERIES_CONJUNTURA[k][1]} — 12 meses", "%")
+            guardar(f"{k}_mm3", mm3_anualizada(novas[k]), f"{SERIES_CONJUNTURA[k][1]} — 3 meses anualizado", "% a.a.")
+    if "ipca_difusao" in novas:
+        guardar("ipca_difusao_mm3", novas["ipca_difusao"].rolling(3).mean(), "IPCA — difusão, média de 3 meses", "% dos itens")
+    if "caged_estoque" in novas:
+        e = novas["caged_estoque"]
+        # variação do estoque de vínculos: pode diferir do saldo oficial do Ministério do Trabalho (declarações fora do prazo entram no estoque)
+        guardar("caged_saldo", e.diff(), "Emprego formal — variação mensal do estoque de vínculos (Novo Caged, via BC)", "vínculos", 0)
+        guardar("caged_saldo_mm3", e.diff().rolling(3).mean(), "Emprego formal — variação mensal do estoque, média de 3 meses", "vínculos", 0)
+        guardar("caged_12m", e.diff(12), "Emprego formal — variação do estoque de vínculos em 12 meses", "vínculos", 0)
+    for k in ("ibcbr_agro", "ibcbr_industria", "ibcbr_servicos"):
+        if k in novas:
+            s = novas[k]
+            guardar(f"{k}_12m", (s.rolling(12).sum() / s.rolling(12).sum().shift(12) - 1) * 100, f"{SERIES_CONJUNTURA[k][1]} — acumulado em 12 meses", "%")
+    for k in ("icbr", "icbr_agro", "icbr_metal", "icbr_energia", "renda_familias", "cambio_real"):
+        if k in novas:
+            guardar(f"{k}_12m", (novas[k] / novas[k].shift(12) - 1) * 100, f"{SERIES_CONJUNTURA[k][1]} — variação em 12 meses", "%")
+    for chave, (caminho, nome) in SIDRA_CONJUNTURA.items():
+        def baixar_ibge(chave=chave, caminho=caminho, nome=nome):
+            s = _sidra(caminho)
+            guardar(chave, s, nome, "índice (2022=100)")
+            guardar(f"{chave}_12m", (s / s.shift(12) - 1) * 100, f"{nome} — contra 12 meses antes", "%")
+            guardar(f"{chave}_mm", (s / s.shift(1) - 1) * 100, f"{nome} — variação no mês", "%")
+        tentar(chave, baixar_ibge)
+
+    def juro_ex_ante():
+        f12 = _focus_ipca_12m()
+        exp_ipca = f12.resample("MS").last()
+        guardar("focus_ipca_12m", exp_ipca, "Focus — IPCA esperado nos próximos 12 meses (suavizado)", "%")
+        selic_esp = _selic_esperada_12m(brutas["selic_meta"])
+        guardar("focus_selic_12m", selic_esp, "Selic média esperada nos próximos 12 meses (Focus, fim de cada ano, interpolado)", "% a.a.")
+        juntos = pd.concat([selic_esp, exp_ipca], axis=1, keys=["selic", "exp"]).dropna()
+        guardar("juro_real_exante", ((1 + juntos["selic"] / 100) / (1 + juntos["exp"] / 100) - 1) * 100,
+                "Juro real ex-ante (Selic média esperada 12 meses ÷ IPCA esperado 12 meses, Focus)", "% a.a.")
+    tentar("juro_real_exante", juro_ex_ante)
+
+
 def gerar():
     # Uma série que falhar fica com a versão publicada anteriormente (as outras seguem atualizadas)
     anterior = DIR_DADOS_SITE / "macro.json"
@@ -316,6 +451,8 @@ def gerar():
         saida["dmf_ipca"] = _empacotar(ipca_dmf[partes.index >= "2003-01-01"].round(2),
                                        "Dívida mobiliária federal — participação IPCA (por diferença: 100% − demais indexadores)", "%")
 
+    selic_diaria = selic  # (a Selic meta diária, antes de guardar só as mudanças)
+    conjuntura(saida, {"selic_meta": selic_diaria}, anteriores, falhas)
     focus = {chave: baixar_focus(nome, todos_os_anos=True) for chave, nome in FOCUS.items()}  # todos os anos que o Focus projeta
     arquivo = DIR_DADOS_SITE / "macro.json"
     arquivo.write_text(json.dumps({"gerado_em": date.today().isoformat(), "series": saida, "focus": focus, "falhas": falhas},
